@@ -2,27 +2,27 @@ const projects = [
   {
     name: "Model 1 A",
     id: "1",
-    url: "./ifc/01.ifc",
+    url: "../ifc/01.ifc",
   },
   {
     name: "Model 2",
     id: "2",
-    url: "./ifc/02.ifc",
+    url: "../ifc/02.ifc",
   },
   {
     name: "Model 3",
     id: "3",
-    url: "./ifc/03.ifc",
+    url: "../ifc/03.ifc",
   },
   {
     name: "Model 4",
     id: "4",
-    url: "./ifc/04.ifc",
+    url: "../ifc/04.ifc",
   },
   {
     name: "Model 5",
     id: "5",
-    url: "./ifc/05.ifc",
+    url: "../ifc/05.ifc",
   },
 ];
 
@@ -103326,6 +103326,132 @@ class IFCLoader extends Loader {
 
 }
 
+async function loadIfc(ifcFile, ifcLoader) {
+  console.log("Loading IFC file...", ifcFile);
+  const model = await ifcLoader.loadAsync(ifcFile);
+  return model;
+}
+
+let ifcLoader$1 = null;
+let scene$1 = null;
+let model$1 = null;
+
+function createTreeMenu(ifcProject, loader, lscene, lmodel) {
+  const root = document.getElementById("tree-root");
+  ifcLoader$1 = loader;
+  scene$1 = lscene;
+  model$1 = lmodel;
+  removeAllChildren(root);
+  const ifcProjectNode = createNestedChild(
+    root,
+    ifcProject);
+  ifcProject.children.forEach((child) => {
+    constructTreeMenuNode(ifcProjectNode, child);
+  });
+}
+
+function nodeToString(node) {
+  return `${node.type} - ${node.expressID}`;
+}
+
+function constructTreeMenuNode(parent, node) {
+  const children = node.children;
+  if (children.length === 0) {
+    createSimpleChild(parent, node);
+    return;
+  }
+  const nodeElement = createNestedChild(parent, node);
+  children.forEach((child) => {
+    constructTreeMenuNode(nodeElement, child);
+  });
+}
+
+function createNestedChild(parent, node) {
+  const content = nodeToString(node);
+  const root = document.createElement("li");
+  createTitle(root, content);
+  const childrenContainer = document.createElement("ul");
+  childrenContainer.classList.add("nested");
+  root.appendChild(childrenContainer);
+  parent.appendChild(root);
+  return childrenContainer;
+}
+
+function createTitle(parent, content) {
+  const title = document.createElement("span");
+  title.classList.add("caret");
+  title.onclick = () => {
+    title.parentElement.querySelector(".nested").classList.toggle("active");
+    title.classList.toggle("caret-down");
+  };
+  title.textContent = content;
+  parent.appendChild(title);
+}
+
+function createSimpleChild(parent, node) {
+  const content = nodeToString(node);
+  const childNode = document.createElement("li");
+  childNode.setAttribute("id", node.expressID);
+  childNode.classList.add("leaf-node");
+  childNode.textContent = content;
+  parent.appendChild(childNode);
+
+  childNode.onmouseenter = function () {
+    removeTmpHighlights();
+
+    childNode.classList.add("tmphighlight");
+    highlightFromSpatial(node.expressID);
+  };
+
+  childNode.onclick = function () {
+    removeHighlights();
+    childNode.classList.add("highlight");
+    highlightFromSpatial(node.expressID);
+    node.expressID;
+  };
+}
+
+function removeHighlights() {
+  const highlighted = document.getElementsByClassName("highlight");
+  for (let h of highlighted) {
+    if (h) {
+      h.classList.remove("highlight");
+    }
+  }
+}
+
+function removeTmpHighlights() {
+  const highlighted = document.getElementsByClassName("tmphighlight");
+  for (let h of highlighted) {
+    if (h) {
+      h.classList.remove("tmphighlight");
+    }
+  }
+}
+
+function removeAllChildren(element) {
+  while (element.firstChild) {
+    element.removeChild(element.firstChild);
+  }
+}
+
+const preselectMat$1 = new MeshLambertMaterial({
+  transparent: true,
+  opacity: 0.9,
+  color: 0xff88ff,
+  depthTest: true,
+});
+
+function highlightFromSpatial(id) {
+  ifcLoader$1.ifcManager.createSubset({
+    modelID: model$1.modelID,
+    ids: [id],
+    material: preselectMat$1,
+    scene: scene$1,
+    removePrevious: true,
+  });
+}
+
 // Get the current project ID from the URL parameter
 const currentUrl = window.location.href;
 const url = new URL(currentUrl);
@@ -103398,22 +103524,13 @@ const ifcModels = [];
 const ifcLoader = new IFCLoader();
 let model = null;
 
-// load Ifc file
-async function loadIfc() {
-  await ifcLoader.loadAsync(projectURL).then((m) => {
-    model = m;
-    scene.add(m);
-    ifcModels.push(m);
-    return m;
-  });
-}
-
-// spatial tree
 let spatial = null;
 async function init() {
-  await loadIfc();
+  model = await loadIfc(projectURL, ifcLoader);
+  console.log(model);
+  scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
-  createTreeMenu(spatial);
+  createTreeMenu(spatial, ifcLoader, scene, model);
   threeCanvas.onmousemove = (event) => {
     const found = cast(event)[0];
     highlight(found, preselectMat, preselectModel);
@@ -103424,8 +103541,6 @@ async function init() {
 
 init();
 
-// Tree view
-
 const toggler = document.getElementsByClassName("caret");
 for (let i = 0; i < toggler.length; i++) {
   toggler[i].onclick = () => {
@@ -103434,103 +103549,6 @@ for (let i = 0; i < toggler.length; i++) {
       .classList.toggle("active");
     toggler[i].classList.toggle("caret-down");
   };
-}
-
-// Spatial tree menu
-
-function createTreeMenu(ifcProject) {
-  const root = document.getElementById("tree-root");
-  removeAllChildren(root);
-  const ifcProjectNode = createNestedChild(root, ifcProject);
-  ifcProject.children.forEach((child) => {
-    constructTreeMenuNode(ifcProjectNode, child);
-  });
-}
-
-function nodeToString(node) {
-  return `${node.type} - ${node.expressID}`;
-}
-
-function constructTreeMenuNode(parent, node) {
-  const children = node.children;
-  if (children.length === 0) {
-    createSimpleChild(parent, node);
-    return;
-  }
-  const nodeElement = createNestedChild(parent, node);
-  children.forEach((child) => {
-    constructTreeMenuNode(nodeElement, child);
-  });
-}
-
-function createNestedChild(parent, node) {
-  const content = nodeToString(node);
-  const root = document.createElement("li");
-  createTitle(root, content);
-  const childrenContainer = document.createElement("ul");
-  childrenContainer.classList.add("nested");
-  root.appendChild(childrenContainer);
-  parent.appendChild(root);
-  return childrenContainer;
-}
-
-function createTitle(parent, content) {
-  const title = document.createElement("span");
-  title.classList.add("caret");
-  title.onclick = () => {
-    title.parentElement.querySelector(".nested").classList.toggle("active");
-    title.classList.toggle("caret-down");
-  };
-  title.textContent = content;
-  parent.appendChild(title);
-}
-
-function createSimpleChild(parent, node) {
-  const content = nodeToString(node);
-  const childNode = document.createElement("li");
-  childNode.setAttribute("id", node.expressID);
-  childNode.classList.add("leaf-node");
-  childNode.textContent = content;
-  parent.appendChild(childNode);
-
-  childNode.onmouseenter = async () => {
-    removeTmpHighlights();
-    childNode.classList.add("tmphighlight");
-    highlightFromSpatial(node.expressID);
-  };
-
-  childNode.onclick = async () => {
-    removeHighlights();
-    childNode.classList.add("highlight");
-    highlightFromSpatial(node.expressID);
-    node.expressID;
-    // updateProperties();
-    // ifcLoader.ifcManager.prepickIfcItemsByID(0, [node.expressID]);
-  };
-}
-
-function removeHighlights() {
-  const highlighted = document.getElementsByClassName("highlight");
-  for (let h of highlighted) {
-    if (h) {
-      h.classList.remove("highlight");
-    }
-  }
-}
-
-function removeTmpHighlights() {
-  const highlighted = document.getElementsByClassName("tmphighlight");
-  for (let h of highlighted) {
-    if (h) {
-      h.classList.remove("tmphighlight");
-    }
-  }
-}
-
-function removeAllChildren(element) {
-  while (element.firstChild) {
-    element.removeChild(element.firstChild);
-  }
 }
 
 const raycaster = new Raycaster();
@@ -103566,15 +103584,6 @@ async function pick(event) {
   }
 }
 
-function highlightFromSpatial(id) {
-  ifcLoader.ifcManager.createSubset({
-    modelID: model.modelID,
-    ids: [id],
-    material: preselectMat,
-    scene: scene,
-    removePrevious: true,
-  });
-}
 function highlight(found, material, model) {
   const modelId = model.modelID;
   if (found) {

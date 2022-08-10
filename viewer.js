@@ -20,6 +20,8 @@ import {
 
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { IFCLoader } from "web-ifc-three/IFCLoader";
+import loadIfc from "./functions/loadIfc.js";
+import createTreeMenu from "./functions/treeMenu";
 
 // Get the current project ID from the URL parameter
 const currentUrl = window.location.href;
@@ -93,22 +95,14 @@ const ifcModels = [];
 const ifcLoader = new IFCLoader();
 let model = null;
 
-// load Ifc file
-async function loadIfc() {
-  await ifcLoader.loadAsync(projectURL).then((m) => {
-    model = m;
-    scene.add(m);
-    ifcModels.push(m);
-    return m;
-  });
-}
-
-// spatial tree
+// create spatial tree
 let spatial = null;
 async function init() {
-  await loadIfc();
+  model = await loadIfc(projectURL, ifcLoader);
+  console.log(model);
+  scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
-  createTreeMenu(spatial);
+  createTreeMenu(spatial, ifcLoader, scene, model);
   threeCanvas.onmousemove = (event) => {
     const found = cast(event)[0];
     highlight(found, preselectMat, preselectModel);
@@ -119,8 +113,6 @@ async function init() {
 
 init();
 
-// Tree view
-
 const toggler = document.getElementsByClassName("caret");
 for (let i = 0; i < toggler.length; i++) {
   toggler[i].onclick = () => {
@@ -129,103 +121,6 @@ for (let i = 0; i < toggler.length; i++) {
       .classList.toggle("active");
     toggler[i].classList.toggle("caret-down");
   };
-}
-
-// Spatial tree menu
-
-function createTreeMenu(ifcProject) {
-  const root = document.getElementById("tree-root");
-  removeAllChildren(root);
-  const ifcProjectNode = createNestedChild(root, ifcProject);
-  ifcProject.children.forEach((child) => {
-    constructTreeMenuNode(ifcProjectNode, child);
-  });
-}
-
-function nodeToString(node) {
-  return `${node.type} - ${node.expressID}`;
-}
-
-function constructTreeMenuNode(parent, node) {
-  const children = node.children;
-  if (children.length === 0) {
-    createSimpleChild(parent, node);
-    return;
-  }
-  const nodeElement = createNestedChild(parent, node);
-  children.forEach((child) => {
-    constructTreeMenuNode(nodeElement, child);
-  });
-}
-
-function createNestedChild(parent, node) {
-  const content = nodeToString(node);
-  const root = document.createElement("li");
-  createTitle(root, content);
-  const childrenContainer = document.createElement("ul");
-  childrenContainer.classList.add("nested");
-  root.appendChild(childrenContainer);
-  parent.appendChild(root);
-  return childrenContainer;
-}
-
-function createTitle(parent, content) {
-  const title = document.createElement("span");
-  title.classList.add("caret");
-  title.onclick = () => {
-    title.parentElement.querySelector(".nested").classList.toggle("active");
-    title.classList.toggle("caret-down");
-  };
-  title.textContent = content;
-  parent.appendChild(title);
-}
-
-function createSimpleChild(parent, node) {
-  const content = nodeToString(node);
-  const childNode = document.createElement("li");
-  childNode.setAttribute("id", node.expressID);
-  childNode.classList.add("leaf-node");
-  childNode.textContent = content;
-  parent.appendChild(childNode);
-
-  childNode.onmouseenter = async () => {
-    removeTmpHighlights();
-    childNode.classList.add("tmphighlight");
-    highlightFromSpatial(node.expressID);
-  };
-
-  childNode.onclick = async () => {
-    removeHighlights();
-    childNode.classList.add("highlight");
-    highlightFromSpatial(node.expressID);
-    selectedElementId = node.expressID;
-    // updateProperties();
-    // ifcLoader.ifcManager.prepickIfcItemsByID(0, [node.expressID]);
-  };
-}
-
-function removeHighlights() {
-  const highlighted = document.getElementsByClassName("highlight");
-  for (let h of highlighted) {
-    if (h) {
-      h.classList.remove("highlight");
-    }
-  }
-}
-
-function removeTmpHighlights() {
-  const highlighted = document.getElementsByClassName("tmphighlight");
-  for (let h of highlighted) {
-    if (h) {
-      h.classList.remove("tmphighlight");
-    }
-  }
-}
-
-function removeAllChildren(element) {
-  while (element.firstChild) {
-    element.removeChild(element.firstChild);
-  }
 }
 
 const raycaster = new Raycaster();
@@ -264,15 +159,6 @@ async function pick(event) {
   }
 }
 
-function highlightFromSpatial(id) {
-  ifcLoader.ifcManager.createSubset({
-    modelID: model.modelID,
-    ids: [id],
-    material: preselectMat,
-    scene: scene,
-    removePrevious: true,
-  });
-}
 function highlight(found, material, model) {
   const modelId = model.modelID;
   if (found) {
