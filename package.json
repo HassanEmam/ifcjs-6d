@@ -1,0 +1,23 @@
+{
+  "name": "ifcjs-6d",
+  "version": "1.0.0",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Hassan Emam",
+  "license": "MIT",
+  "keywords": [
+    "IFC.js"
+  ],
+  "description": "",
+  "dependencies": {
+    "three": "^0.135.0",
+    "web-ifc": "^0.0.35",
+    "web-ifc-three": "^0.0.119"
+  },
+  "devDependencies": {
+    "rollup": "^2.77.2",
+    "@rollup/plugin-node-resolve": "^13.0.2"
+  }
+}
