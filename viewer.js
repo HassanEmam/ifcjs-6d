@@ -100,6 +100,7 @@ let spatial = null;
 async function init() {
   model = await loadIfc(projectURL, ifcLoader);
   console.log(model);
+  ifcModels.push(model);
   scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
   createTreeMenu(spatial, ifcLoader, scene, model);
@@ -155,7 +156,7 @@ async function pick(event) {
     const ifc = ifcLoader.ifcManager;
     const id = ifcLoader.ifcManager.getExpressId(geometry, index);
     selectedElementId = id;
-    propertiesDiv.style.display = "block";
+    highlight(found, preselectMat, model);
   }
 }
 

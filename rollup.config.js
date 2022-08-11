@@ -5,7 +5,7 @@ export default {
   output: [
     {
       format: "esm",
-      file: "bundle.js",
+      file: "./build/bundle.js",
     },
   ],
   plugins: [resolve()],

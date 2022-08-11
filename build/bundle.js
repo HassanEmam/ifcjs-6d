@@ -103524,10 +103524,12 @@ const ifcModels = [];
 const ifcLoader = new IFCLoader();
 let model = null;
 
+// create spatial tree
 let spatial = null;
 async function init() {
   model = await loadIfc(projectURL, ifcLoader);
   console.log(model);
+  ifcModels.push(model);
   scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
   createTreeMenu(spatial, ifcLoader, scene, model);
@@ -103580,7 +103582,7 @@ async function pick(event) {
     const geometry = found.object.geometry;
     ifcLoader.ifcManager;
     ifcLoader.ifcManager.getExpressId(geometry, index);
-    propertiesDiv.style.display = "block";
+    highlight(found, preselectMat, model);
   }
 }
 
