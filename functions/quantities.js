@@ -30,7 +30,12 @@ export async function fillData(model, ifcLoader) {
     const pobj = {};
     for (const prop of pset.HasProperties) {
       const propObj = await ifc.byId(model.modelID, prop.value);
-      if (!(propObj.Name.value in props)) {
+      console.log(
+        exist(propObj, propObj.Name.value),
+        propObj.Name.value,
+        props
+      );
+      if (!exist(props, propObj.Name.value)) {
         pobj[propObj.Name.value] = {};
         pobj[propObj.Name.value][propObj.expressID] = propObj;
       } else {
@@ -58,4 +63,8 @@ export async function getElementProperties(model, ifcLoader, id) {
     generated = true;
   }
   return objMap[id];
+}
+
+function exist(data, key) {
+  return JSON.stringify(data).includes(`"${key}":`);
 }
