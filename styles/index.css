@@ -1,0 +1,572 @@
+@import url('https://fonts.googleapis.com/css2?family=Jost:wght@100;400;600;800&display=swap');
+
+:root {
+    --coverHeight: 14rem;
+    --coverMargin: 1rem;
+    --listMargin: 0.4rem;
+    --coverRadius: 0.7rem;
+    --coverPadding: 1rem;
+    --titleSize: 1.4rem;
+    --text-light-color: rgba(255,255,255,.55);
+    --live-orange: #e7a377;
+    --dark-blue: #034c8c;
+    --middle-blue: #0396a6;
+    --light-blue: #05daf27f;
+    --very-light-transparent-blue : #add8e64f;
+    --dark-gray: #212529;
+    --light-gray: #f2f2f2;
+    --middle-gray: #b3b3b3;
+}
+
+img {
+    max-width: 100%;
+    height: auto;
+}
+
+body {
+    font-family: 'Jost', 'Helvetica', 'Arial', sans-serif;
+}
+
+.navbar-expand-md {
+    background-color: var(--dark-blue);
+}
+
+.navbar-dark:hover .navbar-nav:hover .nav-link:hover {
+    color: var(--live-orange)
+}
+
+.cardsGrid {
+    background-color: var(--very-light-transparent-blue);
+    margin: var(--coverMargin), var(--coverMargin);
+    padding-top: var(--coverMargin);
+    padding-bottom: var(--coverMargin);
+}
+
+.projectCard {
+    position: relative;
+    overflow: hidden;
+}
+
+.projectCard a {
+    display: block;
+}
+
+.projectCard img {
+    z-index: 1;
+    height: var(--coverHeight);
+    width: 100%;
+    border-radius: var(--coverRadius);
+    object-fit: cover;
+}
+
+.projectCard .imageCard {
+    transition: all .5s ease-out;
+}
+
+.projectCard:hover .imageCard {
+    transform: scale(1.1);
+    -webkit-transform: scale(1.1);
+    cursor: pointer;
+    border-radius: var(--coverRadius);
+}
+
+.cardTitle:hover{
+    cursor: pointer;
+}
+
+.projectCard .cardBody {
+    padding: 1.5rem 2rem;
+    z-index: 10;
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    transition: all .5s ease-in-out;
+    transform: translateY(40px);
+}
+
+.projectCard:hover .cardBody {
+    animation: slide-in-bottom 0.5s cubic-bezier(0.250, 0.460, 0.450, 0.940) both;
+} 
+
+.projectCard .cardTitle {
+    color: rgb(240, 240, 240);
+}   
+
+.projectCard .projectDescription {
+    font-size: 0.813rem;
+    line-height: 1.5em;
+    color: #fff;
+    opacity: 0;
+    transition: all .2s ease-in-out;
+}   
+
+.projectCard:hover .projectDescription {
+    opacity: 1;
+}
+
+@keyframes slide-in-bottom {
+    0% {
+        -webkit-transform: translateY(0);
+        transform: translateY(0);
+    }
+    100% {
+        -webkit-transform: translateY(-18px);
+        transform: translateY(-18px);
+    }
+}
+
+.projectCard .shadow {
+    z-index: 5;
+    position: absolute;
+    width: 100%;
+    height: 50%;
+    border-radius: var(--coverRadius);
+    bottom: 0;
+    background: -moz-linear-gradient(top,  rgba(0,0,0,0) 0%, rgba(0,0,0,0.65) 100%);
+    background: -webkit-linear-gradient(top,  rgba(0,0,0,0) 0%,rgba(0,0,0,0.65) 100%);
+    background: linear-gradient(to bottom,  rgba(0,0,0,0) 0%,rgba(0,0,0,0.65) 100%);
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#00000000', endColorstr='#a6000000',GradientType=0 );
+}
+
+.shadow {
+    cursor: pointer;
+}
+
+.viewerPage {
+    background-color: var(--very-light-transparent-blue)
+}
+
+.tools-container {
+    position: relative;
+    border: 1px solid gainsboro;
+    border-radius: 10px;
+    margin-top: 10px;
+}
+
+.buttons-container {
+    display: flex;
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+    justify-content: space-evenly;
+}
+
+.tool-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    outline: none;
+    cursor: pointer;
+    width: 35px;
+    height: 35px;
+    margin-left: 0.5rem;
+    border-radius: 30px;
+    border: 1px solid #8F9092;
+    transition: all 0.2s ease;
+    color: #606060;
+    background-size: 80%;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+  
+.tool-button:hover {
+    box-shadow: 0 4px 3px 1px var(--very-light-transparent-blue), 0 6px 8px var(--very-light-transparent-blue), 0 -4px 4px #dce0e8, 0 -6px 4px var(--very-light-transparent-blue), inset 0 0 3px 3px #CECFD1;
+}
+  
+.tool-button:active {
+    box-shadow: 0 4px 3px 1px var(--very-light-transparent-blue), 0 6px 8px var(--very-light-transparent-blue), 0 -4px 4px #dce0e8, 0 -6px 4px var(--very-light-transparent-blue), inset 0 0 5px 3px #999, inset 0 0 30px #aaa;
+}
+
+#fit-view {
+    background-image: url("./asset/icon-fit.png");
+}
+
+#left-view {
+    background-image: url("./asset/icon-left.png");
+}
+
+#front-view {
+    background-image: url("./asset/icon-front.png"); 
+}
+
+#right-view {
+    background-image: url("./asset/icon-right.png");
+}
+
+#back-view {
+    background-image: url("./asset/icon-back.png");
+}
+
+#wireframe-view {
+    background-image: url("./asset/icon-wireframe.png");
+}
+
+#colored-view {
+    background-image: url("./asset/icon-colored.png");
+}
+
+#deleteMeasurements{
+    background-image: url("./asset/icon-removeMeasurements.png");
+}
+
+#hide-objects{
+    background-image: url("./asset/icon-hideObjects.png");
+}
+
+.bimViewer {
+    display: flex;
+    flex-direction: row;
+    justify-content:space-evenly;
+    margin-top: 0.5rem;
+}
+
+.viewerSection .bimViewer {
+    /* width: 100vw; */
+    height: 70vh;
+    overflow: hidden;
+    border-radius: var(--coverRadius);
+    border: 1px solid gainsboro;
+    background-color:rgb(238, 238, 238);
+}
+
+.stats-container {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-evenly;
+    margin-top: 1rem;
+}
+
+.viewer-description {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-around;
+    font-size: 14px;
+    margin-top: 0.5rem;
+    border: 1px solid gainsboro;
+    border-radius: 10px;
+    height: 25px;
+}
+
+.footerSection {
+    background-color: var(--dark-blue);
+}
+
+.footerButtons {
+    display: flex;
+    justify-content: space-evenly;
+    padding-bottom: var(--coverPadding);  border-radius: var(--coverRadius);
+}
+
+.footerBtn {
+    border-radius: var(--coverRadius);
+    border: none;
+    background-color: var(--light-blue);
+    padding: 10px 10px;
+    cursor: pointer;
+    color: var(--text-light-color);
+    outline: none;
+    margin-right: 10px;
+    margin-bottom: 20px;
+    width: 10rem;
+    text-align: center;
+    text-decoration: none;
+}
+
+.footerBtn:hover {
+    background-color: var(--live-orange);
+    color: var(--text-light-color);
+    transform: scale(1.05);
+    transition: all 0.5s ease-out;
+}
+
+.footerText {
+    color: var(--text-light-color);
+    padding: var(--coverPadding);
+
+#three-canvas {
+    width: 100%;
+    height: 100%;
+    outline: none;
+    left: 0;
+    top: 0;
+    display: flex;
+    overflow: hidden;
+    border-radius: var(--coverRadius);
+}
+
+#loader-container {
+    position: fixed;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: black;
+    opacity: 0.8;
+    color: white;
+    flex-direction: column;
+}
+
+#loader-container * {
+    margin: 0.5rem;
+}   
+
+.loader {
+    width: 60px;
+    height: 60px;
+}
+
+.hidden {
+    visibility: collapse;
+}
+   
+.loader::before {
+    content: "";
+    box-sizing: border-box;
+    position: absolute;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    border-top: 2px solid #8900FF;
+    border-right: 2px solid transparent;
+    animation: spinner8217 0.8s linear infinite;
+}
+   
+@keyframes spinner8217 {
+    to {
+     transform: rotate(360deg);
+    }
+}
+
+.PropertiesMenu {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 0;
+    width: 100%;
+    overflow: auto;
+    margin-top: var(--coverMargin);
+}
+
+
+.projectShortcut {
+    margin: var(--listMargin);
+    position: relative;
+    display: inline-block;
+    cursor: pointer;
+    outline: none;
+    border: 0;
+    vertical-align: middle;
+    text-decoration: none;
+    background: transparent;
+    padding: 0;
+    font-size: inherit;
+    font-family: inherit;
+}
+   
+button.learn-more {
+width: 12rem;
+height: auto;
+}
+   
+button.learn-more .circle {
+transition: all 0.45s cubic-bezier(0.65, 0, 0.076, 1);
+position: relative;
+display: block;
+margin: 0;
+width: 3rem;
+height: 3rem;
+background: var(--live-orange);
+border-radius: 1.625rem;
+}
+   
+button.learn-more .circle .icon {
+transition: all 0.45s cubic-bezier(0.65, 0, 0.076, 1);
+position: absolute;
+top: 0;
+bottom: 0;
+margin: auto;
+background: #fff;
+}
+   
+button.learn-more .circle .icon.arrow {
+transition: all 0.45s cubic-bezier(0.65, 0, 0.076, 1);
+left: 0.625rem;
+width: 1.125rem;
+height: 0.125rem;
+background: none;
+}
+   
+button.learn-more .circle .icon.arrow::before {
+position: absolute;
+content: "";
+top: -0.29rem;
+right: 0.0625rem;
+width: 0.625rem;
+height: 0.625rem;
+border-top: 0.125rem solid #fff;
+border-right: 0.125rem solid #fff;
+transform: rotate(45deg);
+}
+   
+button.learn-more .button-text {
+transition: all 0.45s cubic-bezier(0.65, 0, 0.076, 1);
+position: absolute;
+top: 0;
+left: 0;
+right: 0;
+bottom: 0;
+padding: 0.75rem 0;
+margin: 0 0 0 1.85rem;
+color: #282936;
+text-align: center;
+}
+   
+button:hover .circle {
+width: 100%;
+}
+   
+button:hover .circle .icon.arrow {
+background: #fff;
+transform: translate(1rem, 0);
+}
+   
+button:hover .button-text {
+color: #fff;
+}
+
+.measurementLabel {
+    background-color: #d9d5e7d1;
+    color: var(--dark-gray);
+    font-size: 14px;
+    padding: 0 0.5rem;
+    border-radius: 0.5rem;
+}
+
+.right-menu {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: wrap;
+    padding: 0px
+}
+
+.viewer-tools-container, .viewer-description-container {
+    width: 100%
+}
+
+#file-input{
+    margin: 1.4rem;
+}
+
+.ifc-property-menu {
+    border: 1px solid gainsboro;
+    width: 100%;
+    border-radius: var(--coverRadius);
+    background: linear-gradient(to bottom,  rgba(226,186,163,0.5) 0%,rgba(226,201,188,0.5) 53%,rgba(229,223,220,0.5) 100%);
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#80e2baa3', endColorstr='#80e5dfdc',GradientType=0 );
+    overflow: auto;
+    height: 40vh;
+}
+
+.ifc-property-item {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    padding: 0.2rem;
+    border-top: solid 1px gainsboro;
+    border-top-style: dashed;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.ifc-property-value {
+    width: 100%;
+    text-align: right;
+    font-weight: 300;
+}
+
+.treeview ul li{
+    background: #F48B94;
+    color: #fff;
+}
+
+.treeview ul li:hover{
+    background: #fff;
+    color: #F48B94;
+}
+
+/*Tree view: https://www.w3schools.com/howto/howto_js_treeview.asp*/
+
+.ifc-tree-menu {
+    overflow : auto;
+    height: 25vh;
+    padding: 0;
+    width: 100%;
+    font-weight: 400;
+    font-size: 13px;
+}
+
+.tree-caret, .leaf-node {
+    user-select: none;
+    cursor: pointer;
+    position: relative;
+    display: block;
+    padding: 1px 6px;
+    background-color: var(--live-orange);
+    border: 1px solid var(--dark-gray);
+    width: max-content;
+    border-radius: 0.5rem;
+}
+
+.tree-caret {
+    margin-bottom: 1px;
+}
+
+.leaf-node {
+    background-color: var(--live-orange);
+    opacity: 0.8;
+    color: #4d4d4d;
+    border: none;
+}
+
+/* Remove default bullets */
+ul, #myUL {
+    list-style-type: none;
+}
+
+/* Remove margins and padding from the parent ul */
+#myUL {
+    margin: 0.5rem;
+    padding: 0;
+    height: inherit;
+}
+
+/* Create the tree-caret/arrow with a unicode, and style it */
+.tree-caret::before {
+    content: "\25B6";
+    /* color: black; */
+    display: inline-block;
+    margin-right: 6px;
+}
+
+/* Rotate the tree-caret/arrow icon when clicked on (using JavaScript) */
+.tree-caret-down::before {
+    transform: rotate(90deg);
+}
+
+/* Hide the nested list */
+.nested {
+    display: none;
+}
+
+.nested:hover .tree-caret:hover {
+    background: #fff;
+    color: #F48B94; 
+}
+
+/* Show the nested list when the user clicks on the tree-caret/arrow (with JavaScript) */
+.active {
+    display: block;
+    margin-left: 10px;
+}

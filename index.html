@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles/index.css" />
+    <title>BIM - 6D</title>
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar-expand-md navbar-dark">
+        <div class="container-fluid">
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" aria-current="page" href="./index.html">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="https://www.buildingsmart.org/about/openbim/openbim-definition/">What is OpenBIM?</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="https://ifcjs.github.io/info/">IFC.js</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="https://www.buildingsmart.org/standards/bsi-standards/industry-foundation-classes/">What is IFC?</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="https://ifcjs.github.io/info/docs/Courses/Getting-started#learn-bim-development-with-us">BIM Development Course</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Cards Grid -->
+    <section class="cardsGrid">
+        <div class="container">
+                <!-- Card -->
+                <div id="projectsContainer" class="cards row">
+                    <div class="col-12 col-md-6 col-lg-4 col-xxl-3 py-3">
+                        <div class="projectCard">
+                            <a class="projectButton" href="./viewer.html" id="project-id">
+                                <div class="shadow"></div>
+                                <img class="imageCard" src="./asset/pj-1.jpeg" alt="Project Image" />
+                                <div class="cardBody">
+                                    <div class="cardTitle ProjectTitle">
+                                        <h3>project-name</h3>
+                                    </div>
+                                    <div class="projectDescription">
+                                        <p>Lorem, ipsum dolor sit amet consectetur adipisicing elit. Quos, numquam?</p>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="footerSection">
+            <h6 class="footerText"">For more information: </h6>
+            <div class="footerButtons">
+                <a class="footerBtn" href="#">Hassan Emam</a>
+                <a class="footerBtn" href="https://www.linkedin.com/in/ouahbi/">Badr Ouahbi</a>
+                <a class="footerBtn" href="#">Moritz Lill</a>
+            </div>
+        </div>
+    </footer>
+
+    <script type="module" src="./javascript/index.js"></script>
+</body>
+</html>
