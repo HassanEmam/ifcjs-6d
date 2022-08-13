@@ -1,6 +1,6 @@
 export const projects = [
   {
-    name: "Model 1 A",
+    name: "Model 1",
     id: "01",
     url: "./ifc/01.ifc",
   },

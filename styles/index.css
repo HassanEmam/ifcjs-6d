@@ -136,116 +136,6 @@ body {
     background-color: var(--very-light-transparent-blue)
 }
 
-.tools-container {
-    position: relative;
-    border: 1px solid gainsboro;
-    border-radius: 10px;
-    margin-top: 10px;
-}
-
-.buttons-container {
-    display: flex;
-    padding-top: 0.4rem;
-    padding-bottom: 0.4rem;
-    justify-content: space-evenly;
-}
-
-.tool-button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    outline: none;
-    cursor: pointer;
-    width: 35px;
-    height: 35px;
-    margin-left: 0.5rem;
-    border-radius: 30px;
-    border: 1px solid #8F9092;
-    transition: all 0.2s ease;
-    color: #606060;
-    background-size: 80%;
-    background-position: center;
-    background-repeat: no-repeat;
-}
-  
-.tool-button:hover {
-    box-shadow: 0 4px 3px 1px var(--very-light-transparent-blue), 0 6px 8px var(--very-light-transparent-blue), 0 -4px 4px #dce0e8, 0 -6px 4px var(--very-light-transparent-blue), inset 0 0 3px 3px #CECFD1;
-}
-  
-.tool-button:active {
-    box-shadow: 0 4px 3px 1px var(--very-light-transparent-blue), 0 6px 8px var(--very-light-transparent-blue), 0 -4px 4px #dce0e8, 0 -6px 4px var(--very-light-transparent-blue), inset 0 0 5px 3px #999, inset 0 0 30px #aaa;
-}
-
-#fit-view {
-    background-image: url("./asset/icon-fit.png");
-}
-
-#left-view {
-    background-image: url("./asset/icon-left.png");
-}
-
-#front-view {
-    background-image: url("./asset/icon-front.png"); 
-}
-
-#right-view {
-    background-image: url("./asset/icon-right.png");
-}
-
-#back-view {
-    background-image: url("./asset/icon-back.png");
-}
-
-#wireframe-view {
-    background-image: url("./asset/icon-wireframe.png");
-}
-
-#colored-view {
-    background-image: url("./asset/icon-colored.png");
-}
-
-#deleteMeasurements{
-    background-image: url("./asset/icon-removeMeasurements.png");
-}
-
-#hide-objects{
-    background-image: url("./asset/icon-hideObjects.png");
-}
-
-.bimViewer {
-    display: flex;
-    flex-direction: row;
-    justify-content:space-evenly;
-    margin-top: 0.5rem;
-}
-
-.viewerSection .bimViewer {
-    /* width: 100vw; */
-    height: 70vh;
-    overflow: hidden;
-    border-radius: var(--coverRadius);
-    border: 1px solid gainsboro;
-    background-color:rgb(238, 238, 238);
-}
-
-.stats-container {
-    display: flex;
-    flex-direction: row;
-    justify-content: space-evenly;
-    margin-top: 1rem;
-}
-
-.viewer-description {
-    display: flex;
-    flex-direction: row;
-    justify-content: space-around;
-    font-size: 14px;
-    margin-top: 0.5rem;
-    border: 1px solid gainsboro;
-    border-radius: 10px;
-    height: 25px;
-}
-
 .footerSection {
     background-color: var(--dark-blue);
 }
@@ -281,17 +171,6 @@ body {
 .footerText {
     color: var(--text-light-color);
     padding: var(--coverPadding);
-
-#three-canvas {
-    width: 100%;
-    height: 100%;
-    outline: none;
-    left: 0;
-    top: 0;
-    display: flex;
-    overflow: hidden;
-    border-radius: var(--coverRadius);
-}
 
 #loader-container {
     position: fixed;
@@ -455,10 +334,6 @@ color: #fff;
     width: 100%
 }
 
-#file-input{
-    margin: 1.4rem;
-}
-
 .ifc-property-menu {
     border: 1px solid gainsboro;
     width: 100%;
@@ -484,89 +359,4 @@ color: #fff;
     width: 100%;
     text-align: right;
     font-weight: 300;
-}
-
-.treeview ul li{
-    background: #F48B94;
-    color: #fff;
-}
-
-.treeview ul li:hover{
-    background: #fff;
-    color: #F48B94;
-}
-
-/*Tree view: https://www.w3schools.com/howto/howto_js_treeview.asp*/
-
-.ifc-tree-menu {
-    overflow : auto;
-    height: 25vh;
-    padding: 0;
-    width: 100%;
-    font-weight: 400;
-    font-size: 13px;
-}
-
-.tree-caret, .leaf-node {
-    user-select: none;
-    cursor: pointer;
-    position: relative;
-    display: block;
-    padding: 1px 6px;
-    background-color: var(--live-orange);
-    border: 1px solid var(--dark-gray);
-    width: max-content;
-    border-radius: 0.5rem;
-}
-
-.tree-caret {
-    margin-bottom: 1px;
-}
-
-.leaf-node {
-    background-color: var(--live-orange);
-    opacity: 0.8;
-    color: #4d4d4d;
-    border: none;
-}
-
-/* Remove default bullets */
-ul, #myUL {
-    list-style-type: none;
-}
-
-/* Remove margins and padding from the parent ul */
-#myUL {
-    margin: 0.5rem;
-    padding: 0;
-    height: inherit;
-}
-
-/* Create the tree-caret/arrow with a unicode, and style it */
-.tree-caret::before {
-    content: "\25B6";
-    /* color: black; */
-    display: inline-block;
-    margin-right: 6px;
-}
-
-/* Rotate the tree-caret/arrow icon when clicked on (using JavaScript) */
-.tree-caret-down::before {
-    transform: rotate(90deg);
-}
-
-/* Hide the nested list */
-.nested {
-    display: none;
-}
-
-.nested:hover .tree-caret:hover {
-    background: #fff;
-    color: #F48B94; 
-}
-
-/* Show the nested list when the user clicks on the tree-caret/arrow (with JavaScript) */
-.active {
-    display: block;
-    margin-left: 10px;
 }
