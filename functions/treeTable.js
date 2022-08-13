@@ -32,7 +32,7 @@ function createBranchRow(table, node, depth, children) {
     row.classList.add('collapse');
     row.setAttribute('data-depth', depth);
 
-    const dataName = document.createElement('td');
+    const dataElement = document.createElement('td');
 
 
     const toggle = document.createElement('span');
@@ -40,10 +40,10 @@ function createBranchRow(table, node, depth, children) {
     toggle.classList.add('collapse');
 
 
-    dataName.textContent = node.type;
-    dataName.insertBefore(toggle, dataName.firstChild);
+    dataElement.textContent = node.type;
+    dataElement.insertBefore(toggle, dataElement.firstChild);
 
-    row.appendChild(dataName);
+    row.appendChild(dataElement);
 	  table.appendChild(row); 
 
     depth = depth+1;
@@ -61,15 +61,28 @@ function createLeafRow(table, node, depth) {
     row.classList.add('collapse');
     row.setAttribute('data-depth', depth);
 
-    const dataName = document.createElement('td');
-    dataName.textContent = node.type;
-    const dataId = document.createElement('td');
-    dataId.textContent = node.expressID;
-    row.appendChild(dataName);
-    const price = document.createElement('td');
-    price.textContent = 'Area';
-    row.appendChild(dataId);
-    row.appendChild(price);
+    const element = document.createElement('td');
+    dataElement.textContent = node.type;
+    row.appendChild(element);
+    const quantityType = document.createElement('td');
+    dataQuantityType.textContent = 'Quantity Type';
+    row.appendChild(quantityType);
+    const quantity = document.createElement('td');
+    dataQuantityType.textContent = 'Quantity';
+    row.appendChild(quantity);
+    const unit = document.createElement('td');
+    dataQuantityType.textContent = 'Unit';
+    row.appendChild(unit);
+    const material = document.createElement('td');
+    dataQuantityType.textContent = 'Material';
+    ow.appendChild(material);
+    const emissionsPerUnit = document.createElement('td');
+    dataQuantityType.textContent = 'Emissions per Unit';
+    ow.appendChild(emissionsPerUnit);
+    const emissions = document.createElement('td');
+    dataQuantityType.textContent = 'Emissions';
+    ow.appendChild(emissions);
+    row.appendChild(dataQuantityType);
 	table.appendChild(row);
 
   row.onmouseenter = () => {
