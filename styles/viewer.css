@@ -215,7 +215,6 @@ iframe {
 /*Tree view: https://www.w3schools.com/howto/howto_js_treeview.asp*/
 
 .ifc-tree-menu {
-  opacity: 0.7;
   border-radius: var(--coverMargin);
   background-color: lightgray;
   max-height: 80vh;
@@ -223,6 +222,7 @@ iframe {
   overflow : auto;
   font-weight: 400;
   font-size: 13px;
+  width: 100%;
 }
 
 
@@ -252,9 +252,8 @@ ul,
 
 /* Remove margins and padding from the parent ul */
 #myUL {
-  margin: 0.5rem;
-  padding: 1rem;
-  z-index: 999999999;
+  margin: 0;
+  padding: 0.5rem;
   overflow-y: auto;
   max-height: 75vh;
 }
@@ -447,7 +446,7 @@ table {
 
 .viewerSection .bimViewer {
   /* width: 100vw; */
-  height: 70vh;
+  height: 68vh;
   overflow: hidden;
   border-radius: var(--coverRadius);
   border: 1px solid gainsboro;
