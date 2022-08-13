@@ -133,7 +133,8 @@ body {
 }
 
 .viewerPage {
-    background-color: var(--very-light-transparent-blue)
+    background-color: var(--very-light-transparent-blue);
+    overflow-y: auto;
 }
 
 .footerSection {
@@ -143,7 +144,7 @@ body {
 .footerButtons {
     display: flex;
     justify-content: space-evenly;
-    padding-bottom: var(--coverPadding);  border-radius: var(--coverRadius);
+    border-radius: var(--coverRadius);
 }
 
 .footerBtn {
@@ -170,7 +171,10 @@ body {
 
 .footerText {
     color: var(--text-light-color);
-    padding: var(--coverPadding);
+    padding-top: var(--coverPadding);
+    padding-left: var(--coverPadding);
+    padding-bottom: 0.2rem;
+}
 
 #loader-container {
     position: fixed;
