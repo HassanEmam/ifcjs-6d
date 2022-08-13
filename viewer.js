@@ -37,6 +37,7 @@ const preselectMat = new MeshLambertMaterial({
 });
 
 // Get the current project
+console.log(currentProjectID);
 const currentProject = projects.find(
   (project) => project.id === currentProjectID
 );
