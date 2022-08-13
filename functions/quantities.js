@@ -30,26 +30,24 @@ export async function fillData(model, ifcLoader) {
     const pobj = {};
     for (const prop of pset.HasProperties) {
       const propObj = await ifc.byId(model.modelID, prop.value);
-      console.log(
-        exist(propObj, propObj.Name.value),
-        propObj.Name.value,
-        props
-      );
-      if (!exist(props, propObj.Name.value)) {
+      if (!obj[pset.Name.value][propObj.Name.value]) {
         pobj[propObj.Name.value] = {};
-        pobj[propObj.Name.value][propObj.expressID] = propObj;
+        pobj[propObj.Name.value] = propObj;
+        pobj[propObj.Name.value]["ids"] = [];
+        pobj[propObj.Name.value]["ids"].push(propObj.expressID);
       } else {
-        pobj[propObj.Name.value][propObj.expressID] = propObj;
+        pobj[propObj.Name.value] = obj[pset.Name.value][propObj.Name.value];
+        obj[pset.Name.value][propObj.Name.value]["ids"].push(propObj.expressID);
       }
-      props[propObj.Name.value] = pobj;
-      obj[pset.Name.value] = props;
     }
+    obj[pset.Name.value] = pobj;
   }
   psetsObject = obj;
+  console.log(obj, objMap);
   return obj;
 }
 
-export async function getPropertyNames(model, ifcLoader) {
+export async function getAllPropertyNames(model, ifcLoader) {
   if (!generated) {
     await fillData(model, ifcLoader);
     generated = true;
@@ -63,8 +61,4 @@ export async function getElementProperties(model, ifcLoader, id) {
     generated = true;
   }
   return objMap[id];
-}
-
-function exist(data, key) {
-  return JSON.stringify(data).includes(`"${key}":`);
 }

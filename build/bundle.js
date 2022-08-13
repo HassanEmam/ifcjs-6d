@@ -103478,30 +103478,27 @@ async function fillData(model, ifcLoader) {
     if (!obj[pset.Name.value]) {
       obj[pset.Name.value] = {};
     }
-    const props = {};
     const pobj = {};
     for (const prop of pset.HasProperties) {
       const propObj = await ifc.byId(model.modelID, prop.value);
-      console.log(
-        exist(propObj, propObj.Name.value),
-        propObj.Name.value,
-        props
-      );
-      if (!exist(props, propObj.Name.value)) {
+      if (!obj[pset.Name.value][propObj.Name.value]) {
         pobj[propObj.Name.value] = {};
-        pobj[propObj.Name.value][propObj.expressID] = propObj;
+        pobj[propObj.Name.value] = propObj;
+        pobj[propObj.Name.value]["ids"] = [];
+        pobj[propObj.Name.value]["ids"].push(propObj.expressID);
       } else {
-        pobj[propObj.Name.value][propObj.expressID] = propObj;
+        pobj[propObj.Name.value] = obj[pset.Name.value][propObj.Name.value];
+        obj[pset.Name.value][propObj.Name.value]["ids"].push(propObj.expressID);
       }
-      props[propObj.Name.value] = pobj;
-      obj[pset.Name.value] = props;
     }
+    obj[pset.Name.value] = pobj;
   }
   psetsObject = obj;
+  console.log(obj, objMap);
   return obj;
 }
 
-async function getPropertyNames(model, ifcLoader) {
+async function getAllPropertyNames(model, ifcLoader) {
   if (!generated) {
     await fillData(model, ifcLoader);
     generated = true;
@@ -103517,10 +103514,6 @@ async function getElementProperties(model, ifcLoader, id) {
   return objMap[id];
 }
 
-function exist(data, key) {
-  return JSON.stringify(data).includes(`"${key}":`);
-}
-
 // Get the current project ID from the URL parameter
 const currentUrl = window.location.href;
 const url = new URL(currentUrl);
@@ -103534,7 +103527,6 @@ const preselectMat = new MeshLambertMaterial({
 });
 
 // Get the current project
-console.log(currentProjectID);
 const currentProject = projects.find(
   (project) => project.id === currentProjectID
 );
@@ -103598,7 +103590,6 @@ let model = null;
 let spatial = null;
 async function init() {
   model = await loadIfc(projectURL, ifcLoader);
-  console.log(model);
   ifcModels.push(model);
   scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
@@ -103609,9 +103600,9 @@ async function init() {
   };
   const ulItem = document.getElementById("myUL");
   ulItem.animate({ scrollTop: ulItem.scrollHeight }, 1000);
-  const psets = await getPropertyNames(model, ifcLoader);
-  const prop = await getElementProperties(model, ifcLoader, 144);
-  console.log("PSETS", psets, prop);
+  await getAllPropertyNames(model, ifcLoader);
+  await getElementProperties(model, ifcLoader, 144);
+  // console.log("PSETS", psets, prop);
 }
 
 init();

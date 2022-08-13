@@ -22,7 +22,10 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { IFCLoader } from "web-ifc-three/IFCLoader";
 import loadIfc from "./functions/loadIfc.js";
 import createTreeMenu from "./functions/treeMenu";
-import { getElementProperties, getPropertyNames } from "./functions/quantities";
+import {
+  getElementProperties,
+  getAllPropertyNames,
+} from "./functions/quantities";
 
 // Get the current project ID from the URL parameter
 const currentUrl = window.location.href;
@@ -37,7 +40,6 @@ const preselectMat = new MeshLambertMaterial({
 });
 
 // Get the current project
-console.log(currentProjectID);
 const currentProject = projects.find(
   (project) => project.id === currentProjectID
 );
@@ -101,7 +103,6 @@ let model = null;
 let spatial = null;
 async function init() {
   model = await loadIfc(projectURL, ifcLoader);
-  console.log(model);
   ifcModels.push(model);
   scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
@@ -112,9 +113,9 @@ async function init() {
   };
   const ulItem = document.getElementById("myUL");
   ulItem.animate({ scrollTop: ulItem.scrollHeight }, 1000);
-  const psets = await getPropertyNames(model, ifcLoader);
+  const psets = await getAllPropertyNames(model, ifcLoader);
   const prop = await getElementProperties(model, ifcLoader, 144);
-  console.log("PSETS", psets, prop);
+  // console.log("PSETS", psets, prop);
 }
 
 init();
