@@ -25,6 +25,7 @@ import createTreeMenu from "./functions/treeMenu";
 import {
   getElementProperties,
   getAllPropertyNames,
+  createPropertySelection,
 } from "./functions/quantities";
 
 // Get the current project ID from the URL parameter
@@ -108,6 +109,7 @@ async function init() {
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
   createTreeMenu(spatial, ifcLoader, scene, model);
   threeCanvas.onmousemove = (event) => {
+    console.log(event);
     const found = cast(event)[0];
     highlight(found, preselectMat, preselectModel);
   };
@@ -115,6 +117,8 @@ async function init() {
   ulItem.animate({ scrollTop: ulItem.scrollHeight }, 1000);
   const psets = await getAllPropertyNames(model, ifcLoader);
   const prop = await getElementProperties(model, ifcLoader, 144);
+  const selection = await createPropertySelection(model, ifcLoader);
+  document.body.appendChild(selection);
   // console.log("PSETS", psets, prop);
 }
 
@@ -136,14 +140,17 @@ const mouse = new Vector2();
 
 function cast(event) {
   // Computes the position of the mouse on the screen
+
   const bounds = threeCanvas.getBoundingClientRect();
 
   const x1 = event.clientX - bounds.left;
-  const x2 = bounds.right - bounds.left;
+  // const x2 = bounds.right - bounds.left;
+  const x2 = renderer.domElement.clientWidth;
   mouse.x = (x1 / x2) * 2 - 1;
 
   const y1 = event.clientY - bounds.top;
-  const y2 = bounds.bottom - bounds.top;
+  // const y2 = bounds.bottom - bounds.top;
+  const y2 = renderer.domElement.clientHeight;
   mouse.y = -(y1 / y2) * 2 + 1;
 
   // Places it on the camera pointing to the mouse
