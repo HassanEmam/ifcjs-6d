@@ -105973,6 +105973,21 @@ function materializedView(model) {
     }
 }
 
+// Delete Measurements
+function deleteMeasurements(scene) {
+    let e = document.querySelectorAll(".measurementLabel");
+    e.forEach(tag => {
+        tag.innerHTML = "";
+    });
+    scene.traverse( function(child) {
+        if (child.isLineSegments) {
+            if (child.name == 'measurementLine') {
+                scene.remove(child);
+            }
+        }
+    });
+}
+
 // Keyboards keys to navigate
 const KEYCODE = {
     W: 87,
@@ -106111,13 +106126,13 @@ threeCanvas.appendChild(renderer.domElement);
 renderer.setSize(size.width, size.height, false);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 const labelRenderer = new CSS2DRenderer({
-  canvas: renderer.domElement,
+  canvas: threeCanvas,
 });
 const labelCanvas = document.getElementById("canvas-label");
 
 labelRenderer.setSize(
-  renderer.domElement.clientWidth,
-  renderer.domElement.clientHeight
+  threeCanvas.clientWidth,
+  threeCanvas.clientHeight
 );
 labelRenderer.domElement.style.position = "absolute";
 labelRenderer.domElement.style.pointerEvents = "none";
@@ -106276,6 +106291,8 @@ const animate = () => {
   // update camera-controls
   cameraControls.update(delta);
   renderer.setSize(size.width, size.height, false);
+  //render label renderer
+  labelRenderer.render(scene, camera);
 
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
@@ -106344,24 +106361,23 @@ function onClick(event) {
         const geometry = new BufferGeometry().setFromPoints(points);
         line = new LineSegments(
           geometry,
-          new LineBasicMaterial({
-            color: 0xffffff,
-            transparent: true,
-            opacity: 0.75,
+          new LineDashedMaterial({
+            color: 0x034c8c,
           })
         );
         line.name = "measurementLine";
         line.frustumCulled = false;
         scene.add(line);
 
-        const measurementDiv = document.createElement("div");
+        const measurementDiv = document.createElement(
+          'div'
+        );
         measurementDiv.className = "measurementLabel";
         measurementDiv.innerText = "0.0m";
         const measurementLabel = new CSS2DObject(measurementDiv);
         measurementLabel.position.copy(intersects[0].point);
         measurementLabels[lineId] = measurementLabel;
-        scene.add(measurementLabel);
-        console.log(scene);
+        scene.add(measurementLabels[lineId]);
         drawingLine = true;
       } else {
         //finish the line
@@ -106375,6 +106391,47 @@ function onClick(event) {
       }
     }
   }
+}
+
+document.addEventListener('mousemove', onDocumentMouseMove, false);
+function onDocumentMouseMove(event) {
+    event.preventDefault();
+
+
+    mouse.x = event.clientX / renderer.domElement.clientWidth * 2 - 1;
+    mouse.y = - (event.clientY / renderer.domElement.clientHeight) * 2 + 1;
+
+    if (drawingLine) {
+        let canvasBounds = threeCanvas.getBoundingClientRect();
+        raycaster.setFromCamera(
+            {
+                x: ((event.clientX - canvasBounds.left) / renderer.domElement.clientWidth) * 2 - 1,
+                y: -((event.clientY - canvasBounds.top) / renderer.domElement.clientHeight) * 2 + 1,
+            },
+            camera
+        );
+        const intersects = raycaster.intersectObjects(ifcModels, false);
+        if (intersects.length > 0) {
+            const positions = line.geometry.attributes.position.array;
+            const v0 = new Vector3$1(
+                positions[0],
+                positions[1],
+                positions[2]
+            );
+            const v1 = new Vector3$1(
+                intersects[0].point.x,
+                intersects[0].point.y,
+                intersects[0].point.z
+            );
+            positions[3] = intersects[0].point.x;
+            positions[4] = intersects[0].point.y;
+            positions[5] = intersects[0].point.z;
+            line.geometry.attributes.position.needsUpdate = true;
+            const distance = v0.distanceTo(v1);
+            measurementLabels[lineId].element.innerText = distance.toFixed(2) + 'm';
+            measurementLabels[lineId].position.lerpVectors(v0, v1, 0.5);
+        }
+    }
 }
 
 const fitViewButton = document.getElementById("fit-view");
@@ -106411,4 +106468,10 @@ wireframeViewButton.onclick = () => {
 const coloredViewButton = document.getElementById("colored-view");
 coloredViewButton.onclick = () => {
   materializedView(model);
+};
+
+// Remove measurements
+const deleteMeasurementsButton = document.getElementById("deleteMeasurements");
+deleteMeasurementsButton.onclick = () => {
+  deleteMeasurements(scene); 
 };
