@@ -3,6 +3,7 @@ import {
   AmbientLight,
   AxesHelper,
   DirectionalLight,
+  Line,
   GridHelper,
   PerspectiveCamera,
   Scene,
@@ -11,7 +12,11 @@ import {
   WebGLRenderer,
   MeshLambertMaterial,
 } from "three";
-
+import * as THREE from "three";
+import {
+  CSS2DRenderer,
+  CSS2DObject,
+} from "three/examples/jsm/renderers/CSS2DRenderer";
 import {
   acceleratedRaycast,
   computeBoundsTree,
@@ -82,6 +87,18 @@ renderer.setClearColor(0xffffff);
 threeCanvas.appendChild(renderer.domElement);
 renderer.setSize(size.width, size.height);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const labelRenderer = new CSS2DRenderer({
+  canvas: renderer.domElement,
+});
+const labelCanvas = document.getElementById("canvas-label");
+
+labelRenderer.setSize(
+  renderer.domElement.clientWidth,
+  renderer.domElement.clientHeight
+);
+labelRenderer.domElement.style.position = "absolute";
+labelRenderer.domElement.style.pointerEvents = "none";
+labelCanvas.appendChild(labelRenderer.domElement);
 
 //Creates grids and axes in the scene
 const grid = new GridHelper(50, 30);
@@ -109,9 +126,45 @@ async function init() {
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
   createTreeMenu(spatial, ifcLoader, scene, model);
   threeCanvas.onmousemove = (event) => {
-    console.log(event);
     const found = cast(event)[0];
     highlight(found, preselectMat, preselectModel);
+    if (drawingLine) {
+      let canvasBounds = renderer.domElement.getBoundingClientRect();
+      raycaster.setFromCamera(
+        {
+          x:
+            ((event.clientX - canvasBounds.left) /
+              renderer.domElement.clientWidth) *
+              2 -
+            1,
+          y:
+            -(
+              (event.clientY - canvasBounds.top) /
+              renderer.domElement.clientHeight
+            ) *
+              2 +
+            1,
+        },
+        camera
+      );
+      const intersects = raycaster.intersectObjects(ifcModels, false);
+      if (intersects.length > 0) {
+        const positions = line.geometry.attributes.position.array;
+        const v0 = new THREE.Vector3(positions[0], positions[1], positions[2]);
+        const v1 = new THREE.Vector3(
+          intersects[0].point.x,
+          intersects[0].point.y,
+          intersects[0].point.z
+        );
+        positions[3] = intersects[0].point.x;
+        positions[4] = intersects[0].point.y;
+        positions[5] = intersects[0].point.z;
+        line.geometry.attributes.position.needsUpdate = true;
+        const distance = v0.distanceTo(v1);
+        measurementLabels[lineId].element.innerText = distance.toFixed(2) + "m";
+        measurementLabels[lineId].position.lerpVectors(v0, v1, 0.5);
+      }
+    }
   };
   const ulItem = document.getElementById("myUL");
   ulItem.animate({ scrollTop: ulItem.scrollHeight }, 1000);
@@ -119,7 +172,6 @@ async function init() {
   const prop = await getElementProperties(model, ifcLoader, 144);
   const selection = await createPropertySelection(model, ifcLoader);
   document.body.appendChild(selection);
-  // console.log("PSETS", psets, prop);
 }
 
 init();
@@ -217,3 +269,95 @@ window.addEventListener("resize", () => {
 
   renderer.setSize(size.width, size.height);
 });
+
+let shiftDown = false;
+let lineId = 0;
+let line = Line;
+let drawingLine = false;
+const measurementLabels = {};
+
+window.addEventListener("keydown", function (event) {
+  if (event.key === "Shift") {
+    shiftDown = true;
+    controls.enabled = false;
+    renderer.domElement.style.cursor = "crosshair";
+  }
+});
+
+window.addEventListener("keyup", function (event) {
+  if (event.key === "Shift") {
+    shiftDown = false;
+    controls.enabled = true;
+    renderer.domElement.style.cursor = "pointer";
+    if (drawingLine) {
+      //delete the last line because it wasn't committed
+      scene.remove(line);
+      scene.remove(measurementLabels[lineId]);
+      drawingLine = false;
+    }
+  }
+});
+
+renderer.domElement.addEventListener("pointerdown", onClick, false);
+function onClick(event) {
+  if (shiftDown) {
+    let canvasBounds = renderer.domElement.getBoundingClientRect();
+    raycaster.setFromCamera(
+      {
+        x:
+          ((event.clientX - canvasBounds.left) /
+            renderer.domElement.clientWidth) *
+            2 -
+          1,
+        y:
+          -(
+            (event.clientY - canvasBounds.top) /
+            renderer.domElement.clientHeight
+          ) *
+            2 +
+          1,
+      },
+      camera
+    );
+    const intersects = raycaster.intersectObjects(ifcModels, false);
+    if (intersects.length > 0) {
+      if (!drawingLine) {
+        //start the line
+        const points = [];
+        points.push(intersects[0].point);
+        points.push(intersects[0].point.clone());
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        line = new THREE.LineSegments(
+          geometry,
+          new THREE.LineBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.75,
+          })
+        );
+        line.name = "measurementLine";
+        line.frustumCulled = false;
+        scene.add(line);
+
+        const measurementDiv = document.createElement("div");
+        measurementDiv.className = "measurementLabel";
+        measurementDiv.innerText = "0.0m";
+        const measurementLabel = new CSS2DObject(measurementDiv);
+        measurementLabel.position.copy(intersects[0].point);
+        measurementLabels[lineId] = measurementLabel;
+        scene.add(measurementLabel);
+        console.log(scene);
+        drawingLine = true;
+      } else {
+        //finish the line
+        const positions = line.geometry.attributes.position.array;
+        positions[3] = intersects[0].point.x;
+        positions[4] = intersects[0].point.y;
+        positions[5] = intersects[0].point.z;
+        line.geometry.attributes.position.needsUpdate = true;
+        lineId++;
+        drawingLine = false;
+      }
+    }
+  }
+}
