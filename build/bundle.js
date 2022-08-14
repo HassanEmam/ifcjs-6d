@@ -105876,7 +105876,6 @@ async function getElementProperties(model, ifcLoader, id) {
   return objMap[id];
 }
 
-<<<<<<< HEAD
 async function createPropertySelection(model, ifcLoader) {
   if (!generated) {
     await fillData(model, ifcLoader);
@@ -105898,7 +105897,6 @@ async function createPropertySelection(model, ifcLoader) {
   return selection;
 }
 
-=======
 function leftView(cameraControls, model) {
     cameraControls.setLookAt(-50, 2.7, 0, 0, 2.7, 0);
     cameraControls.fitToBox(model, true, {paddingTop:0, paddingLeft: 0, paddingBottom:0, paddingRight:0});
@@ -106026,11 +106024,15 @@ const subsetOfTHREE = {
   Raycaster,
   MathUtils: {
     DEG2RAD: MathUtils.DEG2RAD,
-    clamp: MathUtils.clamp
-  }
+    clamp: MathUtils.clamp,
+  },
 };
 
->>>>>>> 062e9d58f3992a026d39e9fbc16f6e9fa3c78c95
+let shiftDown = false;
+let lineId = 0;
+let line = Line;
+let drawingLine = false;
+const measurementLabels = {};
 // Get the current project ID from the URL parameter
 const currentUrl = window.location.href;
 const url = new URL(currentUrl);
@@ -106061,17 +106063,17 @@ const size = {
   width: threeCanvas.clientWidth,
   height: threeCanvas.clientHeight,
 };
-
-//// The Camera
-// Creates the camera (point of view of the user)
+//Creates the camera (point of view of the user)
 const camera = new PerspectiveCamera(50, size.width / size.height);
+camera.position.z = 15;
+camera.position.y = 13;
+camera.position.x = 8;
+CameraControls.install({ THREE: subsetOfTHREE });
 
-// Create Camera Controls
-CameraControls.install( { THREE: subsetOfTHREE } ); 
-const clock = new Clock();
 const cameraControls = new CameraControls(camera, threeCanvas);
 
-// Set camera position (x, y , z) + camera target (x, y, z)
+CameraControls.install({ THREE: subsetOfTHREE });
+const clock = new Clock();
 cameraControls.setLookAt(-20, 10, 20, 0, 1, 0);
 
 // Min and Max DOLLY ("Zoom")
@@ -106091,7 +106093,6 @@ cameraControls.maxPolarAngle = 0.55 * Math.PI;
 wasdKeysControls(cameraControls);
 arrowsKeysControls(cameraControls);
 
-//// Lights
 //Creates the lights of the scene
 const lightColor = 0xffffff;
 
@@ -106273,9 +106274,9 @@ const animate = () => {
   // update the time for camera-controls
   const delta = clock.getDelta();
   // update camera-controls
-  cameraControls.update( delta );
+  cameraControls.update(delta);
   renderer.setSize(size.width, size.height, false);
-  
+
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
 };
@@ -106286,20 +106287,14 @@ animate();
 window.addEventListener("resize", () => {
   camera.aspect = size.width / size.height;
   camera.updateProjectionMatrix();
-  renderer.setSize(size.width, size.height, false);
-});
 
-<<<<<<< HEAD
-let shiftDown = false;
-let lineId = 0;
-let line = Line;
-let drawingLine = false;
-const measurementLabels = {};
+  renderer.setSize(size.width, size.height);
+});
 
 window.addEventListener("keydown", function (event) {
   if (event.key === "Shift") {
     shiftDown = true;
-    controls.enabled = false;
+    cameraControls.enabled = false;
     renderer.domElement.style.cursor = "crosshair";
   }
 });
@@ -106307,7 +106302,7 @@ window.addEventListener("keydown", function (event) {
 window.addEventListener("keyup", function (event) {
   if (event.key === "Shift") {
     shiftDown = false;
-    controls.enabled = true;
+    cameraControls.enabled = true;
     renderer.domElement.style.cursor = "pointer";
     if (drawingLine) {
       //delete the last line because it wasn't committed
@@ -106381,12 +106376,10 @@ function onClick(event) {
     }
   }
 }
-=======
-//// Tools Buttons - Model functionalities
-// Fit Camera to the model bounding Box
+
 const fitViewButton = document.getElementById("fit-view");
 fitViewButton.onclick = () => {
-    fitView(cameraControls, model);
+  fitView(cameraControls, model);
 };
 // Left View Button
 const leftViewButton = document.getElementById("left-view");
@@ -106419,4 +106412,3 @@ const coloredViewButton = document.getElementById("colored-view");
 coloredViewButton.onclick = () => {
   materializedView(model);
 };
->>>>>>> 062e9d58f3992a026d39e9fbc16f6e9fa3c78c95

@@ -75,6 +75,11 @@ import {
   arrowsKeysControls,
 } from "./functions/keysControls.js";
 
+let shiftDown = false;
+let lineId = 0;
+let line = Line;
+let drawingLine = false;
+const measurementLabels = {};
 // Get the current project ID from the URL parameter
 const currentUrl = window.location.href;
 const url = new URL(currentUrl);
@@ -105,12 +110,35 @@ const size = {
   width: threeCanvas.clientWidth,
   height: threeCanvas.clientHeight,
 };
-
 //Creates the camera (point of view of the user)
-const camera = new PerspectiveCamera(75, size.width / size.height);
+const camera = new PerspectiveCamera(50, size.width / size.height);
 camera.position.z = 15;
 camera.position.y = 13;
 camera.position.x = 8;
+CameraControls.install({ THREE: subsetOfTHREE });
+
+const cameraControls = new CameraControls(camera, threeCanvas);
+
+CameraControls.install({ THREE: subsetOfTHREE });
+const clock = new Clock();
+cameraControls.setLookAt(-20, 10, 20, 0, 1, 0);
+
+// Min and Max DOLLY ("Zoom")
+cameraControls.minDistance = 3;
+cameraControls.maxDistance = 50;
+
+// Mouse controls
+cameraControls.mouseButtons.middle = CameraControls.ACTION.TRUCK;
+cameraControls.mouseButtons.right = CameraControls.ACTION.DOLLY;
+cameraControls.mouseButtons.wheel = CameraControls.ACTION.DOLLY;
+
+// Polar Angle
+cameraControls.minPolarAngle = Math.PI / 4;
+cameraControls.maxPolarAngle = 0.55 * Math.PI;
+
+// "W", "A", "S", "D" and arrows Keys Controls
+wasdKeysControls(cameraControls);
+arrowsKeysControls(cameraControls);
 
 //Creates the lights of the scene
 const lightColor = 0xffffff;
@@ -313,16 +341,10 @@ window.addEventListener("resize", () => {
   renderer.setSize(size.width, size.height);
 });
 
-let shiftDown = false;
-let lineId = 0;
-let line = Line;
-let drawingLine = false;
-const measurementLabels = {};
-
 window.addEventListener("keydown", function (event) {
   if (event.key === "Shift") {
     shiftDown = true;
-    controls.enabled = false;
+    cameraControls.enabled = false;
     renderer.domElement.style.cursor = "crosshair";
   }
 });
@@ -330,7 +352,7 @@ window.addEventListener("keydown", function (event) {
 window.addEventListener("keyup", function (event) {
   if (event.key === "Shift") {
     shiftDown = false;
-    controls.enabled = true;
+    cameraControls.enabled = true;
     renderer.domElement.style.cursor = "pointer";
     if (drawingLine) {
       //delete the last line because it wasn't committed
@@ -404,3 +426,39 @@ function onClick(event) {
     }
   }
 }
+
+const fitViewButton = document.getElementById("fit-view");
+fitViewButton.onclick = () => {
+  fitView(cameraControls, model);
+};
+// Left View Button
+const leftViewButton = document.getElementById("left-view");
+leftViewButton.onclick = () => {
+  leftView(cameraControls, model);
+};
+// Front View Button
+const frontViewButton = document.getElementById("front-view");
+frontViewButton.onclick = () => {
+  frontView(cameraControls, model);
+};
+// Right View Button
+const rightViewButton = document.getElementById("right-view");
+rightViewButton.onclick = () => {
+  rightView(cameraControls, model);
+};
+// Back View Button
+const backViewButton = document.getElementById("back-view");
+backViewButton.onclick = () => {
+  backView(cameraControls, model);
+};
+//Wireframe View
+const wireframeViewButton = document.getElementById("wireframe-view");
+wireframeViewButton.onclick = () => {
+  wireframeView(model);
+};
+
+//Materialized View
+const coloredViewButton = document.getElementById("colored-view");
+coloredViewButton.onclick = () => {
+  materializedView(model);
+};
