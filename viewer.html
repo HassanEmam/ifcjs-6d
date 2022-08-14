@@ -56,111 +56,87 @@
           <p id="progress-text">loading...</p>
         </div>  -->
 
+        <!-- Left Menu -->
+        <div class="left-menu col-12 col-md-12 col-lg-5 col-xxl-5">
+
+          <!-- Model's name -->
+          <div class="simple-card-container">
+            <div class="simple-card" id="title">Example model</div>
+          </div>
+
+          <!-- Tree Structure -->
+          <div class="ifc-tree-menu">
+            <ul id="myUL">
+              <li id="tree-root"></li>
+            </ul>
+          </div>
+
+        </div>
+
         <!-- Viewer Container -->
-        <div class="viewer-container col-12 col-md-8 col-lg-8 col-xxl-8">
+        <div class="viewer-container col-12 col-md-12 col-lg-7 col-xxl-7">
 
-        <!-- keyboard keys description -->
-        <div class="viewer-description-container container">
-          <div class="row">
-            <div class="viewer-description col-12">
-              <p>W, A, S, D keys to move</p>
-              <p>arrow keys (left, right, up, down) to rotate</p>
-            </div>
+          <!-- Model Viewer -->
+          <div id="viewer-container" class="bimViewer">
+            <div id="canvas-label"></div>
+            <div id="model-viewer-container" frameborder="0"></div>
           </div>
-            <div class="row">
-              <div id="measures-description" class="viewer-description col-12">
-                <p>Press "SHIFT" button to measure a distance between 2 elements (click + Drag + click)</p>
-              </div>
-            </div>
-        </div>
 
-        <!-- Model Viewer -->
-        <div id="viewer-container" class="bimViewer">
-          <div id="canvas-label"></div>
-          <div id="model-viewer-container" frameborder="0"></div>
-        </div>
-
-        <!-- Tools Viewer -->
-        <div class="viewer-tools-container container">
-          <div class="row">
-            <div class="tools-container col-12">
-              <div class="buttons-container ">
-                <div class="button-item">
-                  <button id="fit-view" class="tool-button" title="Fit All Model in Screen"></button>
-                </div>
-                <div class="button-item">
-                  <button id="left-view" class="tool-button" title="Left-side View"></button>
-                </div>
-                <div class="button-item">
-                  <button id="front-view" class="tool-button" title="Front-side View"></button>
-                </div>
-                <div class="button-item">
-                  <button id="right-view" class="tool-button" title="Right-side View"></button>
-                </div>
-                <div class="button-item">
-                  <button id="back-view" class="tool-button" title="Back-side View"></button>
-                </div>
-                <div class="button-item">
-                  <button id="wireframe-view" class="tool-button" title="Wireframe View"></button>
-                </div>
-                <div class="button-item">
-                  <button id="colored-view" class="tool-button" title="Textured View"></button>
-                </div>
-                <div class="button-item">
-                  <button id="deleteMeasurements" class="tool-button" title="Remove Measurements"></button>
-                </div>
-                <div class="button-item">
-                  <button id="hide-objects" class="tool-button" title="Hide Objects"></button>
+          <!-- Tools Viewer -->
+          <div class="viewer-tools-container">
+            <div>
+              <div class="tools-container col-12">
+                <div class="buttons-container ">
+                  <div class="button-item">
+                    <button id="fit-view" class="tool-button" title="Fit All Model in Screen"></button>
+                  </div>
+                  <div class="button-item">
+                    <button id="left-view" class="tool-button" title="Left-side View"></button>
+                  </div>
+                  <div class="button-item">
+                    <button id="front-view" class="tool-button" title="Front-side View"></button>
+                  </div>
+                  <div class="button-item">
+                    <button id="right-view" class="tool-button" title="Right-side View"></button>
+                  </div>
+                  <div class="button-item">
+                    <button id="back-view" class="tool-button" title="Back-side View"></button>
+                  </div>
+                  <div class="button-item">
+                    <button id="wireframe-view" class="tool-button" title="Wireframe View"></button>
+                  </div>
+                  <div class="button-item">
+                    <button id="colored-view" class="tool-button" title="Textured View"></button>
+                  </div>
+                  <div class="button-item">
+                    <button id="deleteMeasurements" class="tool-button" title="Remove Measurements"></button>
+                  </div>
+                  <div class="button-item">
+                    <button id="hide-objects" class="tool-button" title="Hide Objects"></button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
-
-      <!-- Right Menu -->
-      <div class="right-menu col-12 col-md-4 col-lg-4 col-xxl-4">
-
-        <!-- Model's name -->
-        <div class="simple-card-container">
-          <div class="simple-card" id="title">Example model</div>
-        </div>
-
-        <!-- Tree Structure -->
-        <div class="ifc-tree-menu">
-          <ul id="myUL">
-            <li id="tree-root"></li>
-          </ul>
-        </div>
-
-        <!-- Tree Structure -->
-        <!-- <div class="ifc-tree-menu col-12 col-md-8 col-lg-8 col-xxl-8 pt-3">
-          <ul id="myUL">
-            <li id="tree-root">
-              <span class="tree-caret"></span>
-              <ul class="nested">
-              </ul>
-            </li>
-          </ul>
-        </div> -->
-
-        <!-- Properties Menu -->
-        <!-- <ul class="PropertiesMenu">
-          <div class="ifc-property-menu">
-            <div class="ifc-property-item">
-              <div>Key</div>
-              <div class="ifc-property-value">Value</div>
-            </div>
-            <div id="ifc-property-menu-root"></div>
-          </div>
-        </ul> -->
+        
         </div>
       </div>
     </div>
 
     <footer>
       <div class="footerSection">
-          <h6 class="footerText"">For more information: </h6>
+          <!-- keyboard keys description -->
+          <div class="viewer-description-container container">
+            <div class="row">
+              <div class="viewer-description col-12">
+                <p>W, A, S, D keys to move</p>
+                <p>arrow keys (left, right, up, down) to rotate</p>
+                <p>Press "SHIFT" button to measure a distance between 2 elements (click + Drag + click)</p>
+              </div>
+            </div>
+          </div>
+
+          <h6 class="footerText col-12 container">For more information: </h6>
           <div class="footerButtons">
               <a class="footerBtn" href="#">Hassan Emam</a>
               <a class="footerBtn" href="https://www.linkedin.com/in/ouahbi/">Badr Ouahbi</a>

@@ -14,6 +14,8 @@
   ],
   "description": "",
   "dependencies": {
+    "camera-controls": "^1.36.1",
+    "hold-event": "^0.2.0",
     "three": "^0.135.0",
     "three-mesh-bvh": "^0.5.15",
     "web-ifc": "^0.0.35",
