@@ -171,8 +171,6 @@ body {
 
 .footerText {
     color: var(--text-light-color);
-    padding-top: var(--coverPadding);
-    padding-left: var(--coverPadding);
     padding-bottom: 0.2rem;
 }
 
@@ -325,17 +323,6 @@ color: #fff;
     font-size: 14px;
     padding: 0 0.5rem;
     border-radius: 0.5rem;
-}
-
-.right-menu {
-    display: flex;
-    flex-direction: column;
-    flex-wrap: wrap;
-    padding: 0px
-}
-
-.viewer-tools-container, .viewer-description-container {
-    width: 100%
 }
 
 .ifc-property-menu {

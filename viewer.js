@@ -8,9 +8,19 @@ import {
   PerspectiveCamera,
   Scene,
   Raycaster,
-  Vector2,
   WebGLRenderer,
   MeshLambertMaterial,
+  Clock,
+  MOUSE,
+  Vector2,
+  Vector3,
+  Vector4,
+  Quaternion,
+  Matrix4,
+  Spherical,
+  Box3,
+  Sphere,
+  MathUtils,
 } from "three";
 import * as THREE from "three";
 import {
@@ -23,7 +33,26 @@ import {
   disposeBoundsTree,
 } from "three-mesh-bvh";
 
+const subsetOfTHREE = {
+  MOUSE,
+  Vector2,
+  Vector3,
+  Vector4,
+  Quaternion,
+  Matrix4,
+  Spherical,
+  Box3,
+  Sphere,
+  Raycaster,
+  MathUtils: {
+    DEG2RAD: MathUtils.DEG2RAD,
+    clamp: MathUtils.clamp,
+  },
+};
+
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import CameraControls from "camera-controls";
+import { index } from "hold-event/dist/hold-event.min.js";
 import { IFCLoader } from "web-ifc-three/IFCLoader";
 import loadIfc from "./functions/loadIfc.js";
 import createTreeMenu from "./functions/treeMenu";
@@ -32,6 +61,19 @@ import {
   getAllPropertyNames,
   createPropertySelection,
 } from "./functions/quantities";
+import {
+  leftView,
+  frontView,
+  rightView,
+  backView,
+  fitView,
+  wireframeView,
+  materializedView,
+} from "./functions/viewsButtons.js";
+import {
+  wasdKeysControls,
+  arrowsKeysControls,
+} from "./functions/keysControls.js";
 
 // Get the current project ID from the URL parameter
 const currentUrl = window.location.href;
@@ -60,8 +102,8 @@ const scene = new Scene();
 
 //Object to store the size of the viewport
 const size = {
-  width: window.innerWidth,
-  height: window.innerHeight,
+  width: threeCanvas.clientWidth,
+  height: threeCanvas.clientHeight,
 };
 
 //Creates the camera (point of view of the user)
@@ -82,10 +124,10 @@ scene.add(directionalLight);
 
 //Sets up the renderer, fetching the canvas of the HTML
 // const threeCanvas = document.getElementById("three-canvas");
-const renderer = new WebGLRenderer();
-renderer.setClearColor(0xffffff);
+const renderer = new WebGLRenderer({ alpha: true });
+renderer.setClearColor(0xffffff, 0.2);
 threeCanvas.appendChild(renderer.domElement);
-renderer.setSize(size.width, size.height);
+renderer.setSize(size.width, size.height, false);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 const labelRenderer = new CSS2DRenderer({
   canvas: renderer.domElement,
@@ -109,10 +151,6 @@ axes.material.depthTest = false;
 axes.renderOrder = 1;
 scene.add(axes);
 
-//Creates the orbit controls (to navigate the scene)
-const controls = new OrbitControls(camera, threeCanvas);
-controls.enableDamping = true;
-controls.target.set(-2, 0, 0);
 const ifcModels = [];
 const ifcLoader = new IFCLoader();
 let model = null;
@@ -254,16 +292,21 @@ threeCanvas.ondblclick = (event) => pick(event);
 
 //Animation loop
 const animate = () => {
-  controls.update();
+  // controls.update();
+  // update the time for camera-controls
+  const delta = clock.getDelta();
+  // update camera-controls
+  cameraControls.update(delta);
+  renderer.setSize(size.width, size.height, false);
+
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
 };
 
 animate();
 
-//Adjust the viewport to the size of the browser
+// //Adjust the viewport to the size of the browser
 window.addEventListener("resize", () => {
-  (size.width = window.innerWidth), (size.height = window.innerHeight);
   camera.aspect = size.width / size.height;
   camera.updateProjectionMatrix();
 
