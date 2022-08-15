@@ -1,8 +1,9 @@
 export default function createTreeTable(ifcProject) {
+	
 	const tableRoot = document.getElementById('boq');
   removeAllChildren(tableRoot);
   populateIfcTable(tableRoot, ifcProject)
-  implementTreeLogic();
+  // implementTreeLogic();
 
 }
 
@@ -13,6 +14,7 @@ function populateIfcTable(table, ifcProject) {
 
 
 function createNode(table, node, depth, children) {
+
 	if(children.length === 0) {
 		createLeafRow(table, node, depth);
 	} else {
@@ -27,14 +29,14 @@ function createBranchRow(table, node, depth, children) {
     const row = document.createElement('tr');
     const className = 'level' + depth;
     row.classList.add(className);
-    row.classList.add('collapse');
+    row.classList.add('table-collapse');
     row.setAttribute('data-depth', depth);
 
     const dataElement = document.createElement('td');
 
     const toggle = document.createElement('span');
     toggle.classList.add('toggle');
-    toggle.classList.add('collapse');
+    toggle.classList.add('table-collapse');
 
 
     dataElement.textContent = node.type;
@@ -50,34 +52,36 @@ function createBranchRow(table, node, depth, children) {
 }
 
 
+
 function createLeafRow(table, node, depth) {
 	const row = document.createElement('tr');
     const className = 'level'+ depth;
     row.classList.add(className);
-    row.classList.add('collapse');
+    row.classList.add('table-collapse');
     row.setAttribute('data-depth', depth);
-    
+
     const element = document.createElement('td');
-    element.textContent = node.type;
+    dataElement.textContent = node.type;
     row.appendChild(element);
     const quantityType = document.createElement('td');
-    quantityType.textContent = 'Quantity Type';
+    dataQuantityType.textContent = 'Quantity Type';
     row.appendChild(quantityType);
     const quantity = document.createElement('td');
-    quantity.textContent = 'Quantity';
+    dataQuantityType.textContent = 'Quantity';
     row.appendChild(quantity);
     const unit = document.createElement('td');
-    unit.textContent = 'Unit';
+    dataQuantityType.textContent = 'Unit';
     row.appendChild(unit);
     const material = document.createElement('td');
-    material.textContent = 'Material';
-    row.appendChild(material);
+    dataQuantityType.textContent = 'Material';
+    ow.appendChild(material);
     const emissionsPerUnit = document.createElement('td');
-    emissionsPerUnit.textContent = 'Emissions per Unit';
-    row.appendChild(emissionsPerUnit);
+    dataQuantityType.textContent = 'Emissions per Unit';
+    ow.appendChild(emissionsPerUnit);
     const emissions = document.createElement('td');
-    emissions.textContent = 'Emissions';
-    row.appendChild(emissions);
+    dataQuantityType.textContent = 'Emissions';
+    ow.appendChild(emissions);
+    row.appendChild(dataQuantityType);
 	table.appendChild(row);
 
   row.onmouseenter = () => {
@@ -114,7 +118,7 @@ function implementTreeLogic() {
       var tr = el.closest('tr');
       var children = findChildren(tr);
       var subnodes = children.filter(function(element) {
-        return element.matches('.expand');
+        return element.matches('.table-expand');
       });
       subnodes.forEach(function(subnode) {
         var subnodeChildren = findChildren(subnode);
@@ -124,15 +128,15 @@ function implementTreeLogic() {
               // console.log(children);
         //children = children.not(subnodeChildren);
       });
-      if (tr.classList.contains('collapse')) {
-        tr.classList.remove('collapse');
-        tr.classList.add('expand');
+      if (tr.classList.contains('table-collapse')) {
+        tr.classList.remove('table-collapse');
+        tr.classList.add('table-expand');
         children.forEach(function(child) {
           child.style.display = 'none';
         });
       } else {
-        tr.classList.remove('expand');
-        tr.classList.add('collapse');
+        tr.classList.remove('table-expand');
+        tr.classList.add('table-collapse');
         children.forEach(function(child) {
           child.style.display = '';
         });
