@@ -105694,125 +105694,12 @@ async function loadIfc(ifcFile, ifcLoader) {
   return model;
 }
 
-let ifcLoader$1 = null;
-let scene$1 = null;
-let model$1 = null;
-
-function createTreeMenu(ifcProject, loader, lscene, lmodel) {
-  const root = document.getElementById("tree-root");
-  ifcLoader$1 = loader;
-  scene$1 = lscene;
-  model$1 = lmodel;
-  removeAllChildren(root);
-  const ifcProjectNode = createNestedChild(
-    root,
-    ifcProject);
-  ifcProject.children.forEach((child) => {
-    constructTreeMenuNode(ifcProjectNode, child);
-  });
-}
-
-function nodeToString(node) {
-  return `${node.type} - ${node.expressID}`;
-}
-
-function constructTreeMenuNode(parent, node) {
-  const children = node.children;
-  if (children.length === 0) {
-    createSimpleChild(parent, node);
-    return;
-  }
-  const nodeElement = createNestedChild(parent, node);
-  children.forEach((child) => {
-    constructTreeMenuNode(nodeElement, child);
-  });
-}
-
-function createNestedChild(parent, node) {
-  const content = nodeToString(node);
-  const root = document.createElement("li");
-  createTitle(root, content);
-  const childrenContainer = document.createElement("ul");
-  childrenContainer.classList.add("nested");
-  root.appendChild(childrenContainer);
-  parent.appendChild(root);
-  return childrenContainer;
-}
-
-function createTitle(parent, content) {
-  const title = document.createElement("span");
-  title.classList.add("caret");
-  title.onclick = () => {
-    title.parentElement.querySelector(".nested").classList.toggle("active");
-    title.classList.toggle("caret-down");
-  };
-  title.textContent = content;
-  parent.appendChild(title);
-}
-
-function createSimpleChild(parent, node) {
-  const content = nodeToString(node);
-  const childNode = document.createElement("li");
-  childNode.setAttribute("id", node.expressID);
-  childNode.classList.add("leaf-node");
-  childNode.textContent = content;
-  parent.appendChild(childNode);
-
-  childNode.onmouseenter = function () {
-    removeTmpHighlights();
-
-    childNode.classList.add("tmphighlight");
-    highlightFromSpatial(node.expressID);
-  };
-
-  childNode.onclick = function () {
-    removeHighlights();
-    childNode.classList.add("highlight");
-    highlightFromSpatial(node.expressID);
-    node.expressID;
-  };
-}
-
-function removeHighlights() {
-  const highlighted = document.getElementsByClassName("highlight");
-  for (let h of highlighted) {
-    if (h) {
-      h.classList.remove("highlight");
-    }
-  }
-}
-
-function removeTmpHighlights() {
-  const highlighted = document.getElementsByClassName("tmphighlight");
-  for (let h of highlighted) {
-    if (h) {
-      h.classList.remove("tmphighlight");
-    }
-  }
-}
-
-function removeAllChildren(element) {
-  while (element.firstChild) {
-    element.removeChild(element.firstChild);
-  }
-}
-
-const preselectMat$1 = new MeshLambertMaterial({
+new MeshLambertMaterial({
   transparent: true,
   opacity: 0.9,
   color: 0xff88ff,
   depthTest: true,
 });
-
-function highlightFromSpatial(id) {
-  ifcLoader$1.ifcManager.createSubset({
-    modelID: model$1.modelID,
-    ids: [id],
-    material: preselectMat$1,
-    scene: scene$1,
-    removePrevious: true,
-  });
-}
 
 let psetsObject = {};
 let objMap = {};
@@ -106026,6 +105913,178 @@ function arrowsKeysControls(cameraControls) {
     downKey.addEventListener ( 'holding', function( event ) { cameraControls.rotate( 0,   0.05 * MathUtils.DEG2RAD * event.deltaTime, true ); } );
 }
 
+function createTreeTable(ifcProject) {
+	const tableRoot = document.getElementById('boq');
+  removeAllChildren(tableRoot);
+  populateIfcTable(tableRoot, ifcProject);
+  implementTreeLogic();
+
+}
+
+function populateIfcTable(table, ifcProject) {
+    const initialDepth = 0;
+    createNode(table, ifcProject, initialDepth, ifcProject.children);
+}
+
+
+function createNode(table, node, depth, children) {
+	if(children.length === 0) {
+		createLeafRow(table, node, depth);
+	} else {
+		// If there are multiple categories, group them together
+		const grouped = groupCategories(children);
+		createBranchRow(table, node, depth, grouped);
+	}
+}
+
+function createBranchRow(table, node, depth, children) {
+
+    const row = document.createElement('tr');
+    const className = 'level' + depth;
+    row.classList.add(className);
+    row.classList.add('collapse');
+    row.setAttribute('data-depth', depth);
+
+    const dataElement = document.createElement('td');
+
+    const toggle = document.createElement('span');
+    toggle.classList.add('toggle');
+    toggle.classList.add('collapse');
+
+
+    dataElement.textContent = node.type;
+    dataElement.insertBefore(toggle, dataElement.firstChild);
+
+    row.appendChild(dataElement);
+	  table.appendChild(row); 
+
+    depth++;
+
+	children.forEach(child => createNode(table, child, depth, child.children ));
+
+}
+
+
+function createLeafRow(table, node, depth) {
+	const row = document.createElement('tr');
+    const className = 'level'+ depth;
+    row.classList.add(className);
+    row.classList.add('collapse');
+    row.setAttribute('data-depth', depth);
+    
+    const element = document.createElement('td');
+    element.textContent = node.type;
+    row.appendChild(element);
+    const quantityType = document.createElement('td');
+    quantityType.textContent = 'Quantity Type';
+    row.appendChild(quantityType);
+    const quantity = document.createElement('td');
+    quantity.textContent = 'Quantity';
+    row.appendChild(quantity);
+    const unit = document.createElement('td');
+    unit.textContent = 'Unit';
+    row.appendChild(unit);
+    const material = document.createElement('td');
+    material.textContent = 'Material';
+    row.appendChild(material);
+    const emissionsPerUnit = document.createElement('td');
+    emissionsPerUnit.textContent = 'Emissions per Unit';
+    row.appendChild(emissionsPerUnit);
+    const emissions = document.createElement('td');
+    emissions.textContent = 'Emissions';
+    row.appendChild(emissions);
+	table.appendChild(row);
+
+  row.onmouseenter = () => {
+    viewer.IFC.selector.prepickIfcItemsByID(0, [node.expressID]);
+  };
+
+  row.onclick = async () => {
+    viewer.IFC.selector.pickIfcItemsByID(0, [node.expressID]);
+  };
+
+}
+
+function groupCategories(children) {
+	const types = children.map(child => child.type);
+	const uniqueTypes = new Set(types);
+	if (uniqueTypes.size > 1) {
+		const uniquesArray = Array.from(uniqueTypes);
+		children = uniquesArray.map(type => {
+			return {
+				expressID: -1,
+				type: type + 'S',
+				children: children.filter(child => child.type.includes(type)),
+			};
+		});
+	}
+	return children;
+}
+
+//Collapsable table logic
+function implementTreeLogic() {
+[].forEach.call(document.querySelectorAll('#boq .toggle'), function(el) {
+    el.addEventListener('click', function() {
+      var el = this;
+      var tr = el.closest('tr');
+      var children = findChildren(tr);
+      var subnodes = children.filter(function(element) {
+        return element.matches('.expand');
+      });
+      subnodes.forEach(function(subnode) {
+        var subnodeChildren = findChildren(subnode);
+        children = children.filter(function(element) {
+            return !subnodeChildren.includes(element);
+        });
+              // console.log(children);
+        //children = children.not(subnodeChildren);
+      });
+      if (tr.classList.contains('collapse')) {
+        tr.classList.remove('collapse');
+        tr.classList.add('expand');
+        children.forEach(function(child) {
+          child.style.display = 'none';
+        });
+      } else {
+        tr.classList.remove('expand');
+        tr.classList.add('collapse');
+        children.forEach(function(child) {
+          child.style.display = '';
+        });
+      }
+    });
+  });}
+  
+  var findChildren = function(tr) {
+    var depth = tr.dataset.depth;
+    var elements = [...document.querySelectorAll('#boq tr')].filter(function(element) {
+      return element.dataset.depth <= depth;
+    });
+    var next = nextUntil(tr, elements);
+    return next;
+  };
+  
+  var nextUntil = function(elem, elements, filter) {
+    var siblings = [];
+    elem = elem.nextElementSibling;
+    while (elem) {
+      if (elements.includes(elem)) break;
+      if (filter && !elem.matches(filter)) {
+        elem = elem.nextElementSibling;
+        continue;
+      }
+      siblings.push(elem);
+      elem = elem.nextElementSibling;
+    }
+    return siblings;
+  };
+
+  function removeAllChildren(element) {
+    while (element.firstChild) {
+        element.removeChild(element.firstChild);
+    }
+  }
+
 const subsetOfTHREE = {
   MOUSE,
   Vector2: Vector2$1,
@@ -106158,7 +106217,11 @@ async function init() {
   ifcModels.push(model);
   scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
-  createTreeMenu(spatial, ifcLoader, scene, model);
+
+  createTreeTable(spatial);
+
+  // createTreeMenu(spatial, ifcLoader, scene, model);
+
   threeCanvas.onmousemove = (event) => {
     const found = cast(event)[0];
     highlight(found, preselectMat, preselectModel);
@@ -106200,8 +106263,8 @@ async function init() {
       }
     }
   };
-  const ulItem = document.getElementById("myUL");
-  ulItem.animate({ scrollTop: ulItem.scrollHeight }, 1000);
+  // const ulItem = document.getElementById("myUL");
+  // ulItem.animate({ scrollTop: ulItem.scrollHeight }, 1000);
   await getAllPropertyNames(model, ifcLoader);
   await getElementProperties(model, ifcLoader, 144);
   const selection = await createPropertySelection(model, ifcLoader);

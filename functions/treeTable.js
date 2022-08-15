@@ -1,5 +1,4 @@
-export function createTreeTable(ifcProject) {
-	
+export default function createTreeTable(ifcProject) {
 	const tableRoot = document.getElementById('boq');
   removeAllChildren(tableRoot);
   populateIfcTable(tableRoot, ifcProject)
@@ -14,7 +13,6 @@ function populateIfcTable(table, ifcProject) {
 
 
 function createNode(table, node, depth, children) {
-
 	if(children.length === 0) {
 		createLeafRow(table, node, depth);
 	} else {
@@ -34,7 +32,6 @@ function createBranchRow(table, node, depth, children) {
 
     const dataElement = document.createElement('td');
 
-
     const toggle = document.createElement('span');
     toggle.classList.add('toggle');
     toggle.classList.add('collapse');
@@ -46,12 +43,11 @@ function createBranchRow(table, node, depth, children) {
     row.appendChild(dataElement);
 	  table.appendChild(row); 
 
-    depth = depth+1;
+    depth++;
 
 	children.forEach(child => createNode(table, child, depth, child.children ));
 
 }
-
 
 
 function createLeafRow(table, node, depth) {
@@ -60,29 +56,28 @@ function createLeafRow(table, node, depth) {
     row.classList.add(className);
     row.classList.add('collapse');
     row.setAttribute('data-depth', depth);
-
+    
     const element = document.createElement('td');
-    dataElement.textContent = node.type;
+    element.textContent = node.type;
     row.appendChild(element);
     const quantityType = document.createElement('td');
-    dataQuantityType.textContent = 'Quantity Type';
+    quantityType.textContent = 'Quantity Type';
     row.appendChild(quantityType);
     const quantity = document.createElement('td');
-    dataQuantityType.textContent = 'Quantity';
+    quantity.textContent = 'Quantity';
     row.appendChild(quantity);
     const unit = document.createElement('td');
-    dataQuantityType.textContent = 'Unit';
+    unit.textContent = 'Unit';
     row.appendChild(unit);
     const material = document.createElement('td');
-    dataQuantityType.textContent = 'Material';
-    ow.appendChild(material);
+    material.textContent = 'Material';
+    row.appendChild(material);
     const emissionsPerUnit = document.createElement('td');
-    dataQuantityType.textContent = 'Emissions per Unit';
-    ow.appendChild(emissionsPerUnit);
+    emissionsPerUnit.textContent = 'Emissions per Unit';
+    row.appendChild(emissionsPerUnit);
     const emissions = document.createElement('td');
-    dataQuantityType.textContent = 'Emissions';
-    ow.appendChild(emissions);
-    row.appendChild(dataQuantityType);
+    emissions.textContent = 'Emissions';
+    row.appendChild(emissions);
 	table.appendChild(row);
 
   row.onmouseenter = () => {
