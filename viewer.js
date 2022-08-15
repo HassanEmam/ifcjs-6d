@@ -79,6 +79,7 @@ import {
   arrowsKeysControls,
 } from "./functions/keysControls.js";
 import { IFCBUILDINGSTOREY } from "web-ifc";
+import createTreeTable from "./functions/treeTable.js";
 
 let shiftDown = false
 let lineId = 0
@@ -195,7 +196,11 @@ async function init() {
   ifcModels.push(model);
   scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
-  createTreeMenu(spatial, ifcLoader, scene, model);
+
+  createTreeTable(spatial);
+
+  // createTreeMenu(spatial, ifcLoader, scene, model);
+
   threeCanvas.onmousemove = (event) => {
     const found = cast(event)[0];
     highlight(found, preselectMat, preselectModel);
@@ -237,8 +242,8 @@ async function init() {
       }
     }
   };
-  const ulItem = document.getElementById("myUL");
-  ulItem.animate({ scrollTop: ulItem.scrollHeight }, 1000);
+  // const ulItem = document.getElementById("myUL");
+  // ulItem.animate({ scrollTop: ulItem.scrollHeight }, 1000);
   const psets = await getAllPropertyNames(model, ifcLoader);
   const prop = await getElementProperties(model, ifcLoader, 144);
   const selection = await createPropertySelection(model, ifcLoader);
@@ -515,3 +520,4 @@ const deleteMeasurementsButton = document.getElementById("deleteMeasurements");
 deleteMeasurementsButton.onclick = () => {
   deleteMeasurements(scene) 
 }
+

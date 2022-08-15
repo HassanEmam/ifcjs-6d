@@ -576,3 +576,77 @@ table {
   padding: 0 0.5rem;
   border-radius: 0.5rem;
 }
+
+/* Tree table */
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+table td {
+  border: 1px solid #eee;
+  padding: 0.25rem;
+}
+
+.level1 td:first-child {
+  padding-left: 15px;
+}
+
+.level2 td:first-child {
+  padding-left: 30px;
+}
+
+.level3 td:first-child {
+  padding-left: 45px;
+}
+
+.level4 td:first-child {
+  padding-left: 60px;
+}
+
+.level5 td:first-child {
+  padding-left: 75px;
+}
+
+.level6 td:first-child {
+  padding-left: 90px;
+}
+
+.level7 td:first-child {
+  padding-left: 105px;
+}
+
+.table-collapse .toggle {
+	width: 0;
+	height: 0;
+	border-left: .25rem solid transparent;
+	border-right: .25rem solid transparent;
+	border-top: .50rem solid var(--dark-blue);
+}
+
+.table-expand .toggle {
+	width: 0;
+	height: 0;
+	border-top: .25rem solid transparent;
+	border-left: .5rem solid var(--dark-blue);
+	border-bottom: .25rem solid transparent;
+}
+
+.toggle {
+  height: 9px;
+  width: 9px;
+  display: inline-block;
+  margin: .2rem;
+}
+
+tr:hover {
+  background-color: #d6eeee;
+}
+
+#boq {
+  width: 100%;
+  margin: 1rem;
+}
+
+

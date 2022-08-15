@@ -1,9 +1,9 @@
-export function createTreeTable(ifcProject) {
+export default function createTreeTable(ifcProject) {
 	
 	const tableRoot = document.getElementById('boq');
   removeAllChildren(tableRoot);
   populateIfcTable(tableRoot, ifcProject)
-  implementTreeLogic();
+  // implementTreeLogic();
 
 }
 
@@ -29,15 +29,14 @@ function createBranchRow(table, node, depth, children) {
     const row = document.createElement('tr');
     const className = 'level' + depth;
     row.classList.add(className);
-    row.classList.add('collapse');
+    row.classList.add('table-collapse');
     row.setAttribute('data-depth', depth);
 
     const dataElement = document.createElement('td');
 
-
     const toggle = document.createElement('span');
     toggle.classList.add('toggle');
-    toggle.classList.add('collapse');
+    toggle.classList.add('table-collapse');
 
 
     dataElement.textContent = node.type;
@@ -46,7 +45,7 @@ function createBranchRow(table, node, depth, children) {
     row.appendChild(dataElement);
 	  table.appendChild(row); 
 
-    depth = depth+1;
+    depth++;
 
 	children.forEach(child => createNode(table, child, depth, child.children ));
 
@@ -58,7 +57,7 @@ function createLeafRow(table, node, depth) {
 	const row = document.createElement('tr');
     const className = 'level'+ depth;
     row.classList.add(className);
-    row.classList.add('collapse');
+    row.classList.add('table-collapse');
     row.setAttribute('data-depth', depth);
 
     const element = document.createElement('td');
@@ -119,7 +118,7 @@ function implementTreeLogic() {
       var tr = el.closest('tr');
       var children = findChildren(tr);
       var subnodes = children.filter(function(element) {
-        return element.matches('.expand');
+        return element.matches('.table-expand');
       });
       subnodes.forEach(function(subnode) {
         var subnodeChildren = findChildren(subnode);
@@ -129,15 +128,15 @@ function implementTreeLogic() {
               // console.log(children);
         //children = children.not(subnodeChildren);
       });
-      if (tr.classList.contains('collapse')) {
-        tr.classList.remove('collapse');
-        tr.classList.add('expand');
+      if (tr.classList.contains('table-collapse')) {
+        tr.classList.remove('table-collapse');
+        tr.classList.add('table-expand');
         children.forEach(function(child) {
           child.style.display = 'none';
         });
       } else {
-        tr.classList.remove('expand');
-        tr.classList.add('collapse');
+        tr.classList.remove('table-expand');
+        tr.classList.add('table-collapse');
         children.forEach(function(child) {
           child.style.display = '';
         });
