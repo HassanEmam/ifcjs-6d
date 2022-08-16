@@ -1,3 +1,6 @@
+// import { ifcLoader, model } from "./loadIfc";
+// import { createPropertySelection } from "./quantities";
+
 export default function createTreeTable(ifcProject) {
 	
 	const tableRoot = document.getElementById('boq');
@@ -9,7 +12,35 @@ export default function createTreeTable(ifcProject) {
 
 function populateIfcTable(table, ifcProject) {
     const initialDepth = 0;
+    createHeader(table);
     createNode(table, ifcProject, initialDepth, ifcProject.children);
+}
+
+function createHeader(table){
+  const row = document.createElement('tr');
+  const element = document.createElement('th');
+  element.textContent = 'IFC Element';
+  row.appendChild(element);
+  const quantityType = document.createElement('th');
+  quantityType.textContent = 'Quantity Type';
+  row.appendChild(quantityType);
+  const quantity = document.createElement('th');
+  quantity.textContent = 'Quantity';
+  row.appendChild(quantity);
+  const unit = document.createElement('th');
+  unit.textContent = 'Unit';
+  row.appendChild(unit);
+  const material = document.createElement('th');
+  material.textContent = 'Material';
+  row.appendChild(material);
+  const emissionsPerUnit = document.createElement('th');
+  emissionsPerUnit.textContent = 'Emissions per Unit';
+  row.appendChild(emissionsPerUnit);
+  const emissions = document.createElement('th');
+  emissions.textContent = 'Emissions';
+  row.appendChild(emissions);
+
+  table.appendChild(row);
 }
 
 
@@ -32,17 +63,18 @@ function createBranchRow(table, node, depth, children) {
     row.classList.add('table-collapse');
     row.setAttribute('data-depth', depth);
 
-    const dataElement = document.createElement('td');
-
+    const element = document.createElement('td');
+    element.colSpan = 7;
+    element.classList.add('data-ifc-element');
     const toggle = document.createElement('span');
     toggle.classList.add('toggle');
     toggle.classList.add('table-collapse');
 
 
-    dataElement.textContent = node.type;
-    dataElement.insertBefore(toggle, dataElement.firstChild);
+    element.textContent = node.type;
+    element.insertBefore(toggle, element.firstChild);
 
-    row.appendChild(dataElement);
+    row.appendChild(element);
 	  table.appendChild(row); 
 
     depth++;
@@ -61,35 +93,49 @@ function createLeafRow(table, node, depth) {
     row.setAttribute('data-depth', depth);
 
     const element = document.createElement('td');
+    element.classList.add('data-ifc-element');
     element.textContent = node.type;
     row.appendChild(element);
+
     const quantityType = document.createElement('td');
-    quantityType.textContent = 'Quantity Type';
+    quantityType.textContent = 'Quantity Type'; //Add dropdown function here
     row.appendChild(quantityType);
-    const quantity = document.createElement('td');
-    quantity.textContent = 'Quantity';
-    row.appendChild(quantity);
+
+    const dataQuantity = document.createElement('td');
+    const quantity = 10.0; //Add quantity function here
+    dataQuantity.textContent = quantity;
+    row.appendChild(dataQuantity);
+
     const unit = document.createElement('td');
-    unit.textContent = 'Unit';
+    unit.textContent = 'm2'; //Add unit function
     row.appendChild(unit);
+
     const material = document.createElement('td');
     material.textContent = 'Material';
     row.appendChild(material);
-    const emissionsPerUnit = document.createElement('td');
-    emissionsPerUnit.textContent = 'Emissions per Unit';
-    row.appendChild(emissionsPerUnit);
-    const emissions = document.createElement('td');
-    emissions.textContent = 'Emissions';
-    row.appendChild(emissions);
+    
+    const emmisionsPerUnit = 20; //Add emissions function
+    const dataEmissionsPerUnit = document.createElement('td');
+    dataEmissionsPerUnit.textContent = emmisionsPerUnit;
+    row.appendChild(dataEmissionsPerUnit);
+
+    const emissions = quantity * emmisionsPerUnit;
+    const dataEmissions = document.createElement('td');
+    dataEmissions.textContent = emissions;
+    row.appendChild(dataEmissions);
+
+    row.style.fontWeight = 'normal';
 	table.appendChild(row);
 
-  row.onmouseenter = () => {
-    viewer.IFC.selector.prepickIfcItemsByID(0, [node.expressID]);
-  }
 
-  row.onclick = async () => {
-    viewer.IFC.selector.pickIfcItemsByID(0, [node.expressID]);
-  }
+//
+  // row.onmouseenter = () => {
+  //   viewer.IFC.selector.prepickIfcItemsByID(0, [node.expressID]);
+  // }
+
+  // row.onclick = async () => {
+  //   viewer.IFC.selector.pickIfcItemsByID(0, [node.expressID]);
+  // }
 
 }
 
