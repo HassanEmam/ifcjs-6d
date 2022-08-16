@@ -108,6 +108,9 @@ title.innerText = currentProject.name;
 // get the canvas container
 const threeCanvas = document.getElementById("model-viewer-container");
 
+//temporarily hide model (for development only)
+// threeCanvas.style.display = 'none';
+
 //Creates the Three.js scene
 const scene = new Scene();
 
@@ -186,8 +189,9 @@ axes.renderOrder = 1;
 scene.add(axes);
 
 const ifcModels = [];
-const ifcLoader = new IFCLoader();
+
 let model = null;
+const ifcLoader = new IFCLoader();
 
 // create spatial tree
 let spatial = null;
@@ -196,10 +200,7 @@ async function init() {
   ifcModels.push(model);
   scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
-
   createTreeTable(spatial);
-
-  // createTreeMenu(spatial, ifcLoader, scene, model);
 
   threeCanvas.onmousemove = (event) => {
     const found = cast(event)[0];
