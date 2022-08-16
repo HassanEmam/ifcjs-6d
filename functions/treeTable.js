@@ -3,7 +3,7 @@ export default function createTreeTable(ifcProject) {
 	const tableRoot = document.getElementById('boq');
   removeAllChildren(tableRoot);
   populateIfcTable(tableRoot, ifcProject)
-  // implementTreeLogic();
+  implementTreeLogic();
 
 }
 
@@ -61,27 +61,26 @@ function createLeafRow(table, node, depth) {
     row.setAttribute('data-depth', depth);
 
     const element = document.createElement('td');
-    dataElement.textContent = node.type;
+    element.textContent = node.type;
     row.appendChild(element);
     const quantityType = document.createElement('td');
-    dataQuantityType.textContent = 'Quantity Type';
+    quantityType.textContent = 'Quantity Type';
     row.appendChild(quantityType);
     const quantity = document.createElement('td');
-    dataQuantityType.textContent = 'Quantity';
+    quantity.textContent = 'Quantity';
     row.appendChild(quantity);
     const unit = document.createElement('td');
-    dataQuantityType.textContent = 'Unit';
+    unit.textContent = 'Unit';
     row.appendChild(unit);
     const material = document.createElement('td');
-    dataQuantityType.textContent = 'Material';
-    ow.appendChild(material);
+    material.textContent = 'Material';
+    row.appendChild(material);
     const emissionsPerUnit = document.createElement('td');
-    dataQuantityType.textContent = 'Emissions per Unit';
-    ow.appendChild(emissionsPerUnit);
+    emissionsPerUnit.textContent = 'Emissions per Unit';
+    row.appendChild(emissionsPerUnit);
     const emissions = document.createElement('td');
-    dataQuantityType.textContent = 'Emissions';
-    ow.appendChild(emissions);
-    row.appendChild(dataQuantityType);
+    emissions.textContent = 'Emissions';
+    row.appendChild(emissions);
 	table.appendChild(row);
 
   row.onmouseenter = () => {
