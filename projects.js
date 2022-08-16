@@ -24,4 +24,14 @@ export const projects = [
     id: "05",
     url: "./ifc/05.ifc",
   },
+  {
+    name: "Model 6",
+    id: "06",
+    url: "./ifc/06.ifc",
+  },
+  {
+    name: "Model 7",
+    id: "07",
+    url: "./ifc/07.ifc",
+  },
 ];
