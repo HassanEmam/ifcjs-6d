@@ -45,6 +45,7 @@ body {
 .projectCard {
     position: relative;
     overflow: hidden;
+    border-radius: var(--coverRadius);
 }
 
 .projectCard a {
