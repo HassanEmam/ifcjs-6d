@@ -133,6 +133,19 @@ body {
     cursor: pointer;
 }
 
+#file-input {
+    display: none;
+}
+
+#projectCard-input {
+    background-color: var(--dark-blue);
+    height: var(--coverHeight); 
+}
+
+#projectCard-input-title {
+    font-size: 22px;
+}
+
 .viewerPage {
     background-color: var(--very-light-transparent-blue);
     overflow-y: auto;

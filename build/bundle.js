@@ -1,5 +1,10 @@
 const projects = [
   {
+    name: "3D Model",
+    id: "input-ifc",
+    url: "./ifc/01.ifc",
+  },
+  {
     name: "Model 1",
     id: "01",
     url: "./ifc/01.ifc",
@@ -106168,10 +106173,8 @@ let drawingLine = false;
 const measurementLabels = {};
 // Get the current project ID from the URL parameter
 const currentUrl = window.location.href;
-console.log(currentUrl);
 const url = new URL(currentUrl);
 const currentProjectID = url.searchParams.get("id");
-console.log(currentProjectID);
 let preselectModel = { id: -1 };
 const preselectMat = new MeshLambertMaterial({
   transparent: true,
@@ -106184,7 +106187,6 @@ const preselectMat = new MeshLambertMaterial({
 const currentProject = projects.find(
   (project) => project.id === currentProjectID
 );
-console.log(currentProject);
 const projectURL = currentProject.url;
 const title = document.getElementById("title");
 title.innerText = currentProject.name;

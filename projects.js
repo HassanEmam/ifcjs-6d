@@ -1,5 +1,10 @@
 export const projects = [
   {
+    name: "3D Model",
+    id: "input-ifc",
+    url: "./ifc/01.ifc",
+  },
+  {
     name: "Model 1",
     id: "01",
     url: "./ifc/01.ifc",

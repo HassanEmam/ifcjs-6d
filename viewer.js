@@ -521,4 +521,3 @@ const deleteMeasurementsButton = document.getElementById("deleteMeasurements");
 deleteMeasurementsButton.onclick = () => {
   deleteMeasurements(scene) 
 }
-
