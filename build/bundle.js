@@ -50524,14 +50524,6 @@ function createBoundingSphere(object3d, out) {
     return boundingSphere;
 }
 
-/*!
- * hold-event
- * https://github.com/yomotsu/hold-event
- * (c) 2020 @yomotsu
- * Released under the MIT License.
- */
-(function(global,factory){typeof exports==="object"&&typeof module!=="undefined"?factory(exports):typeof define==="function"&&define.amd?define(["exports"],factory):(global=typeof globalThis!=="undefined"?globalThis:global||self,factory(global.holdEvent={}));})(undefined,(function(exports){exports.HOLD_EVENT_TYPE=void 0;(function(HOLD_EVENT_TYPE){HOLD_EVENT_TYPE["HOLD_START"]="holdStart";HOLD_EVENT_TYPE["HOLD_END"]="holdEnd";HOLD_EVENT_TYPE["HOLDING"]="holding";})(exports.HOLD_EVENT_TYPE||(exports.HOLD_EVENT_TYPE={}));class EventDispatcher{constructor(){this._listeners={};}addEventListener(type,listener){const listeners=this._listeners;if(listeners[type]===undefined)listeners[type]=[];if(listeners[type].indexOf(listener)===-1)listeners[type].push(listener);}removeEventListener(type,listener){const listeners=this._listeners;const listenerArray=listeners[type];if(listenerArray!==undefined){const index=listenerArray.indexOf(listener);if(index!==-1)listenerArray.splice(index,1);}}dispatchEvent(event){const listeners=this._listeners;const listenerArray=listeners[event.type];if(listenerArray!==undefined){event.target=this;const array=listenerArray.slice(0);for(let i=0,l=array.length;i<l;i++){array[i].call(this,event);}}}}class Hold extends EventDispatcher{constructor(holdIntervalDelay){super();this._enabled=true;this._holding=false;this._intervalId=-1;this._deltaTime=0;this._elapsedTime=0;this._lastTime=0;this._holdStart=event=>{if(!this._enabled)return;if(this._holding)return;this._deltaTime=0;this._elapsedTime=0;this._lastTime=performance.now();this.dispatchEvent({type:exports.HOLD_EVENT_TYPE.HOLD_START,deltaTime:this._deltaTime,elapsedTime:this._elapsedTime,originalEvent:event});this._holding=true;const cb=()=>{this._intervalId=!!this.holdIntervalDelay?window.setTimeout(cb,this.holdIntervalDelay):window.requestAnimationFrame(cb);const now=performance.now();this._deltaTime=now-this._lastTime;this._elapsedTime+=this._deltaTime;this._lastTime=performance.now();this.dispatchEvent({type:exports.HOLD_EVENT_TYPE.HOLDING,deltaTime:this._deltaTime,elapsedTime:this._elapsedTime,originalEvent:event});};this._intervalId=!!this.holdIntervalDelay?window.setTimeout(cb,this.holdIntervalDelay):window.requestAnimationFrame(cb);};this._holdEnd=event=>{if(!this._enabled)return;if(!this._holding)return;const now=performance.now();this._deltaTime=now-this._lastTime;this._elapsedTime+=this._deltaTime;this._lastTime=performance.now();this.dispatchEvent({type:exports.HOLD_EVENT_TYPE.HOLD_END,deltaTime:this._deltaTime,elapsedTime:this._elapsedTime,originalEvent:event});window.clearTimeout(this._intervalId);window.cancelAnimationFrame(this._intervalId);this._holding=false;};this.holdIntervalDelay=holdIntervalDelay;}get enabled(){return this._enabled}set enabled(enabled){if(this._enabled===enabled)return;this._enabled=enabled;if(!this._enabled)this._holdEnd();}}class ElementHold extends Hold{constructor(element,holdIntervalDelay){super(holdIntervalDelay);this._holdStart=this._holdStart.bind(this);this._holdEnd=this._holdEnd.bind(this);const onPointerDown=this._holdStart;const onPointerUp=this._holdEnd;element.addEventListener("mousedown",onPointerDown);document.addEventListener("mouseup",onPointerUp);window.addEventListener("blur",this._holdEnd);}}class KeyboardKeyHold extends Hold{constructor(keyCode,holdIntervalDelay){super(holdIntervalDelay);this._holdStart=this._holdStart.bind(this);this._holdEnd=this._holdEnd.bind(this);const onKeydown=event=>{if(isInputEvent(event))return;if(event.keyCode!==keyCode)return;this._holdStart(event);};const onKeyup=event=>{if(event.keyCode!==keyCode)return;this._holdEnd(event);};document.addEventListener("keydown",onKeydown);document.addEventListener("keyup",onKeyup);window.addEventListener("blur",this._holdEnd);}}function isInputEvent(event){const target=event.target;return target.tagName==="INPUT"||target.tagName==="SELECT"||target.tagName==="TEXTAREA"||target.isContentEditable}exports.ElementHold=ElementHold;exports.KeyboardKeyHold=KeyboardKeyHold;Object.defineProperty(exports,"__esModule",{value:true});}));
-
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
@@ -105973,42 +105965,66 @@ function materializedView(model) {
     }
 }
 
+/*!
+ * hold-event
+ * https://github.com/yomotsu/hold-event
+ * (c) 2020 @yomotsu
+ * Released under the MIT License.
+ */
+(function(global,factory){typeof exports==="object"&&typeof module!=="undefined"?factory(exports):typeof define==="function"&&define.amd?define(["exports"],factory):(global=typeof globalThis!=="undefined"?globalThis:global||self,factory(global.holdEvent={}));})(undefined,(function(exports){exports.HOLD_EVENT_TYPE=void 0;(function(HOLD_EVENT_TYPE){HOLD_EVENT_TYPE["HOLD_START"]="holdStart";HOLD_EVENT_TYPE["HOLD_END"]="holdEnd";HOLD_EVENT_TYPE["HOLDING"]="holding";})(exports.HOLD_EVENT_TYPE||(exports.HOLD_EVENT_TYPE={}));class EventDispatcher{constructor(){this._listeners={};}addEventListener(type,listener){const listeners=this._listeners;if(listeners[type]===undefined)listeners[type]=[];if(listeners[type].indexOf(listener)===-1)listeners[type].push(listener);}removeEventListener(type,listener){const listeners=this._listeners;const listenerArray=listeners[type];if(listenerArray!==undefined){const index=listenerArray.indexOf(listener);if(index!==-1)listenerArray.splice(index,1);}}dispatchEvent(event){const listeners=this._listeners;const listenerArray=listeners[event.type];if(listenerArray!==undefined){event.target=this;const array=listenerArray.slice(0);for(let i=0,l=array.length;i<l;i++){array[i].call(this,event);}}}}class Hold extends EventDispatcher{constructor(holdIntervalDelay){super();this._enabled=true;this._holding=false;this._intervalId=-1;this._deltaTime=0;this._elapsedTime=0;this._lastTime=0;this._holdStart=event=>{if(!this._enabled)return;if(this._holding)return;this._deltaTime=0;this._elapsedTime=0;this._lastTime=performance.now();this.dispatchEvent({type:exports.HOLD_EVENT_TYPE.HOLD_START,deltaTime:this._deltaTime,elapsedTime:this._elapsedTime,originalEvent:event});this._holding=true;const cb=()=>{this._intervalId=!!this.holdIntervalDelay?window.setTimeout(cb,this.holdIntervalDelay):window.requestAnimationFrame(cb);const now=performance.now();this._deltaTime=now-this._lastTime;this._elapsedTime+=this._deltaTime;this._lastTime=performance.now();this.dispatchEvent({type:exports.HOLD_EVENT_TYPE.HOLDING,deltaTime:this._deltaTime,elapsedTime:this._elapsedTime,originalEvent:event});};this._intervalId=!!this.holdIntervalDelay?window.setTimeout(cb,this.holdIntervalDelay):window.requestAnimationFrame(cb);};this._holdEnd=event=>{if(!this._enabled)return;if(!this._holding)return;const now=performance.now();this._deltaTime=now-this._lastTime;this._elapsedTime+=this._deltaTime;this._lastTime=performance.now();this.dispatchEvent({type:exports.HOLD_EVENT_TYPE.HOLD_END,deltaTime:this._deltaTime,elapsedTime:this._elapsedTime,originalEvent:event});window.clearTimeout(this._intervalId);window.cancelAnimationFrame(this._intervalId);this._holding=false;};this.holdIntervalDelay=holdIntervalDelay;}get enabled(){return this._enabled}set enabled(enabled){if(this._enabled===enabled)return;this._enabled=enabled;if(!this._enabled)this._holdEnd();}}class ElementHold extends Hold{constructor(element,holdIntervalDelay){super(holdIntervalDelay);this._holdStart=this._holdStart.bind(this);this._holdEnd=this._holdEnd.bind(this);const onPointerDown=this._holdStart;const onPointerUp=this._holdEnd;element.addEventListener("mousedown",onPointerDown);document.addEventListener("mouseup",onPointerUp);window.addEventListener("blur",this._holdEnd);}}class KeyboardKeyHold extends Hold{constructor(keyCode,holdIntervalDelay){super(holdIntervalDelay);this._holdStart=this._holdStart.bind(this);this._holdEnd=this._holdEnd.bind(this);const onKeydown=event=>{if(isInputEvent(event))return;if(event.keyCode!==keyCode)return;this._holdStart(event);};const onKeyup=event=>{if(event.keyCode!==keyCode)return;this._holdEnd(event);};document.addEventListener("keydown",onKeydown);document.addEventListener("keyup",onKeyup);window.addEventListener("blur",this._holdEnd);}}function isInputEvent(event){const target=event.target;return target.tagName==="INPUT"||target.tagName==="SELECT"||target.tagName==="TEXTAREA"||target.isContentEditable}exports.ElementHold=ElementHold;exports.KeyboardKeyHold=KeyboardKeyHold;Object.defineProperty(exports,"__esModule",{value:true});}));
+
 // Keyboards keys to navigate
 const KEYCODE = {
-    W: 87,
-    A: 65,
-    S: 83,
-    D: 68,
-    ARROW_LEFT : 37,
-    ARROW_UP   : 38,
-    ARROW_RIGHT: 39,
-    ARROW_DOWN : 40,
+  W: 87,
+  A: 65,
+  S: 83,
+  D: 68,
+  ARROW_LEFT: 37,
+  ARROW_UP: 38,
+  ARROW_RIGHT: 39,
+  ARROW_DOWN: 40,
 };
 
 // "W", "A", "S", "D" Keys Controls
-const wKey = new holdEvent.KeyboardKeyHold( KEYCODE.W, 16.666 );
-const aKey = new holdEvent.KeyboardKeyHold( KEYCODE.A, 16.666 );
-const sKey = new holdEvent.KeyboardKeyHold( KEYCODE.S, 16.666 );
-const dKey = new holdEvent.KeyboardKeyHold( KEYCODE.D, 16.666 );
+const wKey = new holdEvent.KeyboardKeyHold(KEYCODE.W, 16.666);
+const aKey = new holdEvent.KeyboardKeyHold(KEYCODE.A, 16.666);
+const sKey = new holdEvent.KeyboardKeyHold(KEYCODE.S, 16.666);
+const dKey = new holdEvent.KeyboardKeyHold(KEYCODE.D, 16.666);
 
 function wasdKeysControls(cameraControls) {
-    aKey.addEventListener( 'holding', function( event ) { cameraControls.truck( - 0.01 * event.deltaTime, 0, false ); } );
-    dKey.addEventListener( 'holding', function( event ) { cameraControls.truck(   0.01 * event.deltaTime, 0, false ); } );
-    wKey.addEventListener( 'holding', function( event ) { cameraControls.forward(   0.01 * event.deltaTime, false ); } );
-    sKey.addEventListener( 'holding', function( event ) { cameraControls.forward( - 0.01 * event.deltaTime, false ); } );
+  aKey.addEventListener("holding", function (event) {
+    cameraControls.truck(-0.01 * event.deltaTime, 0, false);
+  });
+  dKey.addEventListener("holding", function (event) {
+    cameraControls.truck(0.01 * event.deltaTime, 0, false);
+  });
+  wKey.addEventListener("holding", function (event) {
+    cameraControls.forward(0.01 * event.deltaTime, false);
+  });
+  sKey.addEventListener("holding", function (event) {
+    cameraControls.forward(-0.01 * event.deltaTime, false);
+  });
 }
 
 // Arrows Keys Controls
-const leftKey  = new holdEvent.KeyboardKeyHold( KEYCODE.ARROW_LEFT,  100 );
-const rightKey = new holdEvent.KeyboardKeyHold( KEYCODE.ARROW_RIGHT, 100 );
-const upKey    = new holdEvent.KeyboardKeyHold( KEYCODE.ARROW_UP,    100 );
-const downKey  = new holdEvent.KeyboardKeyHold( KEYCODE.ARROW_DOWN,  100 );
+const leftKey = new holdEvent.KeyboardKeyHold(KEYCODE.ARROW_LEFT, 100);
+const rightKey = new holdEvent.KeyboardKeyHold(KEYCODE.ARROW_RIGHT, 100);
+const upKey = new holdEvent.KeyboardKeyHold(KEYCODE.ARROW_UP, 100);
+const downKey = new holdEvent.KeyboardKeyHold(KEYCODE.ARROW_DOWN, 100);
 
 function arrowsKeysControls(cameraControls) {
-    leftKey.addEventListener ( 'holding', function( event ) { cameraControls.rotate( - 0.1 * MathUtils.DEG2RAD * event.deltaTime, 0, true ); } );
-    rightKey.addEventListener( 'holding', function( event ) { cameraControls.rotate(   0.1 * MathUtils.DEG2RAD * event.deltaTime, 0, true ); } );
-    upKey.addEventListener   ( 'holding', function( event ) { cameraControls.rotate( 0, - 0.05 * MathUtils.DEG2RAD * event.deltaTime, true ); } );
-    downKey.addEventListener ( 'holding', function( event ) { cameraControls.rotate( 0,   0.05 * MathUtils.DEG2RAD * event.deltaTime, true ); } );
+  leftKey.addEventListener("holding", function (event) {
+    cameraControls.rotate(-0.1 * MathUtils.DEG2RAD * event.deltaTime, 0, true);
+  });
+  rightKey.addEventListener("holding", function (event) {
+    cameraControls.rotate(0.1 * MathUtils.DEG2RAD * event.deltaTime, 0, true);
+  });
+  upKey.addEventListener("holding", function (event) {
+    cameraControls.rotate(0, -0.05 * MathUtils.DEG2RAD * event.deltaTime, true);
+  });
+  downKey.addEventListener("holding", function (event) {
+    cameraControls.rotate(0, 0.05 * MathUtils.DEG2RAD * event.deltaTime, true);
+  });
 }
 
 const subsetOfTHREE = {

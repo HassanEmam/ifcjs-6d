@@ -52,7 +52,7 @@ const subsetOfTHREE = {
 
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import CameraControls from "camera-controls";
-import { index } from "hold-event/dist/hold-event.min.js";
+// import { index } from "hold-event/dist/hold-event.min.js";
 import { IFCLoader } from "web-ifc-three/IFCLoader";
 import loadIfc from "./functions/loadIfc.js";
 import createTreeMenu from "./functions/treeMenu";
