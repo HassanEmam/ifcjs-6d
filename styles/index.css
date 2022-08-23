@@ -317,14 +317,6 @@ button:hover .button-text {
 color: #fff;
 }
 
-.measurementLabel {
-    background-color: #d9d5e7d1;
-    color: var(--dark-gray);
-    font-size: 14px;
-    padding: 0 0.5rem;
-    border-radius: 0.5rem;
-}
-
 .ifc-property-menu {
     border: 1px solid gainsboro;
     width: 100%;

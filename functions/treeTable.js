@@ -1,4 +1,7 @@
-export function createTreeTable(ifcProject) {
+// import { ifcLoader, model } from "./loadIfc";
+// import { createPropertySelection } from "./quantities";
+
+export default function createTreeTable(ifcProject) {
 	
 	const tableRoot = document.getElementById('boq');
   removeAllChildren(tableRoot);
@@ -9,7 +12,35 @@ export function createTreeTable(ifcProject) {
 
 function populateIfcTable(table, ifcProject) {
     const initialDepth = 0;
+    createHeader(table);
     createNode(table, ifcProject, initialDepth, ifcProject.children);
+}
+
+function createHeader(table){
+  const row = document.createElement('tr');
+  const element = document.createElement('th');
+  element.textContent = 'IFC Element';
+  row.appendChild(element);
+  const quantityType = document.createElement('th');
+  quantityType.textContent = 'Quantity Type';
+  row.appendChild(quantityType);
+  const quantity = document.createElement('th');
+  quantity.textContent = 'Quantity';
+  row.appendChild(quantity);
+  const unit = document.createElement('th');
+  unit.textContent = 'Unit';
+  row.appendChild(unit);
+  const material = document.createElement('th');
+  material.textContent = 'Material';
+  row.appendChild(material);
+  const emissionsPerUnit = document.createElement('th');
+  emissionsPerUnit.textContent = 'Emissions per Unit';
+  row.appendChild(emissionsPerUnit);
+  const emissions = document.createElement('th');
+  emissions.textContent = 'Emissions';
+  row.appendChild(emissions);
+
+  table.appendChild(row);
 }
 
 
@@ -29,24 +60,24 @@ function createBranchRow(table, node, depth, children) {
     const row = document.createElement('tr');
     const className = 'level' + depth;
     row.classList.add(className);
-    row.classList.add('collapse');
+    row.classList.add('table-collapse');
     row.setAttribute('data-depth', depth);
 
-    const dataElement = document.createElement('td');
-
-
+    const element = document.createElement('td');
+    element.colSpan = 7;
+    element.classList.add('data-ifc-element');
     const toggle = document.createElement('span');
     toggle.classList.add('toggle');
-    toggle.classList.add('collapse');
+    toggle.classList.add('table-collapse');
 
 
-    dataElement.textContent = node.type;
-    dataElement.insertBefore(toggle, dataElement.firstChild);
+    element.textContent = node.type;
+    element.insertBefore(toggle, element.firstChild);
 
-    row.appendChild(dataElement);
+    row.appendChild(element);
 	  table.appendChild(row); 
 
-    depth = depth+1;
+    depth++;
 
 	children.forEach(child => createNode(table, child, depth, child.children ));
 
@@ -58,40 +89,53 @@ function createLeafRow(table, node, depth) {
 	const row = document.createElement('tr');
     const className = 'level'+ depth;
     row.classList.add(className);
-    row.classList.add('collapse');
+    row.classList.add('table-collapse');
     row.setAttribute('data-depth', depth);
 
     const element = document.createElement('td');
-    dataElement.textContent = node.type;
+    element.classList.add('data-ifc-element');
+    element.textContent = node.type;
     row.appendChild(element);
+
     const quantityType = document.createElement('td');
-    dataQuantityType.textContent = 'Quantity Type';
+    quantityType.textContent = 'Quantity Type'; //Add dropdown function here
     row.appendChild(quantityType);
-    const quantity = document.createElement('td');
-    dataQuantityType.textContent = 'Quantity';
-    row.appendChild(quantity);
+
+    const dataQuantity = document.createElement('td');
+    const quantity = 10.0; //Add quantity function here
+    dataQuantity.textContent = quantity;
+    row.appendChild(dataQuantity);
+
     const unit = document.createElement('td');
-    dataQuantityType.textContent = 'Unit';
+    unit.textContent = 'm2'; //Add unit function
     row.appendChild(unit);
+
     const material = document.createElement('td');
-    dataQuantityType.textContent = 'Material';
-    ow.appendChild(material);
-    const emissionsPerUnit = document.createElement('td');
-    dataQuantityType.textContent = 'Emissions per Unit';
-    ow.appendChild(emissionsPerUnit);
-    const emissions = document.createElement('td');
-    dataQuantityType.textContent = 'Emissions';
-    ow.appendChild(emissions);
-    row.appendChild(dataQuantityType);
+    material.textContent = 'Material';
+    row.appendChild(material);
+    
+    const emmisionsPerUnit = 20; //Add emissions function
+    const dataEmissionsPerUnit = document.createElement('td');
+    dataEmissionsPerUnit.textContent = emmisionsPerUnit;
+    row.appendChild(dataEmissionsPerUnit);
+
+    const emissions = quantity * emmisionsPerUnit;
+    const dataEmissions = document.createElement('td');
+    dataEmissions.textContent = emissions;
+    row.appendChild(dataEmissions);
+
+    row.style.fontWeight = 'normal';
 	table.appendChild(row);
 
-  row.onmouseenter = () => {
-    viewer.IFC.selector.prepickIfcItemsByID(0, [node.expressID]);
-  }
 
-  row.onclick = async () => {
-    viewer.IFC.selector.pickIfcItemsByID(0, [node.expressID]);
-  }
+//
+  // row.onmouseenter = () => {
+  //   viewer.IFC.selector.prepickIfcItemsByID(0, [node.expressID]);
+  // }
+
+  // row.onclick = async () => {
+  //   viewer.IFC.selector.pickIfcItemsByID(0, [node.expressID]);
+  // }
 
 }
 
@@ -119,7 +163,7 @@ function implementTreeLogic() {
       var tr = el.closest('tr');
       var children = findChildren(tr);
       var subnodes = children.filter(function(element) {
-        return element.matches('.expand');
+        return element.matches('.table-expand');
       });
       subnodes.forEach(function(subnode) {
         var subnodeChildren = findChildren(subnode);
@@ -129,15 +173,15 @@ function implementTreeLogic() {
               // console.log(children);
         //children = children.not(subnodeChildren);
       });
-      if (tr.classList.contains('collapse')) {
-        tr.classList.remove('collapse');
-        tr.classList.add('expand');
+      if (tr.classList.contains('table-collapse')) {
+        tr.classList.remove('table-collapse');
+        tr.classList.add('table-expand');
         children.forEach(function(child) {
           child.style.display = 'none';
         });
       } else {
-        tr.classList.remove('expand');
-        tr.classList.add('collapse');
+        tr.classList.remove('table-expand');
+        tr.classList.add('table-collapse');
         children.forEach(function(child) {
           child.style.display = '';
         });
