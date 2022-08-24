@@ -45,6 +45,7 @@ body {
 .projectCard {
     position: relative;
     overflow: hidden;
+    border-radius: var(--coverRadius);
 }
 
 .projectCard a {
@@ -130,6 +131,19 @@ body {
 
 .shadow {
     cursor: pointer;
+}
+
+#file-input {
+    display: none;
+}
+
+#projectCard-input {
+    background-color: var(--dark-blue);
+    height: var(--coverHeight); 
+}
+
+#projectCard-input-title {
+    font-size: 22px;
 }
 
 .viewerPage {

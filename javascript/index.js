@@ -4,36 +4,57 @@ const projectsContainer = document.getElementById("projectsContainer");
 const projectsContainerChildren = projectsContainer.children;
 const projectsContainerChildrenArray = Array.from(projectsContainerChildren);
 
+const baseURL = "./viewer.html";
+let destinationURL = null
+let inputDestinationURL = null
+
 // Get the template card
 const templateProjectCard = projectsContainerChildrenArray[0];
 
-const baseURL = "./viewer.html";
-
 // Copy the project Card and paste it n times
 for (let project of projects) {
-  // Create a new card
-  const newCard = templateProjectCard.cloneNode(true);
+  if (project.id != 'input-ifc') {
+    // Create a new card
+    const newCard = templateProjectCard.cloneNode(true);
 
-  // Add project name to the card
-  const cardTitle = newCard.querySelector(".ProjectTitle");
-  cardTitle.textContent = project.name;
+    // Add project name to the card
+    const cardTitle = newCard.querySelector(".ProjectTitle");
+    cardTitle.textContent = project.name;
 
-  const cardButton = newCard.querySelector(".projectButton");
+    const cardButton = newCard.querySelector(".projectButton");
 
-  //Send value from page to another using URL Parameters
-  let destinationURL = baseURL + `?id=${project.id}`;
+    //Send value from page to another using URL Parameters
+    destinationURL = baseURL + `?id=${project.id}`;
 
-  // Replace the html href
-  cardButton.href = destinationURL;
+    // Replace the html href
+    cardButton.href = destinationURL;
 
-  // Replace the html project-id
-  const cardButtonChildren = cardButton.children;
-  const projectImage = newCard.querySelector(".imageCard");
-  projectImage.src = `./asset/${project.id}.jpeg`;
+    // Replace the html project-id
+    const cardButtonChildren = cardButton.children;
+    const projectImage = newCard.querySelector(".imageCard");
+    projectImage.src = `./asset/${project.id}.jpeg`;
 
-  // Add the cards to the DOM (HTML)
-  projectsContainer.appendChild(newCard);
+    // Add the cards to the DOM (HTML)  
+    projectsContainer.appendChild(newCard);
+  }
+  else {
+    inputDestinationURL = baseURL + `?id=${project.id}`;
+  }
 }
+
+//Input File Button (Get input-file url)
+const projectCardInput = document.getElementById('projectCard-input')
+const inputFileButton = document.getElementById('file-input')
+projectCardInput.onclick = () => inputFileButton.click()
+let inputFileURL = null
+inputFileButton.addEventListener('change', () => {
+  const file = inputFileButton.files[0];
+  inputFileURL = URL.createObjectURL(file);
+  console.log(inputFileURL)
+  inputDestinationURL = inputDestinationURL + '&inputURL=' + inputFileURL;
+  inputFileButton.href = inputDestinationURL;
+  location = inputDestinationURL;
+});
 
 // Remove the template card
 templateProjectCard.remove();
