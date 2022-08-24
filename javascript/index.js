@@ -4,10 +4,12 @@ const projectsContainer = document.getElementById("projectsContainer");
 const projectsContainerChildren = projectsContainer.children;
 const projectsContainerChildrenArray = Array.from(projectsContainerChildren);
 
+const baseURL = "./viewer.html";
+let destinationURL = null
+let inputDestinationURL = null
+
 // Get the template card
 const templateProjectCard = projectsContainerChildrenArray[0];
-
-const baseURL = "./viewer.html";
 
 // Copy the project Card and paste it n times
 for (let project of projects) {
@@ -22,7 +24,7 @@ for (let project of projects) {
     const cardButton = newCard.querySelector(".projectButton");
 
     //Send value from page to another using URL Parameters
-    let destinationURL = baseURL + `?id=${project.id}`;
+    destinationURL = baseURL + `?id=${project.id}`;
 
     // Replace the html href
     cardButton.href = destinationURL;
@@ -36,17 +38,23 @@ for (let project of projects) {
     projectsContainer.appendChild(newCard);
   }
   else {
-    const inputCardButton = document.querySelector("#projectCard-input");
-    let destinationURL = baseURL + `?id=${project.id}`;
-    inputCardButton.href = destinationURL;
+    inputDestinationURL = baseURL + `?id=${project.id}`;
   }
 }
 
-// Remove the template card
-templateProjectCard.remove();
-
-//Input File Button
+//Input File Button (Get input-file url)
 const projectCardInput = document.getElementById('projectCard-input')
 const inputFileButton = document.getElementById('file-input')
 projectCardInput.onclick = () => inputFileButton.click()
-inputFileButton.onchange = () => loadNewModel();
+let inputFileURL = null
+inputFileButton.addEventListener('change', () => {
+  const file = inputFileButton.files[0];
+  inputFileURL = URL.createObjectURL(file);
+  console.log(inputFileURL)
+  inputDestinationURL = inputDestinationURL + '&inputURL=' + inputFileURL;
+  inputFileButton.href = inputDestinationURL;
+  location = inputDestinationURL;
+});
+
+// Remove the template card
+templateProjectCard.remove();

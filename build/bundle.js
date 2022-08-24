@@ -106184,10 +106184,20 @@ const preselectMat = new MeshLambertMaterial({
 });
 
 // Get the current project
-const currentProject = projects.find(
+let currentProject = null;
+let projectURL = null;
+
+currentProject = projects.find(
   (project) => project.id === currentProjectID
 );
-const projectURL = currentProject.url;
+
+if (currentProjectID != 'input-ifc') {
+  projectURL = currentProject.url;
+} else {
+  let inputFileID = url.searchParams.get("inputURL");
+  projectURL = inputFileID;
+}
+
 const title = document.getElementById("title");
 title.innerText = currentProject.name;
 // get the canvas container
