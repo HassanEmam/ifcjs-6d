@@ -36,6 +36,8 @@ import {
   disposeBoundsTree,
 } from "three-mesh-bvh";
 
+import { getMaterial } from "./functions/materials";
+
 const subsetOfTHREE = {
   MOUSE,
   Vector2,
@@ -63,6 +65,7 @@ import {
   getElementProperties,
   getAllPropertyNames,
   createPropertySelection,
+  getQuantityByElement,
 } from "./functions/quantities";
 import {
   leftView,
@@ -81,11 +84,11 @@ import {
 import { IFCBUILDINGSTOREY } from "web-ifc";
 import createTreeTable from "./functions/treeTable.js";
 
-let shiftDown = false
-let lineId = 0
-let line = Line
-let drawingLine = false
-const measurementLabels = {}
+let shiftDown = false;
+let lineId = 0;
+let line = Line;
+let drawingLine = false;
+const measurementLabels = {};
 // Get the current project ID from the URL parameter
 const currentUrl = window.location.href;
 const url = new URL(currentUrl);
@@ -102,15 +105,13 @@ const preselectMat = new MeshLambertMaterial({
 let currentProject = null;
 let projectURL = null;
 
-currentProject = projects.find(
-  (project) => project.id === currentProjectID
-);
+currentProject = projects.find((project) => project.id === currentProjectID);
 
-if (currentProjectID != 'input-ifc') {
+if (currentProjectID != "input-ifc") {
   projectURL = currentProject.url;
 } else {
   let inputFileID = url.searchParams.get("inputURL");
-  projectURL = inputFileID
+  projectURL = inputFileID;
 }
 
 const title = document.getElementById("title");
@@ -181,10 +182,7 @@ const labelRenderer = new CSS2DRenderer({
 });
 const labelCanvas = document.getElementById("canvas-label");
 
-labelRenderer.setSize(
-  threeCanvas.clientWidth,
-  threeCanvas.clientHeight
-);
+labelRenderer.setSize(threeCanvas.clientWidth, threeCanvas.clientHeight);
 labelRenderer.domElement.style.position = "absolute";
 labelRenderer.domElement.style.pointerEvents = "none";
 labelCanvas.appendChild(labelRenderer.domElement);
@@ -257,7 +255,11 @@ async function init() {
   // ulItem.animate({ scrollTop: ulItem.scrollHeight }, 1000);
   const psets = await getAllPropertyNames(model, ifcLoader);
   const prop = await getElementProperties(model, ifcLoader, 144);
+  const materials = await getMaterial(ifcLoader, model, 22620);
+  console.log(materials);
   const selection = await createPropertySelection(model, ifcLoader);
+  const quanty = await getQuantityByElement(ifcLoader, model, 168);
+  console.log(quanty);
   document.body.appendChild(selection);
 }
 
@@ -425,16 +427,14 @@ function onClick(event) {
         line.frustumCulled = false;
         scene.add(line);
 
-        const measurementDiv = document.createElement(
-          'div'
-        )
+        const measurementDiv = document.createElement("div");
         measurementDiv.className = "measurementLabel";
         measurementDiv.innerText = "0.0m";
         const measurementLabel = new CSS2DObject(measurementDiv);
         measurementLabel.position.copy(intersects[0].point);
         measurementLabels[lineId] = measurementLabel;
-        scene.add(measurementLabels[lineId])
-        drawingLine = true
+        scene.add(measurementLabels[lineId]);
+        drawingLine = true;
       } else {
         //finish the line
         const positions = line.geometry.attributes.position.array;
@@ -449,45 +449,50 @@ function onClick(event) {
   }
 }
 
-document.addEventListener('mousemove', onDocumentMouseMove, false)
+document.addEventListener("mousemove", onDocumentMouseMove, false);
 function onDocumentMouseMove(event) {
-    event.preventDefault()
+  event.preventDefault();
 
+  mouse.x = (event.clientX / renderer.domElement.clientWidth) * 2 - 1;
+  mouse.y = -(event.clientY / renderer.domElement.clientHeight) * 2 + 1;
 
-    mouse.x = event.clientX / renderer.domElement.clientWidth * 2 - 1;
-    mouse.y = - (event.clientY / renderer.domElement.clientHeight) * 2 + 1;
-
-    if (drawingLine) {
-        let canvasBounds = threeCanvas.getBoundingClientRect()
-        raycaster.setFromCamera(
-            {
-                x: ((event.clientX - canvasBounds.left) / renderer.domElement.clientWidth) * 2 - 1,
-                y: -((event.clientY - canvasBounds.top) / renderer.domElement.clientHeight) * 2 + 1,
-            },
-            camera
-        )
-        const intersects = raycaster.intersectObjects(ifcModels, false)
-        if (intersects.length > 0) {
-            const positions = line.geometry.attributes.position.array
-            const v0 = new Vector3(
-                positions[0],
-                positions[1],
-                positions[2]
-            )
-            const v1 = new Vector3(
-                intersects[0].point.x,
-                intersects[0].point.y,
-                intersects[0].point.z
-            )
-            positions[3] = intersects[0].point.x
-            positions[4] = intersects[0].point.y
-            positions[5] = intersects[0].point.z
-            line.geometry.attributes.position.needsUpdate = true
-            const distance = v0.distanceTo(v1)
-            measurementLabels[lineId].element.innerText = distance.toFixed(2) + 'm';
-            measurementLabels[lineId].position.lerpVectors(v0, v1, 0.5);
-        }
+  if (drawingLine) {
+    let canvasBounds = threeCanvas.getBoundingClientRect();
+    raycaster.setFromCamera(
+      {
+        x:
+          ((event.clientX - canvasBounds.left) /
+            renderer.domElement.clientWidth) *
+            2 -
+          1,
+        y:
+          -(
+            (event.clientY - canvasBounds.top) /
+            renderer.domElement.clientHeight
+          ) *
+            2 +
+          1,
+      },
+      camera
+    );
+    const intersects = raycaster.intersectObjects(ifcModels, false);
+    if (intersects.length > 0) {
+      const positions = line.geometry.attributes.position.array;
+      const v0 = new Vector3(positions[0], positions[1], positions[2]);
+      const v1 = new Vector3(
+        intersects[0].point.x,
+        intersects[0].point.y,
+        intersects[0].point.z
+      );
+      positions[3] = intersects[0].point.x;
+      positions[4] = intersects[0].point.y;
+      positions[5] = intersects[0].point.z;
+      line.geometry.attributes.position.needsUpdate = true;
+      const distance = v0.distanceTo(v1);
+      measurementLabels[lineId].element.innerText = distance.toFixed(2) + "m";
+      measurementLabels[lineId].position.lerpVectors(v0, v1, 0.5);
     }
+  }
 }
 
 const fitViewButton = document.getElementById("fit-view");
@@ -529,5 +534,5 @@ coloredViewButton.onclick = () => {
 // Remove measurements
 const deleteMeasurementsButton = document.getElementById("deleteMeasurements");
 deleteMeasurementsButton.onclick = () => {
-  deleteMeasurements(scene) 
-}
+  deleteMeasurements(scene);
+};

@@ -47250,6 +47250,29 @@ function disposeBoundsTree() {
 
 }
 
+async function getMaterial(ifcLoader, model, selectedElementId) {
+  const materialprop = await ifcLoader.ifcManager.getMaterialsProperties(
+    model.modelID,
+    selectedElementId,
+    true
+  );
+  const materials = [];
+  for (const material of materialprop) {
+    if (material.ForLayerSet) {
+      for (const mat of material.ForLayerSet.MaterialLayers) {
+        console.log(
+          "Materials",
+          mat.Material.Name.value,
+          mat.LayerThickness.value
+        );
+        materials.push(mat.Material.Name.value);
+      }
+    }
+
+    return materials;
+  }
+}
+
 // This set of controls performs orbiting, dollying (zooming), and panning.
 // Unlike TrackballControls, it maintains the "up" direction object.up (+Y by default).
 //
@@ -105732,6 +105755,7 @@ async function fillData(model, ifcLoader) {
       model.modelID,
       rel1.RelatingPropertyDefinition.value
     );
+    // console.log(pset.Name.value);
     for (const obj of rel1.RelatedObjects) {
       objMap[obj.value] = pset;
     }
@@ -105740,22 +105764,43 @@ async function fillData(model, ifcLoader) {
       obj[pset.Name.value] = {};
     }
     const pobj = {};
-    for (const prop of pset.HasProperties) {
-      const propObj = await ifc.byId(model.modelID, prop.value);
-      if (!obj[pset.Name.value][propObj.Name.value]) {
-        pobj[propObj.Name.value] = {};
-        pobj[propObj.Name.value] = propObj;
-        pobj[propObj.Name.value]["ids"] = [];
-        pobj[propObj.Name.value]["ids"].push(propObj.expressID);
-      } else {
-        pobj[propObj.Name.value] = obj[pset.Name.value][propObj.Name.value];
-        obj[pset.Name.value][propObj.Name.value]["ids"].push(propObj.expressID);
+    if (pset.HasProperties) {
+      for (const prop of pset.HasProperties) {
+        const propObj = await ifc.byId(model.modelID, prop.value);
+        // console.log(pset.Name.value, propObj);
+        if (!obj[pset.Name.value][propObj.Name.value]) {
+          pobj[propObj.Name.value] = {};
+          pobj[propObj.Name.value] = propObj;
+          pobj[propObj.Name.value]["ids"] = [];
+          pobj[propObj.Name.value]["ids"].push(propObj.expressID);
+        } else {
+          pobj[propObj.Name.value] = obj[pset.Name.value][propObj.Name.value];
+          obj[pset.Name.value][propObj.Name.value]["ids"].push(
+            propObj.expressID
+          );
+        }
+      }
+    } else if (pset.Quantities) {
+      for (const quantity of pset.Quantities) {
+        const quantityObj = await ifc.byId(model.modelID, quantity.value);
+        if (!obj[pset.Name.value][quantityObj.Name.value]) {
+          pobj[quantityObj.Name.value] = {};
+          pobj[quantityObj.Name.value] = quantityObj;
+          pobj[quantityObj.Name.value]["ids"] = [];
+          pobj[quantityObj.Name.value]["ids"].push(quantityObj.expressID);
+        } else {
+          pobj[quantityObj.Name.value] =
+            obj[pset.Name.value][quantityObj.Name.value];
+          obj[pset.Name.value][quantityObj.Name.value]["ids"].push(
+            quantityObj.expressID
+          );
+        }
       }
     }
     obj[pset.Name.value] = pobj;
   }
   psetsObject = obj;
-  console.log(obj, objMap);
+  console.log("PSETS OBJECT", psetsObject);
   return obj;
 }
 
@@ -105792,8 +105837,44 @@ async function createPropertySelection(model, ifcLoader) {
     }
     selection.appendChild(optionGrp);
   }
-  console.log(selection);
+  // console.log(selection);
   return selection;
+}
+
+async function getQuantityByElement(ifcLoader, model, elementId) {
+  if (!generated) {
+    await fillData(model, ifcLoader);
+    generated = true;
+  }
+  const tmpObj = objMap[elementId];
+  const qtyRet = {};
+  if (tmpObj["Quantities"]) {
+    for (const quantity of tmpObj["Quantities"]) {
+      if (quantity.value) {
+        // console.log(quantity.value, model.modelID);
+        const qtyObj = await ifcLoader.ifcManager.byId(
+          model.modelID,
+          quantity.value
+        );
+        switch (qtyObj.type) {
+          case IFCQUANTITYAREA:
+            qtyRet[qtyObj.Name.value] = qtyObj.AreaValue.value;
+            break;
+          case IFCQUANTITYLENGTH:
+            qtyRet[qtyObj.Name.value] = qtyObj.LengthValue.value;
+            break;
+          case IFCQUANTITYVOLUME:
+            qtyRet[qtyObj.Name.value] = qtyObj.VolumeValue.value;
+            break;
+          default:
+            qtyRet[qtyObj.Name.value] = 0;
+        }
+        // console.log(qtyObj, qtyObj.type, qtyObj.type === IFCQUANTITYAREA);
+      }
+    }
+  }
+  console.log(qtyRet);
+  return qtyRet;
 }
 
 function leftView(cameraControls, model) {
@@ -105950,136 +106031,125 @@ function arrowsKeysControls(cameraControls) {
 }
 
 // import { ifcLoader, model } from "./loadIfc";
-// import { createPropertySelection } from "./quantities";
 
 function createTreeTable(ifcProject) {
-	
-	const tableRoot = document.getElementById('boq');
+  const tableRoot = document.getElementById("boq");
   removeAllChildren(tableRoot);
   populateIfcTable(tableRoot, ifcProject);
   implementTreeLogic();
-
 }
 
 function populateIfcTable(table, ifcProject) {
-    const initialDepth = 0;
-    createHeader(table);
-    createNode(table, ifcProject, initialDepth, ifcProject.children);
+  const initialDepth = 0;
+  createHeader(table);
+  createNode(table, ifcProject, initialDepth, ifcProject.children);
 }
 
-function createHeader(table){
-  const row = document.createElement('tr');
-  const element = document.createElement('th');
-  element.textContent = 'IFC Element';
+function createHeader(table) {
+  const row = document.createElement("tr");
+  const element = document.createElement("th");
+  element.textContent = "IFC Element";
   row.appendChild(element);
-  const quantityType = document.createElement('th');
-  quantityType.textContent = 'Quantity Type';
+  const quantityType = document.createElement("th");
+  quantityType.textContent = "Quantity Type";
   row.appendChild(quantityType);
-  const quantity = document.createElement('th');
-  quantity.textContent = 'Quantity';
+  const quantity = document.createElement("th");
+  quantity.textContent = "Quantity";
   row.appendChild(quantity);
-  const unit = document.createElement('th');
-  unit.textContent = 'Unit';
+  const unit = document.createElement("th");
+  unit.textContent = "Unit";
   row.appendChild(unit);
-  const material = document.createElement('th');
-  material.textContent = 'Material';
+  const material = document.createElement("th");
+  material.textContent = "Material";
   row.appendChild(material);
-  const emissionsPerUnit = document.createElement('th');
-  emissionsPerUnit.textContent = 'Emissions per Unit';
+  const emissionsPerUnit = document.createElement("th");
+  emissionsPerUnit.textContent = "Emissions per Unit";
   row.appendChild(emissionsPerUnit);
-  const emissions = document.createElement('th');
-  emissions.textContent = 'Emissions';
+  const emissions = document.createElement("th");
+  emissions.textContent = "Emissions";
   row.appendChild(emissions);
 
   table.appendChild(row);
 }
 
-
 function createNode(table, node, depth, children) {
-
-	if(children.length === 0) {
-		createLeafRow(table, node, depth);
-	} else {
-		// If there are multiple categories, group them together
-		const grouped = groupCategories(children);
-		createBranchRow(table, node, depth, grouped);
-	}
+  if (children.length === 0) {
+    createLeafRow(table, node, depth);
+  } else {
+    // If there are multiple categories, group them together
+    const grouped = groupCategories(children);
+    createBranchRow(table, node, depth, grouped);
+  }
 }
 
 function createBranchRow(table, node, depth, children) {
+  const row = document.createElement("tr");
+  const className = "level" + depth;
+  row.classList.add(className);
+  row.classList.add("table-collapse");
+  row.setAttribute("data-depth", depth);
 
-    const row = document.createElement('tr');
-    const className = 'level' + depth;
-    row.classList.add(className);
-    row.classList.add('table-collapse');
-    row.setAttribute('data-depth', depth);
+  const element = document.createElement("td");
+  element.colSpan = 7;
+  element.classList.add("data-ifc-element");
+  const toggle = document.createElement("span");
+  toggle.classList.add("toggle");
+  toggle.classList.add("table-collapse");
 
-    const element = document.createElement('td');
-    element.colSpan = 7;
-    element.classList.add('data-ifc-element');
-    const toggle = document.createElement('span');
-    toggle.classList.add('toggle');
-    toggle.classList.add('table-collapse');
+  element.textContent = node.type;
+  element.insertBefore(toggle, element.firstChild);
 
+  row.appendChild(element);
+  table.appendChild(row);
 
-    element.textContent = node.type;
-    element.insertBefore(toggle, element.firstChild);
+  depth++;
 
-    row.appendChild(element);
-	  table.appendChild(row); 
-
-    depth++;
-
-	children.forEach(child => createNode(table, child, depth, child.children ));
-
+  children.forEach((child) => createNode(table, child, depth, child.children));
 }
 
-
-
 function createLeafRow(table, node, depth) {
-	const row = document.createElement('tr');
-    const className = 'level'+ depth;
-    row.classList.add(className);
-    row.classList.add('table-collapse');
-    row.setAttribute('data-depth', depth);
+  const row = document.createElement("tr");
+  const className = "level" + depth;
+  row.classList.add(className);
+  row.classList.add("table-collapse");
+  row.setAttribute("data-depth", depth);
 
-    const element = document.createElement('td');
-    element.classList.add('data-ifc-element');
-    element.textContent = node.type;
-    row.appendChild(element);
+  const element = document.createElement("td");
+  element.classList.add("data-ifc-element");
+  element.textContent = node.type;
+  row.appendChild(element);
 
-    const quantityType = document.createElement('td');
-    quantityType.textContent = 'Quantity Type'; //Add dropdown function here
-    row.appendChild(quantityType);
+  const quantityType = document.createElement("td");
+  quantityType.textContent = "Quantity Type"; //Add dropdown function here
+  row.appendChild(quantityType);
 
-    const dataQuantity = document.createElement('td');
-    const quantity = 10.0; //Add quantity function here
-    dataQuantity.textContent = quantity;
-    row.appendChild(dataQuantity);
+  const dataQuantity = document.createElement("td");
+  const quantity = 10.0; //Add quantity function here
+  dataQuantity.textContent = quantity;
+  row.appendChild(dataQuantity);
 
-    const unit = document.createElement('td');
-    unit.textContent = 'm2'; //Add unit function
-    row.appendChild(unit);
+  const unit = document.createElement("td");
+  unit.textContent = "m2"; //Add unit function
+  row.appendChild(unit);
 
-    const material = document.createElement('td');
-    material.textContent = 'Material';
-    row.appendChild(material);
-    
-    const emmisionsPerUnit = 20; //Add emissions function
-    const dataEmissionsPerUnit = document.createElement('td');
-    dataEmissionsPerUnit.textContent = emmisionsPerUnit;
-    row.appendChild(dataEmissionsPerUnit);
+  const material = document.createElement("td");
+  material.textContent = "Material";
+  row.appendChild(material);
 
-    const emissions = quantity * emmisionsPerUnit;
-    const dataEmissions = document.createElement('td');
-    dataEmissions.textContent = emissions;
-    row.appendChild(dataEmissions);
+  const emmisionsPerUnit = 20; //Add emissions function
+  const dataEmissionsPerUnit = document.createElement("td");
+  dataEmissionsPerUnit.textContent = emmisionsPerUnit;
+  row.appendChild(dataEmissionsPerUnit);
 
-    row.style.fontWeight = 'normal';
-	table.appendChild(row);
+  const emissions = quantity * emmisionsPerUnit;
+  const dataEmissions = document.createElement("td");
+  dataEmissions.textContent = emissions;
+  row.appendChild(dataEmissions);
 
+  row.style.fontWeight = "normal";
+  table.appendChild(row);
 
-//
+  //
   // row.onmouseenter = () => {
   //   viewer.IFC.selector.prepickIfcItemsByID(0, [node.expressID]);
   // }
@@ -106087,88 +106157,90 @@ function createLeafRow(table, node, depth) {
   // row.onclick = async () => {
   //   viewer.IFC.selector.pickIfcItemsByID(0, [node.expressID]);
   // }
-
 }
 
 function groupCategories(children) {
-	const types = children.map(child => child.type);
-	const uniqueTypes = new Set(types);
-	if (uniqueTypes.size > 1) {
-		const uniquesArray = Array.from(uniqueTypes);
-		children = uniquesArray.map(type => {
-			return {
-				expressID: -1,
-				type: type + 'S',
-				children: children.filter(child => child.type.includes(type)),
-			};
-		});
-	}
-	return children;
+  const types = children.map((child) => child.type);
+  const uniqueTypes = new Set(types);
+  if (uniqueTypes.size > 1) {
+    const uniquesArray = Array.from(uniqueTypes);
+    children = uniquesArray.map((type) => {
+      return {
+        expressID: -1,
+        type: type + "S",
+        children: children.filter((child) => child.type.includes(type)),
+      };
+    });
+  }
+  return children;
 }
 
 //Collapsable table logic
 function implementTreeLogic() {
-[].forEach.call(document.querySelectorAll('#boq .toggle'), function(el) {
-    el.addEventListener('click', function() {
+  [].forEach.call(document.querySelectorAll("#boq .toggle"), function (el) {
+    el.addEventListener("click", function () {
       var el = this;
-      var tr = el.closest('tr');
+      var tr = el.closest("tr");
       var children = findChildren(tr);
-      var subnodes = children.filter(function(element) {
-        return element.matches('.table-expand');
+      var subnodes = children.filter(function (element) {
+        return element.matches(".table-expand");
       });
-      subnodes.forEach(function(subnode) {
+      subnodes.forEach(function (subnode) {
         var subnodeChildren = findChildren(subnode);
-        children = children.filter(function(element) {
-            return !subnodeChildren.includes(element);
+        children = children.filter(function (element) {
+          return !subnodeChildren.includes(element);
         });
-              // console.log(children);
+        // console.log(children);
         //children = children.not(subnodeChildren);
       });
-      if (tr.classList.contains('table-collapse')) {
-        tr.classList.remove('table-collapse');
-        tr.classList.add('table-expand');
-        children.forEach(function(child) {
-          child.style.display = 'none';
+      if (tr.classList.contains("table-collapse")) {
+        tr.classList.remove("table-collapse");
+        tr.classList.add("table-expand");
+        children.forEach(function (child) {
+          child.style.display = "none";
         });
       } else {
-        tr.classList.remove('table-expand');
-        tr.classList.add('table-collapse');
-        children.forEach(function(child) {
-          child.style.display = '';
+        tr.classList.remove("table-expand");
+        tr.classList.add("table-collapse");
+        children.forEach(function (child) {
+          child.style.display = "";
         });
       }
     });
-  });}
-  
-  var findChildren = function(tr) {
-    var depth = tr.dataset.depth;
-    var elements = [...document.querySelectorAll('#boq tr')].filter(function(element) {
-      return element.dataset.depth <= depth;
-    });
-    var next = nextUntil(tr, elements);
-    return next;
-  };
-  
-  var nextUntil = function(elem, elements, filter) {
-    var siblings = [];
-    elem = elem.nextElementSibling;
-    while (elem) {
-      if (elements.includes(elem)) break;
-      if (filter && !elem.matches(filter)) {
-        elem = elem.nextElementSibling;
-        continue;
-      }
-      siblings.push(elem);
-      elem = elem.nextElementSibling;
-    }
-    return siblings;
-  };
+  });
+}
 
-  function removeAllChildren(element) {
-    while (element.firstChild) {
-        element.removeChild(element.firstChild);
+var findChildren = function (tr) {
+  var depth = tr.dataset.depth;
+  var elements = [...document.querySelectorAll("#boq tr")].filter(function (
+    element
+  ) {
+    return element.dataset.depth <= depth;
+  });
+  var next = nextUntil(tr, elements);
+  return next;
+};
+
+var nextUntil = function (elem, elements, filter) {
+  var siblings = [];
+  elem = elem.nextElementSibling;
+  while (elem) {
+    if (elements.includes(elem)) break;
+    if (filter && !elem.matches(filter)) {
+      elem = elem.nextElementSibling;
+      continue;
     }
+    siblings.push(elem);
+    elem = elem.nextElementSibling;
   }
+  return siblings;
+};
+
+function removeAllChildren(element) {
+  while (element.firstChild) {
+    element.removeChild(element.firstChild);
+  }
+}
 
 const subsetOfTHREE = {
   MOUSE,
@@ -106208,11 +106280,9 @@ const preselectMat = new MeshLambertMaterial({
 let currentProject = null;
 let projectURL = null;
 
-currentProject = projects.find(
-  (project) => project.id === currentProjectID
-);
+currentProject = projects.find((project) => project.id === currentProjectID);
 
-if (currentProjectID != 'input-ifc') {
+if (currentProjectID != "input-ifc") {
   projectURL = currentProject.url;
 } else {
   let inputFileID = url.searchParams.get("inputURL");
@@ -106287,10 +106357,7 @@ const labelRenderer = new CSS2DRenderer({
 });
 const labelCanvas = document.getElementById("canvas-label");
 
-labelRenderer.setSize(
-  threeCanvas.clientWidth,
-  threeCanvas.clientHeight
-);
+labelRenderer.setSize(threeCanvas.clientWidth, threeCanvas.clientHeight);
 labelRenderer.domElement.style.position = "absolute";
 labelRenderer.domElement.style.pointerEvents = "none";
 labelCanvas.appendChild(labelRenderer.domElement);
@@ -106363,7 +106430,11 @@ async function init() {
   // ulItem.animate({ scrollTop: ulItem.scrollHeight }, 1000);
   await getAllPropertyNames(model, ifcLoader);
   await getElementProperties(model, ifcLoader, 144);
+  const materials = await getMaterial(ifcLoader, model, 22620);
+  console.log(materials);
   const selection = await createPropertySelection(model, ifcLoader);
+  const quanty = await getQuantityByElement(ifcLoader, model, 168);
+  console.log(quanty);
   document.body.appendChild(selection);
 }
 
@@ -106528,9 +106599,7 @@ function onClick(event) {
         line.frustumCulled = false;
         scene.add(line);
 
-        const measurementDiv = document.createElement(
-          'div'
-        );
+        const measurementDiv = document.createElement("div");
         measurementDiv.className = "measurementLabel";
         measurementDiv.innerText = "0.0m";
         const measurementLabel = new CSS2DObject(measurementDiv);
@@ -106552,45 +106621,50 @@ function onClick(event) {
   }
 }
 
-document.addEventListener('mousemove', onDocumentMouseMove, false);
+document.addEventListener("mousemove", onDocumentMouseMove, false);
 function onDocumentMouseMove(event) {
-    event.preventDefault();
+  event.preventDefault();
 
+  mouse.x = (event.clientX / renderer.domElement.clientWidth) * 2 - 1;
+  mouse.y = -(event.clientY / renderer.domElement.clientHeight) * 2 + 1;
 
-    mouse.x = event.clientX / renderer.domElement.clientWidth * 2 - 1;
-    mouse.y = - (event.clientY / renderer.domElement.clientHeight) * 2 + 1;
-
-    if (drawingLine) {
-        let canvasBounds = threeCanvas.getBoundingClientRect();
-        raycaster.setFromCamera(
-            {
-                x: ((event.clientX - canvasBounds.left) / renderer.domElement.clientWidth) * 2 - 1,
-                y: -((event.clientY - canvasBounds.top) / renderer.domElement.clientHeight) * 2 + 1,
-            },
-            camera
-        );
-        const intersects = raycaster.intersectObjects(ifcModels, false);
-        if (intersects.length > 0) {
-            const positions = line.geometry.attributes.position.array;
-            const v0 = new Vector3$1(
-                positions[0],
-                positions[1],
-                positions[2]
-            );
-            const v1 = new Vector3$1(
-                intersects[0].point.x,
-                intersects[0].point.y,
-                intersects[0].point.z
-            );
-            positions[3] = intersects[0].point.x;
-            positions[4] = intersects[0].point.y;
-            positions[5] = intersects[0].point.z;
-            line.geometry.attributes.position.needsUpdate = true;
-            const distance = v0.distanceTo(v1);
-            measurementLabels[lineId].element.innerText = distance.toFixed(2) + 'm';
-            measurementLabels[lineId].position.lerpVectors(v0, v1, 0.5);
-        }
+  if (drawingLine) {
+    let canvasBounds = threeCanvas.getBoundingClientRect();
+    raycaster.setFromCamera(
+      {
+        x:
+          ((event.clientX - canvasBounds.left) /
+            renderer.domElement.clientWidth) *
+            2 -
+          1,
+        y:
+          -(
+            (event.clientY - canvasBounds.top) /
+            renderer.domElement.clientHeight
+          ) *
+            2 +
+          1,
+      },
+      camera
+    );
+    const intersects = raycaster.intersectObjects(ifcModels, false);
+    if (intersects.length > 0) {
+      const positions = line.geometry.attributes.position.array;
+      const v0 = new Vector3$1(positions[0], positions[1], positions[2]);
+      const v1 = new Vector3$1(
+        intersects[0].point.x,
+        intersects[0].point.y,
+        intersects[0].point.z
+      );
+      positions[3] = intersects[0].point.x;
+      positions[4] = intersects[0].point.y;
+      positions[5] = intersects[0].point.z;
+      line.geometry.attributes.position.needsUpdate = true;
+      const distance = v0.distanceTo(v1);
+      measurementLabels[lineId].element.innerText = distance.toFixed(2) + "m";
+      measurementLabels[lineId].position.lerpVectors(v0, v1, 0.5);
     }
+  }
 }
 
 const fitViewButton = document.getElementById("fit-view");
@@ -106632,5 +106706,5 @@ coloredViewButton.onclick = () => {
 // Remove measurements
 const deleteMeasurementsButton = document.getElementById("deleteMeasurements");
 deleteMeasurementsButton.onclick = () => {
-  deleteMeasurements(scene); 
+  deleteMeasurements(scene);
 };
