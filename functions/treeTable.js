@@ -1,6 +1,7 @@
 // import { ifcLoader, model } from "./loadIfc";
 // import { createPropertySelection } from "./quantities";
 
+import getEmission from "./emission";
 import { getMaterial } from "./materials";
 import { getQuantityByElement } from "./quantities";
 
@@ -170,14 +171,14 @@ async function createLeafRow(table, node, depth) {
   material.textContent = materials[0] ? materials[0] : "Undefined"; //Add material function
   row.appendChild(material);
 
-  const emmisionsPerUnit = 20; //Add emissions function
+  const emmisionsPerUnit = getEmission(materials[0]); //Add emissions function
   const dataEmissionsPerUnit = document.createElement("td");
-  dataEmissionsPerUnit.textContent = emmisionsPerUnit;
+  dataEmissionsPerUnit.textContent = emmisionsPerUnit.toFixed(2);
   row.appendChild(dataEmissionsPerUnit);
 
   const emissions = quantity * emmisionsPerUnit;
   const dataEmissions = document.createElement("td");
-  dataEmissions.textContent = emissions;
+  dataEmissions.textContent = emissions.toFixed(2);
   row.appendChild(dataEmissions);
 
   row.style.fontWeight = "normal";

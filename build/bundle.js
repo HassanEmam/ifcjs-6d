@@ -106095,6 +106095,16 @@ function GetObject(found, model, ifcLoader, scene, lastModel) {
     }
   }
 
+const emission = {
+  "Ortbeton - bewehrt": 72.5,
+  "Ortbeton - bewehrt Verputzt": 420.407,
+};
+
+function getEmission(material) {
+  const emissionFactor = emission[material] ? emission[material] : 0;
+  return emissionFactor;
+}
+
 // import { ifcLoader, model } from "./loadIfc";
 
 let model$1;
@@ -106263,14 +106273,14 @@ async function createLeafRow(table, node, depth) {
   material.textContent = materials[0] ? materials[0] : "Undefined"; //Add material function
   row.appendChild(material);
 
-  const emmisionsPerUnit = 20; //Add emissions function
+  const emmisionsPerUnit = getEmission(materials[0]); //Add emissions function
   const dataEmissionsPerUnit = document.createElement("td");
-  dataEmissionsPerUnit.textContent = emmisionsPerUnit;
+  dataEmissionsPerUnit.textContent = emmisionsPerUnit.toFixed(2);
   row.appendChild(dataEmissionsPerUnit);
 
   const emissions = quantity * emmisionsPerUnit;
   const dataEmissions = document.createElement("td");
-  dataEmissions.textContent = emissions;
+  dataEmissions.textContent = emissions.toFixed(2);
   row.appendChild(dataEmissions);
 
   row.style.fontWeight = "normal";
