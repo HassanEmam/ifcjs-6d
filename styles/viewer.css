@@ -329,7 +329,7 @@ a {
 
 .viewerSection .bimViewer {
   width: 100%;
-  height: 70vh;
+  height: 60vh;
   overflow: hidden;
   border-radius: var(--coverRadius);
   border: 1px solid gainsboro;
@@ -476,7 +476,6 @@ table {
 
 table td {
   border: 1px solid #eee;
-  padding: 0.25rem;
 }
 
 .level1 td:first-child {
@@ -536,11 +535,16 @@ tr:hover {
 
 .data-ifc-element {
   text-align: left;
+  height: 1.3rem;
 }
 
 #boq {
   width: 100%;
-  margin: .3rem;
+  margin: 0.3rem;
+  font-size: 0.7rem;
 }
 
-
+select {
+  width: 3.5rem;
+  height: 1.2rem;
+}
