@@ -7,19 +7,60 @@ import { getQuantityByElement } from "./quantities";
 let model;
 let ifcLoader;
 
-export default function createTreeTable(ifcProject, modelObj, ifcloader) {
+export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
   const tableRoot = document.getElementById("boq");
   model = modelObj;
   ifcLoader = ifcloader;
   removeAllChildren(tableRoot);
-  populateIfcTable(tableRoot, ifcProject, model, ifcLoader);
+  await populateIfcTable(tableRoot, ifcProject, model, ifcLoader);
   implementTreeLogic();
+
+  const qtySelector = document.getElementsByClassName("quantity-type");
+  console.log("Event", qtySelector);
+  document.body.addEventListener("change", function (event) {
+    if (event.target.classList.contains("quantity-type")) {
+      console.log(
+        "Event",
+        event.target.parentElement.nextElementSibling.quants[event.target.value]
+      );
+      event.target.parentElement.nextElementSibling.textContent =
+        event.target.parentElement.nextElementSibling.quants[
+          event.target.value
+        ].value.toFixed(2);
+      const type =
+        event.target.parentElement.nextElementSibling.quants[event.target.value]
+          .type;
+      let uom = getUom(type);
+
+      event.target.parentElement.nextElementSibling.nextElementSibling.textContent =
+        uom;
+    }
+  });
 }
 
-function populateIfcTable(table, ifcProject) {
+function getUom(type) {
+  let uom = "";
+  switch (type) {
+    case "length":
+      uom = "m";
+      break;
+    case "area":
+      uom = "m²";
+      break;
+    case "volume":
+      uom = "m³";
+      break;
+    default:
+      uom = "";
+      break;
+  }
+  return uom;
+}
+
+async function populateIfcTable(table, ifcProject) {
   const initialDepth = 0;
   createHeader(table);
-  createNode(table, ifcProject, initialDepth, ifcProject.children);
+  await createNode(table, ifcProject, initialDepth, ifcProject.children);
 }
 
 function createHeader(table) {
@@ -49,9 +90,9 @@ function createHeader(table) {
   table.appendChild(row);
 }
 
-function createNode(table, node, depth, children) {
+async function createNode(table, node, depth, children) {
   if (children.length === 0) {
-    createLeafRow(table, node, depth);
+    await createLeafRow(table, node, depth);
   } else {
     // If there are multiple categories, group them together
     const grouped = groupCategories(children);
@@ -95,24 +136,38 @@ async function createLeafRow(table, node, depth) {
   element.classList.add("data-ifc-element");
   element.textContent = node.type;
   row.appendChild(element);
-  // console.log("NODE", node);
-  // const quants = await getQuantityByElement(ifcLoader, model, node.expressID);
-  // console.log("QUANTS", quants);
+  const quants = await getQuantityByElement(ifcLoader, model, node.expressID);
+  console.log("QUANTS", quants);
+  const materials = await getMaterial(ifcLoader, model, node.expressID);
   const quantityType = document.createElement("td");
-  quantityType.textContent = "Quantity Type"; //Add dropdown function here
+  const qtyTypeSelector = document.createElement("select");
+  let options = "";
+  let fkey = null;
+  for (const [key, value] of Object.entries(quants)) {
+    console.log("qty", key, value);
+    if (!fkey) {
+      fkey = key;
+    }
+    options += `<option value="${key}">${key}</option>`;
+  }
+  qtyTypeSelector.classList.add("quantity-type");
+  qtyTypeSelector.innerHTML = options;
+  quantityType.appendChild(qtyTypeSelector);
+  // quantityType.textContent = "Quantity Type"; //Add dropdown function here
   row.appendChild(quantityType);
 
   const dataQuantity = document.createElement("td");
-  const quantity = 10.0; //Add quantity function here
+  dataQuantity.quants = quants;
+  const quantity = quants[fkey].value.toFixed(2); //Add quantity function here
   dataQuantity.textContent = quantity;
   row.appendChild(dataQuantity);
 
   const unit = document.createElement("td");
-  unit.textContent = "m2"; //Add unit function
+  unit.textContent = getUom(quants[fkey].type); //Add unit function
   row.appendChild(unit);
 
   const material = document.createElement("td");
-  material.textContent = "Material";
+  material.textContent = materials[0] ? materials[0] : "Undefined"; //Add material function
   row.appendChild(material);
 
   const emmisionsPerUnit = 20; //Add emissions function
@@ -127,15 +182,6 @@ async function createLeafRow(table, node, depth) {
 
   row.style.fontWeight = "normal";
   table.appendChild(row);
-
-  //
-  // row.onmouseenter = () => {
-  //   viewer.IFC.selector.prepickIfcItemsByID(0, [node.expressID]);
-  // }
-
-  // row.onclick = async () => {
-  //   viewer.IFC.selector.pickIfcItemsByID(0, [node.expressID]);
-  // }
 }
 
 function groupCategories(children) {
@@ -169,8 +215,6 @@ function implementTreeLogic() {
         children = children.filter(function (element) {
           return !subnodeChildren.includes(element);
         });
-        // console.log(children);
-        //children = children.not(subnodeChildren);
       });
       if (tr.classList.contains("table-collapse")) {
         tr.classList.remove("table-collapse");

@@ -47260,11 +47260,6 @@ async function getMaterial(ifcLoader, model, selectedElementId) {
   for (const material of materialprop) {
     if (material.ForLayerSet) {
       for (const mat of material.ForLayerSet.MaterialLayers) {
-        console.log(
-          "Materials",
-          mat.Material.Name.value,
-          mat.LayerThickness.value
-        );
         materials.push(mat.Material.Name.value);
       }
     }
@@ -105755,9 +105750,16 @@ async function fillData(model, ifcLoader) {
       model.modelID,
       rel1.RelatingPropertyDefinition.value
     );
-    // console.log(pset.Name.value);
-    for (const obj of rel1.RelatedObjects) {
-      objMap[obj.value] = pset;
+    for (const lobj of rel1.RelatedObjects) {
+      if (!objMap[lobj.value]) {
+        objMap[lobj.value] = [];
+      }
+      const found = objMap[lobj.value].some(
+        (el) => el.expressID === pset.expressID
+      );
+      if (!found) {
+        objMap[lobj.value].push(pset);
+      }
     }
 
     if (!obj[pset.Name.value]) {
@@ -105767,7 +105769,6 @@ async function fillData(model, ifcLoader) {
     if (pset.HasProperties) {
       for (const prop of pset.HasProperties) {
         const propObj = await ifc.byId(model.modelID, prop.value);
-        // console.log(pset.Name.value, propObj);
         if (!obj[pset.Name.value][propObj.Name.value]) {
           pobj[propObj.Name.value] = {};
           pobj[propObj.Name.value] = propObj;
@@ -105814,10 +105815,8 @@ async function fillData(model, ifcLoader) {
     }
 
     obj[pset.Name.value] = pobj;
-    console.log("pobj", pobj, obj[pset.Name.value]);
   }
   psetsObject = obj;
-  console.log("PSETS OBJECT", psetsObject);
   return obj;
 }
 
@@ -105854,7 +105853,6 @@ async function createPropertySelection(model, ifcLoader) {
     }
     selection.appendChild(optionGrp);
   }
-  // console.log(selection);
   return selection;
 }
 
@@ -105863,12 +105861,13 @@ async function getQuantityByElement(ifcLoader, model, elementId) {
     await fillData(model, ifcLoader);
     generated = true;
   }
-  const tmpObj = objMap[elementId];
+  const tmpObj1 = objMap[elementId];
+  const tmpObj = tmpObj1.filter((el) => el.type === IFCELEMENTQUANTITY)[0];
+  console.log(tmpObj);
   const qtyRet = {};
   if (tmpObj && tmpObj["Quantities"]) {
     for (const quantity of tmpObj["Quantities"]) {
       if (quantity.value) {
-        // console.log(quantity.value, model.modelID);
         const qtyObj = await ifcLoader.ifcManager.byId(
           model.modelID,
           quantity.value
@@ -105895,11 +105894,9 @@ async function getQuantityByElement(ifcLoader, model, elementId) {
           default:
             qtyRet[qtyObj.Name.value] = 0;
         }
-        // console.log(qtyObj, qtyObj.type, qtyObj.type === IFCQUANTITYAREA);
       }
     }
   }
-  // console.log(qtyRet);
   return qtyRet;
 }
 
@@ -106100,17 +106097,63 @@ function GetObject(found, model, ifcLoader, scene, lastModel) {
 
 // import { ifcLoader, model } from "./loadIfc";
 
-function createTreeTable(ifcProject, modelObj, ifcloader) {
+let model$1;
+let ifcLoader$1;
+
+async function createTreeTable(ifcProject, modelObj, ifcloader) {
   const tableRoot = document.getElementById("boq");
+  model$1 = modelObj;
+  ifcLoader$1 = ifcloader;
   removeAllChildren(tableRoot);
-  populateIfcTable(tableRoot, ifcProject);
+  await populateIfcTable(tableRoot, ifcProject);
   implementTreeLogic();
+
+  const qtySelector = document.getElementsByClassName("quantity-type");
+  console.log("Event", qtySelector);
+  document.body.addEventListener("change", function (event) {
+    if (event.target.classList.contains("quantity-type")) {
+      console.log(
+        "Event",
+        event.target.parentElement.nextElementSibling.quants[event.target.value]
+      );
+      event.target.parentElement.nextElementSibling.textContent =
+        event.target.parentElement.nextElementSibling.quants[
+          event.target.value
+        ].value.toFixed(2);
+      const type =
+        event.target.parentElement.nextElementSibling.quants[event.target.value]
+          .type;
+      let uom = getUom(type);
+
+      event.target.parentElement.nextElementSibling.nextElementSibling.textContent =
+        uom;
+    }
+  });
 }
 
-function populateIfcTable(table, ifcProject) {
+function getUom(type) {
+  let uom = "";
+  switch (type) {
+    case "length":
+      uom = "m";
+      break;
+    case "area":
+      uom = "m²";
+      break;
+    case "volume":
+      uom = "m³";
+      break;
+    default:
+      uom = "";
+      break;
+  }
+  return uom;
+}
+
+async function populateIfcTable(table, ifcProject) {
   const initialDepth = 0;
   createHeader(table);
-  createNode(table, ifcProject, initialDepth, ifcProject.children);
+  await createNode(table, ifcProject, initialDepth, ifcProject.children);
 }
 
 function createHeader(table) {
@@ -106140,9 +106183,9 @@ function createHeader(table) {
   table.appendChild(row);
 }
 
-function createNode(table, node, depth, children) {
+async function createNode(table, node, depth, children) {
   if (children.length === 0) {
-    createLeafRow(table, node, depth);
+    await createLeafRow(table, node, depth);
   } else {
     // If there are multiple categories, group them together
     const grouped = groupCategories(children);
@@ -106186,24 +106229,38 @@ async function createLeafRow(table, node, depth) {
   element.classList.add("data-ifc-element");
   element.textContent = node.type;
   row.appendChild(element);
-  // console.log("NODE", node);
-  // const quants = await getQuantityByElement(ifcLoader, model, node.expressID);
-  // console.log("QUANTS", quants);
+  const quants = await getQuantityByElement(ifcLoader$1, model$1, node.expressID);
+  console.log("QUANTS", quants);
+  const materials = await getMaterial(ifcLoader$1, model$1, node.expressID);
   const quantityType = document.createElement("td");
-  quantityType.textContent = "Quantity Type"; //Add dropdown function here
+  const qtyTypeSelector = document.createElement("select");
+  let options = "";
+  let fkey = null;
+  for (const [key, value] of Object.entries(quants)) {
+    console.log("qty", key, value);
+    if (!fkey) {
+      fkey = key;
+    }
+    options += `<option value="${key}">${key}</option>`;
+  }
+  qtyTypeSelector.classList.add("quantity-type");
+  qtyTypeSelector.innerHTML = options;
+  quantityType.appendChild(qtyTypeSelector);
+  // quantityType.textContent = "Quantity Type"; //Add dropdown function here
   row.appendChild(quantityType);
 
   const dataQuantity = document.createElement("td");
-  const quantity = 10.0; //Add quantity function here
+  dataQuantity.quants = quants;
+  const quantity = quants[fkey].value.toFixed(2); //Add quantity function here
   dataQuantity.textContent = quantity;
   row.appendChild(dataQuantity);
 
   const unit = document.createElement("td");
-  unit.textContent = "m2"; //Add unit function
+  unit.textContent = getUom(quants[fkey].type); //Add unit function
   row.appendChild(unit);
 
   const material = document.createElement("td");
-  material.textContent = "Material";
+  material.textContent = materials[0] ? materials[0] : "Undefined"; //Add material function
   row.appendChild(material);
 
   const emmisionsPerUnit = 20; //Add emissions function
@@ -106218,15 +106275,6 @@ async function createLeafRow(table, node, depth) {
 
   row.style.fontWeight = "normal";
   table.appendChild(row);
-
-  //
-  // row.onmouseenter = () => {
-  //   viewer.IFC.selector.prepickIfcItemsByID(0, [node.expressID]);
-  // }
-
-  // row.onclick = async () => {
-  //   viewer.IFC.selector.pickIfcItemsByID(0, [node.expressID]);
-  // }
 }
 
 function groupCategories(children) {
@@ -106260,8 +106308,6 @@ function implementTreeLogic() {
         children = children.filter(function (element) {
           return !subnodeChildren.includes(element);
         });
-        // console.log(children);
-        //children = children.not(subnodeChildren);
       });
       if (tr.classList.contains("table-collapse")) {
         tr.classList.remove("table-collapse");
@@ -106453,8 +106499,11 @@ async function init() {
   ifcModels.push(model);
   scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
-  createTreeTable(spatial);
+  await createTreeTable(spatial, model, ifcLoader);
 
+  // qtySelector.addEventListener("change", (event) => {
+  //   console.log("Event", event);
+  // });
   threeCanvas.onmousemove = (event) => {
     const found = cast(event)[0];
     highlight(found, preselectMat, preselectModel);
@@ -106503,8 +106552,8 @@ async function init() {
   const materials = await getMaterial(ifcLoader, model, 22620);
   console.log(materials);
   const selection = await createPropertySelection(model, ifcLoader);
-  const quanty = await getQuantityByElement(ifcLoader, model, 168);
-  console.log(quanty);
+  const quanty = await getQuantityByElement(ifcLoader, model, 284);
+  console.log("Wall Quants", quanty);
   document.body.appendChild(selection);
 }
 
@@ -106571,13 +106620,14 @@ function highlight(found, material, model) {
   }
 }
 let lastModel = null;
-threeCanvas.ondblclick = (event) => selectObject(
-  event, 
-  cast, 
-  model, 
-  ifcLoader, 
-  scene,
-  lastModel);
+threeCanvas.ondblclick = (event) =>
+  selectObject(
+    event,
+    cast,
+    model,
+    ifcLoader,
+    scene,
+    lastModel);
 
 //Animation loop
 const animate = () => {

@@ -81,7 +81,7 @@ import {
   wasdKeysControls,
   arrowsKeysControls,
 } from "./functions/keysControls.js";
-import { selectObject } from './functions/Selection.js'
+import { selectObject } from "./functions/Selection.js";
 import { IFCBUILDINGSTOREY } from "web-ifc";
 import createTreeTable from "./functions/treeTable.js";
 
@@ -209,8 +209,11 @@ async function init() {
   ifcModels.push(model);
   scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
-  createTreeTable(spatial, model, ifcLoader);
+  await createTreeTable(spatial, model, ifcLoader);
 
+  // qtySelector.addEventListener("change", (event) => {
+  //   console.log("Event", event);
+  // });
   threeCanvas.onmousemove = (event) => {
     const found = cast(event)[0];
     highlight(found, preselectMat, preselectModel);
@@ -259,8 +262,8 @@ async function init() {
   const materials = await getMaterial(ifcLoader, model, 22620);
   console.log(materials);
   const selection = await createPropertySelection(model, ifcLoader);
-  const quanty = await getQuantityByElement(ifcLoader, model, 168);
-  console.log(quanty);
+  const quanty = await getQuantityByElement(ifcLoader, model, 284);
+  console.log("Wall Quants", quanty);
   document.body.appendChild(selection);
 }
 
@@ -330,15 +333,16 @@ function highlight(found, material, model) {
 //Select an object
 let selectedElementId = null;
 let lastModel = null;
-threeCanvas.ondblclick = (event) => selectObject(
-  event, 
-  cast, 
-  model, 
-  ifcLoader, 
-  scene,
-  lastModel,
-  selectedElementId
-);
+threeCanvas.ondblclick = (event) =>
+  selectObject(
+    event,
+    cast,
+    model,
+    ifcLoader,
+    scene,
+    lastModel,
+    selectedElementId
+  );
 
 //Animation loop
 const animate = () => {

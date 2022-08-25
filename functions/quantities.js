@@ -1,4 +1,4 @@
-import { IFCRELDEFINESBYPROPERTIES } from "web-ifc";
+import { IFCELEMENTQUANTITY, IFCRELDEFINESBYPROPERTIES } from "web-ifc";
 import { IFCQUANTITYAREA, IFCQUANTITYLENGTH, IFCQUANTITYVOLUME } from "web-ifc";
 
 let psetsObject = {};
@@ -20,9 +20,16 @@ export async function fillData(model, ifcLoader) {
       model.modelID,
       rel1.RelatingPropertyDefinition.value
     );
-    // console.log(pset.Name.value);
-    for (const obj of rel1.RelatedObjects) {
-      objMap[obj.value] = pset;
+    for (const lobj of rel1.RelatedObjects) {
+      if (!objMap[lobj.value]) {
+        objMap[lobj.value] = [];
+      }
+      const found = objMap[lobj.value].some(
+        (el) => el.expressID === pset.expressID
+      );
+      if (!found) {
+        objMap[lobj.value].push(pset);
+      }
     }
 
     if (!obj[pset.Name.value]) {
@@ -33,7 +40,6 @@ export async function fillData(model, ifcLoader) {
     if (pset.HasProperties) {
       for (const prop of pset.HasProperties) {
         const propObj = await ifc.byId(model.modelID, prop.value);
-        // console.log(pset.Name.value, propObj);
         if (!obj[pset.Name.value][propObj.Name.value]) {
           pobj[propObj.Name.value] = {};
           pobj[propObj.Name.value] = propObj;
@@ -80,10 +86,8 @@ export async function fillData(model, ifcLoader) {
     }
 
     obj[pset.Name.value] = pobj;
-    console.log("pobj", pobj, obj[pset.Name.value]);
   }
   psetsObject = obj;
-  console.log("PSETS OBJECT", psetsObject);
   return obj;
 }
 
@@ -120,7 +124,6 @@ export async function createPropertySelection(model, ifcLoader) {
     }
     selection.appendChild(optionGrp);
   }
-  // console.log(selection);
   return selection;
 }
 
@@ -129,12 +132,13 @@ export async function getQuantityByElement(ifcLoader, model, elementId) {
     await fillData(model, ifcLoader);
     generated = true;
   }
-  const tmpObj = objMap[elementId];
+  const tmpObj1 = objMap[elementId];
+  const tmpObj = tmpObj1.filter((el) => el.type === IFCELEMENTQUANTITY)[0];
+  console.log(tmpObj);
   const qtyRet = {};
   if (tmpObj && tmpObj["Quantities"]) {
     for (const quantity of tmpObj["Quantities"]) {
       if (quantity.value) {
-        // console.log(quantity.value, model.modelID);
         const qtyObj = await ifcLoader.ifcManager.byId(
           model.modelID,
           quantity.value
@@ -161,10 +165,8 @@ export async function getQuantityByElement(ifcLoader, model, elementId) {
           default:
             qtyRet[qtyObj.Name.value] = 0;
         }
-        // console.log(qtyObj, qtyObj.type, qtyObj.type === IFCQUANTITYAREA);
       }
     }
   }
-  // console.log(qtyRet);
   return qtyRet;
 }
