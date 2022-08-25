@@ -106030,6 +106030,46 @@ function arrowsKeysControls(cameraControls) {
   });
 }
 
+const MaterialSelectedObject = new MeshLambertMaterial({
+    transparent: true,
+    opacity: 0.8,
+    color: 0xff0000,
+    depthTest: true,
+});
+
+async function selectObject(event, cast, model, ifcLoader, scene) {
+    console.log('Object Clicked');
+    const found = cast(event)[0];
+    if (found) {
+      const index = found.faceIndex;
+      const geometry = found.object.geometry;
+      ifcLoader.ifcManager.getExpressId(geometry, index);
+      GetObject(found, model, ifcLoader, scene);
+    }
+}
+
+function GetObject(found, model, ifcLoader, scene) {
+    model.modelID;
+    if (found) {
+      // Gets model ID
+      const modelId = found.object.modelID;
+  
+      // Gets Express ID
+      const index = found.faceIndex;
+      const geometry = found.object.geometry;
+      const id = ifcLoader.ifcManager.getExpressId(geometry, index);
+  
+      // Creates subset
+      ifcLoader.ifcManager.createSubset({
+        modelID: modelId,
+        ids: [id],
+        material: MaterialSelectedObject,
+        scene: scene,
+        removePrevious: true,
+      });
+    }
+  }
+
 // import { ifcLoader, model } from "./loadIfc";
 
 function createTreeTable(ifcProject) {
@@ -106475,16 +106515,6 @@ function cast(event) {
   // Casts a ray
   return raycaster.intersectObjects(ifcModels);
 }
-async function pick(event) {
-  const found = cast(event)[0];
-  if (found) {
-    const index = found.faceIndex;
-    const geometry = found.object.geometry;
-    ifcLoader.ifcManager;
-    ifcLoader.ifcManager.getExpressId(geometry, index);
-    highlight(found, preselectMat, model);
-  }
-}
 
 function highlight(found, material, model) {
   const modelId = model.modelID;
@@ -106511,7 +106541,14 @@ function highlight(found, material, model) {
   }
 }
 
-threeCanvas.ondblclick = (event) => pick(event);
+//Select an object
+threeCanvas.ondblclick = (event) => selectObject(
+  event, 
+  cast, 
+  model, 
+  ifcLoader, 
+  scene
+);
 
 //Animation loop
 const animate = () => {

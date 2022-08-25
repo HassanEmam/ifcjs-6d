@@ -81,6 +81,7 @@ import {
   wasdKeysControls,
   arrowsKeysControls,
 } from "./functions/keysControls.js";
+import { selectObject } from './functions/Selection.js'
 import { IFCBUILDINGSTOREY } from "web-ifc";
 import createTreeTable from "./functions/treeTable.js";
 
@@ -301,19 +302,6 @@ function cast(event) {
   return raycaster.intersectObjects(ifcModels);
 }
 
-let selectedElementId = null;
-async function pick(event) {
-  const found = cast(event)[0];
-  if (found) {
-    const index = found.faceIndex;
-    const geometry = found.object.geometry;
-    const ifc = ifcLoader.ifcManager;
-    const id = ifcLoader.ifcManager.getExpressId(geometry, index);
-    selectedElementId = id;
-    highlight(found, preselectMat, model);
-  }
-}
-
 function highlight(found, material, model) {
   const modelId = model.modelID;
   if (found) {
@@ -339,7 +327,14 @@ function highlight(found, material, model) {
   }
 }
 
-threeCanvas.ondblclick = (event) => pick(event);
+//Select an object
+threeCanvas.ondblclick = (event) => selectObject(
+  event, 
+  cast, 
+  model, 
+  ifcLoader, 
+  scene
+);
 
 //Animation loop
 const animate = () => {
