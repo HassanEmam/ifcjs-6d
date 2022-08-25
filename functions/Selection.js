@@ -6,37 +6,39 @@ const MaterialSelectedObject = new MeshLambertMaterial({
     color: 0xff0000,
     depthTest: true,
 });
-let selectedElementId = null;
 
-export async function selectObject(event, cast, model, ifcLoader, scene) {
+export async function selectObject(event, cast, model, ifcLoader, scene, lastModel, selectedElementId) {
     const found = cast(event)[0];
     if (found) {
       const index = found.faceIndex;
       const geometry = found.object.geometry;
       const id = ifcLoader.ifcManager.getExpressId(geometry, index);
       selectedElementId = id;
-      GetObject(found, model, ifcLoader, scene);
+      GetObject(found, model, ifcLoader, scene, lastModel);
     }
 }
 
-function GetObject(found, model, ifcLoader, scene) {
+function GetObject(found, model, ifcLoader, scene, lastModel) {
     const modelId = model.modelID;
     if (found) {
-      // Gets model ID
-      const modelId = found.object.modelID;
-  
-      // Gets Express ID
-      const index = found.faceIndex;
-      const geometry = found.object.geometry;
-      const id = ifcLoader.ifcManager.getExpressId(geometry, index);
-  
-      // Creates subset
-      ifcLoader.ifcManager.createSubset({
-        modelID: modelId,
-        ids: [id],
-        material: MaterialSelectedObject,
-        scene: scene,
-        removePrevious: true,
-      });
+        lastModel = found.object;
+        // Gets model ID
+        const modelId = found.object.modelID;
+    
+        // Gets Express ID
+        const index = found.faceIndex;
+        const geometry = found.object.geometry;
+        const id = ifcLoader.ifcManager.getExpressId(geometry, index);
+    
+        // Creates subset
+        ifcLoader.ifcManager.createSubset({
+            modelID: modelId,
+            ids: [id],
+            material: MaterialSelectedObject,
+            scene: scene,
+            removePrevious: true,
+        });
+    } else if (lastModel)  {
+        ifcLoader.ifcManager.removeSubset(modelId, MaterialSelectedObject)
     }
   }

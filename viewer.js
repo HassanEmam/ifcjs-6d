@@ -328,12 +328,16 @@ function highlight(found, material, model) {
 }
 
 //Select an object
+let selectedElementId = null;
+let lastModel = null;
 threeCanvas.ondblclick = (event) => selectObject(
   event, 
   cast, 
   model, 
   ifcLoader, 
-  scene
+  scene,
+  lastModel,
+  selectedElementId
 );
 
 //Animation loop
