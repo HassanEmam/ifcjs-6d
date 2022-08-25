@@ -106066,14 +106066,16 @@ async function selectObject(event, cast, model, ifcLoader, scene, lastModel, sel
       const index = found.faceIndex;
       const geometry = found.object.geometry;
       ifcLoader.ifcManager.getExpressId(geometry, index);
-      GetObject(found, model, ifcLoader, scene, lastModel);
+      GetObject(found, model, ifcLoader, scene);
+    } else  {
+        ifcLoader.ifcManager.removeSubset(model.modelID, MaterialSelectedObject);
     }
 }
 
 function GetObject(found, model, ifcLoader, scene, lastModel) {
-    const modelId = model.modelID;
+    model.modelID;
     if (found) {
-        lastModel = found.object;
+        found.object;
         // Gets model ID
         const modelId = found.object.modelID;
     
@@ -106090,9 +106092,7 @@ function GetObject(found, model, ifcLoader, scene, lastModel) {
             scene: scene,
             removePrevious: true,
         });
-    } else if (lastModel)  {
-        ifcLoader.ifcManager.removeSubset(modelId, MaterialSelectedObject);
-    }
+    } 
   }
 
 // import { ifcLoader, model } from "./loadIfc";
@@ -106619,15 +106619,13 @@ function highlight(found, material, model) {
     ifcLoader.ifcManager.removeSubset(modelId, material);
   }
 }
-let lastModel = null;
 threeCanvas.ondblclick = (event) =>
   selectObject(
     event,
     cast,
     model,
     ifcLoader,
-    scene,
-    lastModel);
+    scene);
 
 //Animation loop
 const animate = () => {

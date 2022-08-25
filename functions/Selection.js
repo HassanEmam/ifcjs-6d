@@ -15,6 +15,8 @@ export async function selectObject(event, cast, model, ifcLoader, scene, lastMod
       const id = ifcLoader.ifcManager.getExpressId(geometry, index);
       selectedElementId = id;
       GetObject(found, model, ifcLoader, scene, lastModel);
+    } else  {
+        ifcLoader.ifcManager.removeSubset(model.modelID, MaterialSelectedObject)
     }
 }
 
@@ -38,7 +40,5 @@ function GetObject(found, model, ifcLoader, scene, lastModel) {
             scene: scene,
             removePrevious: true,
         });
-    } else if (lastModel)  {
-        ifcLoader.ifcManager.removeSubset(modelId, MaterialSelectedObject)
-    }
+    } 
   }
