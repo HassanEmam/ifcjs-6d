@@ -106126,17 +106126,22 @@ async function createTreeTable(ifcProject, modelObj, ifcloader) {
         "Event",
         event.target.parentElement.nextElementSibling.quants[event.target.value]
       );
+      const quants =
+        event.target.parentElement.nextElementSibling.quants[event.target.value]
+          .value;
       event.target.parentElement.nextElementSibling.textContent =
-        event.target.parentElement.nextElementSibling.quants[
-          event.target.value
-        ].value.toFixed(2);
+        quants.toFixed(2);
+
       const type =
         event.target.parentElement.nextElementSibling.quants[event.target.value]
           .type;
       let uom = getUom(type);
-
-      event.target.parentElement.nextElementSibling.nextElementSibling.textContent =
-        uom;
+      const tdUoM =
+        event.target.parentElement.nextElementSibling.nextElementSibling;
+      tdUoM.textContent = uom;
+      const factor = tdUoM.nextElementSibling.nextElementSibling;
+      const emission = factor.textContent * quants;
+      factor.nextElementSibling.textContent = emission.toFixed(2);
     }
   });
 }
@@ -106261,12 +106266,12 @@ async function createLeafRow(table, node, depth) {
 
   const dataQuantity = document.createElement("td");
   dataQuantity.quants = quants;
-  const quantity = quants[fkey].value.toFixed(2); //Add quantity function here
+  const quantity = quants[fkey]?.value.toFixed(2); //Add quantity function here
   dataQuantity.textContent = quantity;
   row.appendChild(dataQuantity);
 
   const unit = document.createElement("td");
-  unit.textContent = getUom(quants[fkey].type); //Add unit function
+  unit.textContent = getUom(quants[fkey]?.type); //Add unit function
   row.appendChild(unit);
 
   const material = document.createElement("td");
