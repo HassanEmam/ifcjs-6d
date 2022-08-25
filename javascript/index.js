@@ -44,14 +44,16 @@ for (let project of projects) {
 //Input File Button (Get input-file url)
 const projectCardInput = document.getElementById("projectCard-input");
 const inputFileButton = document.getElementById("file-input");
-projectCardInput.onclick = () => inputFileButton.click();
+projectCardInput.onclick = () => {
+  inputDestinationURL = inputDestinationURL;
+  console.log(inputDestinationURL);
+  // inputFileButton.href = inputDestinationURL;
+  location = inputDestinationURL;
+};
 let inputFileURL = null;
 inputFileButton.addEventListener("change", () => {
   const file = inputFileButton.files[0];
   inputFileURL = URL.createObjectURL(file);
-  inputDestinationURL = inputDestinationURL + "&inputURL=" + inputFileURL;
-  inputFileButton.href = inputDestinationURL;
-  location = inputDestinationURL;
 });
 
 // Remove the template card
