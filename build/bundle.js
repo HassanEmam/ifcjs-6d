@@ -105763,7 +105763,7 @@ async function fillData(model, ifcLoader) {
     if (!obj[pset.Name.value]) {
       obj[pset.Name.value] = {};
     }
-    const pobj = {};
+    let pobj = {};
     if (pset.HasProperties) {
       for (const prop of pset.HasProperties) {
         const propObj = await ifc.byId(model.modelID, prop.value);
@@ -105783,21 +105783,38 @@ async function fillData(model, ifcLoader) {
     } else if (pset.Quantities) {
       for (const quantity of pset.Quantities) {
         const quantityObj = await ifc.byId(model.modelID, quantity.value);
-        if (!obj[pset.Name.value][quantityObj.Name.value]) {
-          pobj[quantityObj.Name.value] = {};
-          pobj[quantityObj.Name.value] = quantityObj;
-          pobj[quantityObj.Name.value]["ids"] = [];
-          pobj[quantityObj.Name.value]["ids"].push(quantityObj.expressID);
+        if (!obj[pset.Name.value]) {
+          if (!obj[pset.Name.value][quantityObj.Name.value]) {
+            pobj[quantityObj.Name.value] = {};
+            pobj[quantityObj.Name.value] = quantityObj;
+            pobj[quantityObj.Name.value]["ids"] = [];
+            pobj[quantityObj.Name.value]["ids"].push(quantityObj.expressID);
+          } else {
+            pobj[quantityObj.Name.value] =
+              obj[pset.Name.value][quantityObj.Name.value];
+            obj[pset.Name.value][quantityObj.Name.value]["ids"].push(
+              quantityObj.expressID
+            );
+          }
         } else {
-          pobj[quantityObj.Name.value] =
-            obj[pset.Name.value][quantityObj.Name.value];
-          obj[pset.Name.value][quantityObj.Name.value]["ids"].push(
-            quantityObj.expressID
-          );
+          pobj = obj[pset.Name.value];
+          if (pobj[quantityObj.Name.value]) {
+            pobj[quantityObj.Name.value]["ids"].push(quantityObj.expressID);
+          } else {
+            pobj[quantityObj.Name.value] = {};
+            pobj[quantityObj.Name.value] = quantityObj;
+            pobj[quantityObj.Name.value]["ids"] = [];
+            pobj[quantityObj.Name.value]["ids"].push(quantityObj.expressID);
+          }
+          // obj[pset.Name.value][quantityObj.Name.value]["ids"].push(
+          //   quantityObj.expressID
+          // );
         }
       }
     }
+
     obj[pset.Name.value] = pobj;
+    console.log("pobj", pobj, obj[pset.Name.value]);
   }
   psetsObject = obj;
   console.log("PSETS OBJECT", psetsObject);
@@ -105848,7 +105865,7 @@ async function getQuantityByElement(ifcLoader, model, elementId) {
   }
   const tmpObj = objMap[elementId];
   const qtyRet = {};
-  if (tmpObj["Quantities"]) {
+  if (tmpObj && tmpObj["Quantities"]) {
     for (const quantity of tmpObj["Quantities"]) {
       if (quantity.value) {
         // console.log(quantity.value, model.modelID);
@@ -105858,13 +105875,22 @@ async function getQuantityByElement(ifcLoader, model, elementId) {
         );
         switch (qtyObj.type) {
           case IFCQUANTITYAREA:
-            qtyRet[qtyObj.Name.value] = qtyObj.AreaValue.value;
+            qtyRet[qtyObj.Name.value] = {
+              value: qtyObj.AreaValue.value,
+              type: "area",
+            };
             break;
           case IFCQUANTITYLENGTH:
-            qtyRet[qtyObj.Name.value] = qtyObj.LengthValue.value;
+            qtyRet[qtyObj.Name.value] = {
+              value: qtyObj.LengthValue.value,
+              type: "length",
+            };
             break;
           case IFCQUANTITYVOLUME:
-            qtyRet[qtyObj.Name.value] = qtyObj.VolumeValue.value;
+            qtyRet[qtyObj.Name.value] = {
+              value: qtyObj.VolumeValue.value,
+              type: "volume",
+            };
             break;
           default:
             qtyRet[qtyObj.Name.value] = 0;
@@ -105873,7 +105899,7 @@ async function getQuantityByElement(ifcLoader, model, elementId) {
       }
     }
   }
-  console.log(qtyRet);
+  // console.log(qtyRet);
   return qtyRet;
 }
 
@@ -106032,7 +106058,7 @@ function arrowsKeysControls(cameraControls) {
 
 // import { ifcLoader, model } from "./loadIfc";
 
-function createTreeTable(ifcProject) {
+function createTreeTable(ifcProject, modelObj, ifcloader) {
   const tableRoot = document.getElementById("boq");
   removeAllChildren(tableRoot);
   populateIfcTable(tableRoot, ifcProject);
@@ -106107,7 +106133,7 @@ function createBranchRow(table, node, depth, children) {
   children.forEach((child) => createNode(table, child, depth, child.children));
 }
 
-function createLeafRow(table, node, depth) {
+async function createLeafRow(table, node, depth) {
   const row = document.createElement("tr");
   const className = "level" + depth;
   row.classList.add(className);
@@ -106118,7 +106144,9 @@ function createLeafRow(table, node, depth) {
   element.classList.add("data-ifc-element");
   element.textContent = node.type;
   row.appendChild(element);
-
+  // console.log("NODE", node);
+  // const quants = await getQuantityByElement(ifcLoader, model, node.expressID);
+  // console.log("QUANTS", quants);
   const quantityType = document.createElement("td");
   quantityType.textContent = "Quantity Type"; //Add dropdown function here
   row.appendChild(quantityType);

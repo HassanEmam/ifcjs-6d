@@ -2,11 +2,17 @@
 // import { createPropertySelection } from "./quantities";
 
 import { getMaterial } from "./materials";
+import { getQuantityByElement } from "./quantities";
 
-export default function createTreeTable(ifcProject) {
+let model;
+let ifcLoader;
+
+export default function createTreeTable(ifcProject, modelObj, ifcloader) {
   const tableRoot = document.getElementById("boq");
+  model = modelObj;
+  ifcLoader = ifcloader;
   removeAllChildren(tableRoot);
-  populateIfcTable(tableRoot, ifcProject);
+  populateIfcTable(tableRoot, ifcProject, model, ifcLoader);
   implementTreeLogic();
 }
 
@@ -78,7 +84,7 @@ function createBranchRow(table, node, depth, children) {
   children.forEach((child) => createNode(table, child, depth, child.children));
 }
 
-function createLeafRow(table, node, depth) {
+async function createLeafRow(table, node, depth) {
   const row = document.createElement("tr");
   const className = "level" + depth;
   row.classList.add(className);
@@ -89,7 +95,9 @@ function createLeafRow(table, node, depth) {
   element.classList.add("data-ifc-element");
   element.textContent = node.type;
   row.appendChild(element);
-
+  // console.log("NODE", node);
+  // const quants = await getQuantityByElement(ifcLoader, model, node.expressID);
+  // console.log("QUANTS", quants);
   const quantityType = document.createElement("td");
   quantityType.textContent = "Quantity Type"; //Add dropdown function here
   row.appendChild(quantityType);

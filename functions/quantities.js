@@ -29,7 +29,7 @@ export async function fillData(model, ifcLoader) {
       obj[pset.Name.value] = {};
     }
     const props = {};
-    const pobj = {};
+    let pobj = {};
     if (pset.HasProperties) {
       for (const prop of pset.HasProperties) {
         const propObj = await ifc.byId(model.modelID, prop.value);
@@ -49,21 +49,38 @@ export async function fillData(model, ifcLoader) {
     } else if (pset.Quantities) {
       for (const quantity of pset.Quantities) {
         const quantityObj = await ifc.byId(model.modelID, quantity.value);
-        if (!obj[pset.Name.value][quantityObj.Name.value]) {
-          pobj[quantityObj.Name.value] = {};
-          pobj[quantityObj.Name.value] = quantityObj;
-          pobj[quantityObj.Name.value]["ids"] = [];
-          pobj[quantityObj.Name.value]["ids"].push(quantityObj.expressID);
+        if (!obj[pset.Name.value]) {
+          if (!obj[pset.Name.value][quantityObj.Name.value]) {
+            pobj[quantityObj.Name.value] = {};
+            pobj[quantityObj.Name.value] = quantityObj;
+            pobj[quantityObj.Name.value]["ids"] = [];
+            pobj[quantityObj.Name.value]["ids"].push(quantityObj.expressID);
+          } else {
+            pobj[quantityObj.Name.value] =
+              obj[pset.Name.value][quantityObj.Name.value];
+            obj[pset.Name.value][quantityObj.Name.value]["ids"].push(
+              quantityObj.expressID
+            );
+          }
         } else {
-          pobj[quantityObj.Name.value] =
-            obj[pset.Name.value][quantityObj.Name.value];
-          obj[pset.Name.value][quantityObj.Name.value]["ids"].push(
-            quantityObj.expressID
-          );
+          pobj = obj[pset.Name.value];
+          if (pobj[quantityObj.Name.value]) {
+            pobj[quantityObj.Name.value]["ids"].push(quantityObj.expressID);
+          } else {
+            pobj[quantityObj.Name.value] = {};
+            pobj[quantityObj.Name.value] = quantityObj;
+            pobj[quantityObj.Name.value]["ids"] = [];
+            pobj[quantityObj.Name.value]["ids"].push(quantityObj.expressID);
+          }
+          // obj[pset.Name.value][quantityObj.Name.value]["ids"].push(
+          //   quantityObj.expressID
+          // );
         }
       }
     }
+
     obj[pset.Name.value] = pobj;
+    console.log("pobj", pobj, obj[pset.Name.value]);
   }
   psetsObject = obj;
   console.log("PSETS OBJECT", psetsObject);
@@ -114,7 +131,7 @@ export async function getQuantityByElement(ifcLoader, model, elementId) {
   }
   const tmpObj = objMap[elementId];
   const qtyRet = {};
-  if (tmpObj["Quantities"]) {
+  if (tmpObj && tmpObj["Quantities"]) {
     for (const quantity of tmpObj["Quantities"]) {
       if (quantity.value) {
         // console.log(quantity.value, model.modelID);
@@ -124,13 +141,22 @@ export async function getQuantityByElement(ifcLoader, model, elementId) {
         );
         switch (qtyObj.type) {
           case IFCQUANTITYAREA:
-            qtyRet[qtyObj.Name.value] = qtyObj.AreaValue.value;
+            qtyRet[qtyObj.Name.value] = {
+              value: qtyObj.AreaValue.value,
+              type: "area",
+            };
             break;
           case IFCQUANTITYLENGTH:
-            qtyRet[qtyObj.Name.value] = qtyObj.LengthValue.value;
+            qtyRet[qtyObj.Name.value] = {
+              value: qtyObj.LengthValue.value,
+              type: "length",
+            };
             break;
           case IFCQUANTITYVOLUME:
-            qtyRet[qtyObj.Name.value] = qtyObj.VolumeValue.value;
+            qtyRet[qtyObj.Name.value] = {
+              value: qtyObj.VolumeValue.value,
+              type: "volume",
+            };
             break;
           default:
             qtyRet[qtyObj.Name.value] = 0;
@@ -139,6 +165,6 @@ export async function getQuantityByElement(ifcLoader, model, elementId) {
       }
     }
   }
-  console.log(qtyRet);
+  // console.log(qtyRet);
   return qtyRet;
 }

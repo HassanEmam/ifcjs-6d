@@ -208,7 +208,7 @@ async function init() {
   ifcModels.push(model);
   scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
-  createTreeTable(spatial);
+  createTreeTable(spatial, model, ifcLoader);
 
   threeCanvas.onmousemove = (event) => {
     const found = cast(event)[0];
