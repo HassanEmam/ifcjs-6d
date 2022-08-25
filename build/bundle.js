@@ -106063,10 +106063,15 @@ const MaterialSelectedObject = new MeshLambertMaterial({
 async function selectObject(event, cast, model, ifcLoader, scene, lastModel, selectedElementId) {
     const found = cast(event)[0];
     if (found) {
-      const index = found.faceIndex;
-      const geometry = found.object.geometry;
-      ifcLoader.ifcManager.getExpressId(geometry, index);
-      GetObject(found, model, ifcLoader, scene);
+        const index = found.faceIndex;
+        const geometry = found.object.geometry;
+        ifcLoader.ifcManager.getExpressId(geometry, index);
+        // const typeOfSelectedObject = ifcLoader.ifcManager.getIfcType(model.modelID, id)
+        // const propsOfSelectedObject = await ifcLoader.ifcManager.getItemProperties(model.modelID, id)
+        // const nameOfSelectedObject = Object.values(propsOfSelectedObject.Name)[1]
+        // console.log(typeOfSelectedObject, nameOfSelectedObject, propsOfSelectedObject)
+        // console.log(DecodeIFCString(nameOfSelectedObject))
+        GetObject(found, model, ifcLoader, scene);
     } else  {
         ifcLoader.ifcManager.removeSubset(model.modelID, MaterialSelectedObject);
     }
@@ -106093,7 +106098,7 @@ function GetObject(found, model, ifcLoader, scene, lastModel) {
             removePrevious: true,
         });
     } 
-  }
+}
 
 const emission = {
   "Ortbeton - bewehrt": 72.5,
@@ -106416,8 +106421,51 @@ currentProject = projects.find((project) => project.id === currentProjectID);
 if (currentProjectID != "input-ifc") {
   projectURL = currentProject.url;
 } else {
-  let inputFileID = url.searchParams.get("inputURL");
-  projectURL = inputFileID;
+  const inputFileButton = document.createElement("input");
+  const modal = document.createElement("div");
+  modal.classList.add("modal");
+  modal.setAttribute("tabindex", "-1");
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-hidden", false);
+  modal.setAttribute("id", "onload");
+  modal.innerHTML = `
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Select Ifc File </h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+  `;
+  document.body.appendChild(modal);
+
+  inputFileButton.type = "file";
+  inputFileButton.accept = ".ifc";
+  document.getElementsByClassName("modal-body")[0].appendChild(inputFileButton);
+  window.onload = () => {
+    $("#onload").modal("show");
+  };
+
+  inputFileButton.onchange = (event) => {
+    const file = inputFileButton.files[0];
+    const inputFileURL = URL.createObjectURL(file);
+    projectURL = inputFileURL;
+    if (projectURL) {
+      $("#onload").modal("hide");
+      init();
+    }
+  };
+  // let inputFileID = url.searchParams.get("inputURL");
+  // projectURL = inputFileID;
 }
 
 const title = document.getElementById("title");
@@ -106572,7 +106620,9 @@ async function init() {
   document.body.appendChild(selection);
 }
 
-init();
+if (projectURL) {
+  init();
+}
 
 const toggler = document.getElementsByClassName("caret");
 for (let i = 0; i < toggler.length; i++) {
