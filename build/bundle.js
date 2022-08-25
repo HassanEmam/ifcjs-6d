@@ -106056,6 +106056,48 @@ function arrowsKeysControls(cameraControls) {
   });
 }
 
+const MaterialSelectedObject = new MeshLambertMaterial({
+    transparent: true,
+    opacity: 0.8,
+    color: 0xff0000,
+    depthTest: true,
+});
+
+async function selectObject(event, cast, model, ifcLoader, scene, lastModel, selectedElementId) {
+    const found = cast(event)[0];
+    if (found) {
+      const index = found.faceIndex;
+      const geometry = found.object.geometry;
+      ifcLoader.ifcManager.getExpressId(geometry, index);
+      GetObject(found, model, ifcLoader, scene, lastModel);
+    }
+}
+
+function GetObject(found, model, ifcLoader, scene, lastModel) {
+    const modelId = model.modelID;
+    if (found) {
+        lastModel = found.object;
+        // Gets model ID
+        const modelId = found.object.modelID;
+    
+        // Gets Express ID
+        const index = found.faceIndex;
+        const geometry = found.object.geometry;
+        const id = ifcLoader.ifcManager.getExpressId(geometry, index);
+    
+        // Creates subset
+        ifcLoader.ifcManager.createSubset({
+            modelID: modelId,
+            ids: [id],
+            material: MaterialSelectedObject,
+            scene: scene,
+            removePrevious: true,
+        });
+    } else if (lastModel)  {
+        ifcLoader.ifcManager.removeSubset(modelId, MaterialSelectedObject);
+    }
+  }
+
 // import { ifcLoader, model } from "./loadIfc";
 
 function createTreeTable(ifcProject, modelObj, ifcloader) {
@@ -106503,16 +106545,6 @@ function cast(event) {
   // Casts a ray
   return raycaster.intersectObjects(ifcModels);
 }
-async function pick(event) {
-  const found = cast(event)[0];
-  if (found) {
-    const index = found.faceIndex;
-    const geometry = found.object.geometry;
-    ifcLoader.ifcManager;
-    ifcLoader.ifcManager.getExpressId(geometry, index);
-    highlight(found, preselectMat, model);
-  }
-}
 
 function highlight(found, material, model) {
   const modelId = model.modelID;
@@ -106538,8 +106570,14 @@ function highlight(found, material, model) {
     ifcLoader.ifcManager.removeSubset(modelId, material);
   }
 }
-
-threeCanvas.ondblclick = (event) => pick(event);
+let lastModel = null;
+threeCanvas.ondblclick = (event) => selectObject(
+  event, 
+  cast, 
+  model, 
+  ifcLoader, 
+  scene,
+  lastModel);
 
 //Animation loop
 const animate = () => {
