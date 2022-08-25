@@ -9,7 +9,6 @@ const MaterialSelectedObject = new MeshLambertMaterial({
 let selectedElementId = null;
 
 export async function selectObject(event, cast, model, ifcLoader, scene) {
-    console.log('Object Clicked')
     const found = cast(event)[0];
     if (found) {
       const index = found.faceIndex;
