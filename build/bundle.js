@@ -40,10 +40,25 @@ const projects = [
     url: "./ifc/07.ifc",
   },
   {
-    name: "Model 8",
+    name: "Model 1",
     id: "08",
     url: "./ifc/08.ifc",
   },
+    {
+    name: "Model 2",
+    id: "09",
+    url: "./ifc/09.ifc",
+  },
+    {
+    name: "Model 3",
+    id: "10",
+    url: "./ifc/10.ifc",
+  },
+    {
+    name: "Model 4",
+    id: "11",
+    url: "./ifc/11.ifc",
+  }
 ];
 
 /**
@@ -47250,6 +47265,19 @@ function disposeBoundsTree() {
 
 }
 
+function DecodeIFCString (ifcString)
+{
+    const ifcUnicodeRegEx = /\\X2\\(.*?)\\X0\\/uig;
+    let resultString = ifcString;
+    let match = ifcUnicodeRegEx.exec (ifcString);
+    while (match) {
+        const unicodeChar = String.fromCharCode (parseInt (match[1], 16));
+        resultString = resultString.replace (match[0], unicodeChar);
+        match = ifcUnicodeRegEx.exec (ifcString);
+    }
+    return resultString;
+}
+
 async function getMaterial(ifcLoader, model, selectedElementId) {
   const materialprop = await ifcLoader.ifcManager.getMaterialsProperties(
     model.modelID,
@@ -47260,10 +47288,15 @@ async function getMaterial(ifcLoader, model, selectedElementId) {
   for (const material of materialprop) {
     if (material.ForLayerSet) {
       for (const mat of material.ForLayerSet.MaterialLayers) {
-        materials.push(mat.Material.Name.value);
+        let matName = DecodeIFCString(mat.Material.Name.value);
+        materials.push(matName);
+      }
+    } else {
+      for (const mat of material.Materials) {
+        let matName = DecodeIFCString(mat.Name.value);
+        materials.push(matName);
       }
     }
-
     return materials;
   }
 }
@@ -106065,19 +106098,21 @@ async function selectObject(event, cast, model, ifcLoader, scene, lastModel, sel
     if (found) {
         const index = found.faceIndex;
         const geometry = found.object.geometry;
-        ifcLoader.ifcManager.getExpressId(geometry, index);
+        const id = ifcLoader.ifcManager.getExpressId(geometry, index);
+        selectedElementId = id;
         // const typeOfSelectedObject = ifcLoader.ifcManager.getIfcType(model.modelID, id)
         // const propsOfSelectedObject = await ifcLoader.ifcManager.getItemProperties(model.modelID, id)
         // const nameOfSelectedObject = Object.values(propsOfSelectedObject.Name)[1]
         // console.log(typeOfSelectedObject, nameOfSelectedObject, propsOfSelectedObject)
         // console.log(DecodeIFCString(nameOfSelectedObject))
-        GetObject(found, model, ifcLoader, scene);
+        getMaterial(ifcLoader, model, selectedElementId);
+        getObject(found, model, ifcLoader, scene);
     } else  {
         ifcLoader.ifcManager.removeSubset(model.modelID, MaterialSelectedObject);
     }
 }
 
-function GetObject(found, model, ifcLoader, scene, lastModel) {
+function getObject(found, model, ifcLoader, scene, lastModel) {
     model.modelID;
     if (found) {
         found.object;
@@ -106085,9 +106120,9 @@ function GetObject(found, model, ifcLoader, scene, lastModel) {
         const modelId = found.object.modelID;
     
         // Gets Express ID
-        const index = found.faceIndex;
+        const faceIndex = found.faceIndex;
         const geometry = found.object.geometry;
-        const id = ifcLoader.ifcManager.getExpressId(geometry, index);
+        const id = ifcLoader.ifcManager.getExpressId(geometry, faceIndex);
     
         // Creates subset
         ifcLoader.ifcManager.createSubset({
@@ -106123,14 +106158,14 @@ async function createTreeTable(ifcProject, modelObj, ifcloader) {
   await populateIfcTable(tableRoot, ifcProject);
   implementTreeLogic();
 
-  const qtySelector = document.getElementsByClassName("quantity-type");
-  console.log("Event", qtySelector);
+  document.getElementsByClassName("quantity-type");
+  // console.log("Event", qtySelector);
   document.body.addEventListener("change", function (event) {
     if (event.target.classList.contains("quantity-type")) {
-      console.log(
-        "Event",
-        event.target.parentElement.nextElementSibling.quants[event.target.value]
-      );
+      // console.log(
+      //   "Event",
+      //   event.target.parentElement.nextElementSibling.quants[event.target.value]
+      // );
       const quants =
         event.target.parentElement.nextElementSibling.quants[event.target.value]
           .value;
@@ -106250,14 +106285,14 @@ async function createLeafRow(table, node, depth) {
   element.textContent = node.type;
   row.appendChild(element);
   const quants = await getQuantityByElement(ifcLoader$1, model$1, node.expressID);
-  console.log("QUANTS", quants);
+  // console.log("QUANTS", quants);
   const materials = await getMaterial(ifcLoader$1, model$1, node.expressID);
   const quantityType = document.createElement("td");
   const qtyTypeSelector = document.createElement("select");
   let options = "";
   let fkey = null;
   for (const [key, value] of Object.entries(quants)) {
-    console.log("qty", key, value);
+    // console.log("qty", key, value);
     if (!fkey) {
       fkey = key;
     }
@@ -106280,7 +106315,12 @@ async function createLeafRow(table, node, depth) {
   row.appendChild(unit);
 
   const material = document.createElement("td");
-  material.textContent = materials[0] ? materials[0] : "Undefined"; //Add material function
+  for (let index = 0; index < materials.length; index++) {
+    const eachMaterial = document.createElement("div");
+    const element = String(materials[index]);
+    eachMaterial.textContent = element ? element : "Undefined"; //Add material function
+    material.appendChild(eachMaterial);
+  }
   row.appendChild(material);
 
   const emmisionsPerUnit = getEmission(materials[0]); //Add emissions function
@@ -106684,13 +106724,20 @@ function highlight(found, material, model) {
     ifcLoader.ifcManager.removeSubset(modelId, material);
   }
 }
+
+//Select an object
+let selectedElementId = null;
+let lastModel = null;
 threeCanvas.ondblclick = (event) =>
   selectObject(
     event,
     cast,
     model,
     ifcLoader,
-    scene);
+    scene,
+    lastModel,
+    selectedElementId
+  );
 
 //Animation loop
 const animate = () => {
