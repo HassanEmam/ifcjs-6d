@@ -17,13 +17,13 @@ export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
   implementTreeLogic();
 
   const qtySelector = document.getElementsByClassName("quantity-type");
-  console.log("Event", qtySelector);
+  // console.log("Event", qtySelector);
   document.body.addEventListener("change", function (event) {
     if (event.target.classList.contains("quantity-type")) {
-      console.log(
-        "Event",
-        event.target.parentElement.nextElementSibling.quants[event.target.value]
-      );
+      // console.log(
+      //   "Event",
+      //   event.target.parentElement.nextElementSibling.quants[event.target.value]
+      // );
       const quants =
         event.target.parentElement.nextElementSibling.quants[event.target.value]
           .value;
@@ -143,14 +143,14 @@ async function createLeafRow(table, node, depth) {
   element.textContent = node.type;
   row.appendChild(element);
   const quants = await getQuantityByElement(ifcLoader, model, node.expressID);
-  console.log("QUANTS", quants);
+  // console.log("QUANTS", quants);
   const materials = await getMaterial(ifcLoader, model, node.expressID);
   const quantityType = document.createElement("td");
   const qtyTypeSelector = document.createElement("select");
   let options = "";
   let fkey = null;
   for (const [key, value] of Object.entries(quants)) {
-    console.log("qty", key, value);
+    // console.log("qty", key, value);
     if (!fkey) {
       fkey = key;
     }
@@ -173,7 +173,12 @@ async function createLeafRow(table, node, depth) {
   row.appendChild(unit);
 
   const material = document.createElement("td");
-  material.textContent = materials[0] ? materials[0] : "Undefined"; //Add material function
+  for (let index = 0; index < materials.length; index++) {
+    const eachMaterial = document.createElement("div");
+    const element = String(materials[index]);
+    eachMaterial.textContent = element ? element : "Undefined"; //Add material function
+    material.appendChild(eachMaterial);
+  }
   row.appendChild(material);
 
   const emmisionsPerUnit = getEmission(materials[0]); //Add emissions function
