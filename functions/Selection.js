@@ -1,4 +1,5 @@
 import { MeshLambertMaterial } from 'three'
+import { IfcGeographicElement } from 'web-ifc';
 
 const MaterialSelectedObject = new MeshLambertMaterial({
     transparent: true,
@@ -19,13 +20,13 @@ export async function selectObject(event, cast, model, ifcLoader, scene, lastMod
         // const nameOfSelectedObject = Object.values(propsOfSelectedObject.Name)[1]
         // console.log(typeOfSelectedObject, nameOfSelectedObject, propsOfSelectedObject)
         // console.log(DecodeIFCString(nameOfSelectedObject))
-        GetObject(found, model, ifcLoader, scene, lastModel);
+        getObject(found, model, ifcLoader, scene, lastModel);
     } else  {
         ifcLoader.ifcManager.removeSubset(model.modelID, MaterialSelectedObject)
     }
 }
 
-function GetObject(found, model, ifcLoader, scene, lastModel) {
+function getObject(found, model, ifcLoader, scene, lastModel) {
     const modelId = model.modelID;
     if (found) {
         lastModel = found.object;
@@ -33,9 +34,9 @@ function GetObject(found, model, ifcLoader, scene, lastModel) {
         const modelId = found.object.modelID;
     
         // Gets Express ID
-        const index = found.faceIndex;
+        const faceIndex = found.faceIndex;
         const geometry = found.object.geometry;
-        const id = ifcLoader.ifcManager.getExpressId(geometry, index);
+        const id = ifcLoader.ifcManager.getExpressId(geometry, faceIndex);
     
         // Creates subset
         ifcLoader.ifcManager.createSubset({
@@ -44,6 +45,29 @@ function GetObject(found, model, ifcLoader, scene, lastModel) {
             material: MaterialSelectedObject,
             scene: scene,
             removePrevious: true,
+        });
+    } 
+}
+
+
+async function hideObject(found, model, ifcLoader, scene, lastModel) {
+    const modelId = model.modelID;
+    if (found) {
+        lastModel = found.object;
+        // Gets model ID
+        const modelId = found.object.modelID;
+    
+        // Gets Express ID
+        const faceIndex = found.faceIndex;
+        const geometry = found.object.geometry;
+        const id = ifcLoader.ifcManager.getExpressId(geometry, faceIndex);
+    
+        // const selectedElement = await ifcLoader.ifcManager.byId(modelId, id)
+
+        // Remove Element from Subset
+        ifcLoader.ifcManager.removeFromSubset({
+            modelID: modelId,
+            ids: [id]
         });
     } 
 }
