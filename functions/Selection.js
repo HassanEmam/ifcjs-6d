@@ -1,5 +1,6 @@
 import { MeshLambertMaterial } from 'three'
-import { IfcGeographicElement } from 'web-ifc';
+import { getMaterial } from './materials.js'
+import { DecodeIFCString } from './DecodeIfcString.js'
 
 const MaterialSelectedObject = new MeshLambertMaterial({
     transparent: true,
@@ -20,6 +21,9 @@ export async function selectObject(event, cast, model, ifcLoader, scene, lastMod
         // const nameOfSelectedObject = Object.values(propsOfSelectedObject.Name)[1]
         // console.log(typeOfSelectedObject, nameOfSelectedObject, propsOfSelectedObject)
         // console.log(DecodeIFCString(nameOfSelectedObject))
+        console.log('--------getMaterial function running...--------')
+        getMaterial(ifcLoader, model, selectedElementId)
+        console.log('---------End of getMaterial function-----------')
         getObject(found, model, ifcLoader, scene, lastModel);
     } else  {
         ifcLoader.ifcManager.removeSubset(model.modelID, MaterialSelectedObject)
@@ -70,17 +74,4 @@ async function hideObject(found, model, ifcLoader, scene, lastModel) {
             ids: [id]
         });
     } 
-}
-
-function DecodeIFCString (ifcString)
-{
-    const ifcUnicodeRegEx = /\\X2\\(.*?)\\X0\\/uig;
-    let resultString = ifcString;
-    let match = ifcUnicodeRegEx.exec (ifcString);
-    while (match) {
-        const unicodeChar = String.fromCharCode (parseInt (match[1], 16));
-        resultString = resultString.replace (match[0], unicodeChar);
-        match = ifcUnicodeRegEx.exec (ifcString);
-    }
-    return resultString;
 }
