@@ -21,9 +21,7 @@ export async function selectObject(event, cast, model, ifcLoader, scene, lastMod
         // const nameOfSelectedObject = Object.values(propsOfSelectedObject.Name)[1]
         // console.log(typeOfSelectedObject, nameOfSelectedObject, propsOfSelectedObject)
         // console.log(DecodeIFCString(nameOfSelectedObject))
-        console.log('--------getMaterial function running...--------')
         getMaterial(ifcLoader, model, selectedElementId)
-        console.log('---------End of getMaterial function-----------')
         getObject(found, model, ifcLoader, scene, lastModel);
     } else  {
         ifcLoader.ifcManager.removeSubset(model.modelID, MaterialSelectedObject)
