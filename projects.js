@@ -58,5 +58,5 @@ export const projects = [
     name: "Model 11",
     id: "08",
     url: "./ifc/08.ifc",
-  },
+  }
 ];
