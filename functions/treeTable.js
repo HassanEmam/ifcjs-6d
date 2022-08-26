@@ -4,6 +4,7 @@
 import getEmission from "./emission";
 import { getMaterial } from "./materials";
 import { getQuantityByElement } from "./quantities";
+import { getUoM, fillUoM } from "./uom";
 
 let model;
 let ifcLoader;
@@ -12,6 +13,8 @@ export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
   const tableRoot = document.getElementById("boq");
   model = modelObj;
   ifcLoader = ifcloader;
+  const uom = await fillUoM(ifcLoader, model, "length");
+  console.log("Treetable", uom);
   removeAllChildren(tableRoot);
   await populateIfcTable(tableRoot, ifcProject, model, ifcLoader);
   implementTreeLogic();
@@ -48,13 +51,13 @@ function getUom(type) {
   let uom = "";
   switch (type) {
     case "length":
-      uom = "m";
+      uom = getUoM(ifcLoader, model, "length");
       break;
     case "area":
-      uom = "m²";
+      uom = getUoM(ifcLoader, model, "area");
       break;
     case "volume":
-      uom = "m³";
+      uom = getUoM(ifcLoader, model, "volume");
       break;
     default:
       uom = "";
@@ -107,92 +110,109 @@ async function createNode(table, node, depth, children) {
 }
 
 function createBranchRow(table, node, depth, children) {
-  const row = document.createElement("tr");
-  const className = "level" + depth;
-  row.classList.add(className);
-  row.classList.add("table-collapse");
-  row.setAttribute("data-depth", depth);
+  // const row = document.createElement("tr");
+  // const className = "level" + depth;
+  // row.classList.add(className);
+  // row.classList.add("table-collapse");
+  // row.setAttribute("data-depth", depth);
 
-  const element = document.createElement("td");
-  element.colSpan = 7;
-  element.classList.add("data-ifc-element");
-  const toggle = document.createElement("span");
-  toggle.classList.add("toggle");
-  toggle.classList.add("table-collapse");
+  // const element = document.createElement("td");
+  // element.colSpan = 7;
+  // element.classList.add("data-ifc-element");
+  // const toggle = document.createElement("span");
+  // toggle.classList.add("toggle");
+  // toggle.classList.add("table-collapse");
 
-  element.textContent = node.type;
-  element.insertBefore(toggle, element.firstChild);
+  // element.textContent = node.type;
+  // element.insertBefore(toggle, element.firstChild);
 
-  row.appendChild(element);
-  table.appendChild(row);
+  // row.appendChild(element);
+  // table.appendChild(row);
 
   depth++;
 
-  children.forEach((child) => createNode(table, child, depth, child.children));
+  children.forEach(async (child) => {
+    if (child.children.length > 0) {
+      await createNode(table, child, depth, child.children);
+    } else {
+      await createLeafRow(table, child, depth);
+    }
+  });
 }
 
 async function createLeafRow(table, node, depth) {
-  const row = document.createElement("tr");
-  const className = "level" + depth;
-  row.classList.add(className);
-  row.classList.add("table-collapse");
-  row.setAttribute("data-depth", depth);
-
-  const element = document.createElement("td");
-  element.classList.add("data-ifc-element");
-  element.textContent = node.type;
-  row.appendChild(element);
   const quants = await getQuantityByElement(ifcLoader, model, node.expressID);
   // console.log("QUANTS", quants);
   const materials = await getMaterial(ifcLoader, model, node.expressID);
-  const quantityType = document.createElement("td");
-  const qtyTypeSelector = document.createElement("select");
-  let options = "";
-  let fkey = null;
-  for (const [key, value] of Object.entries(quants)) {
-    // console.log("qty", key, value);
-    if (!fkey) {
-      fkey = key;
+  let count = 0;
+  for (const mat of materials) {
+    console.log("MAT", mat);
+    const row = document.createElement("tr");
+    const className = "level" + depth;
+    // row.classList.add(className);
+    row.classList.add("table-collapse");
+    row.setAttribute("data-depth", depth);
+    let element;
+    if (count === 0) {
+      element = document.createElement("td");
+      element.classList.add("data-ifc-element");
+      element.textContent = node.type;
+      element.setAttribute("rowspan", materials.length);
+      element.style.paddingLeft = 1 + "rem";
+      row.appendChild(element);
     }
-    options += `<option value="${key}">${key}</option>`;
+    count++;
+    const quantityType = document.createElement("td");
+    const qtyTypeSelector = document.createElement("select");
+    let options = "";
+    let fkey = null;
+    for (const [key, value] of Object.entries(quants)) {
+      // console.log("qty", key, value);
+      if (!fkey) {
+        fkey = key;
+      }
+      options += `<option value="${key}">${key}</option>`;
+    }
+    qtyTypeSelector.classList.add("quantity-type");
+    qtyTypeSelector.style.padding = "0px";
+    qtyTypeSelector.innerHTML = options;
+    quantityType.appendChild(qtyTypeSelector);
+    // quantityType.textContent = "Quantity Type"; //Add dropdown function here
+    row.appendChild(quantityType);
+
+    const dataQuantity = document.createElement("td");
+    dataQuantity.quants = quants;
+    const quantity = quants[fkey]?.value.toFixed(2); //Add quantity function here
+    dataQuantity.textContent = quantity;
+    row.appendChild(dataQuantity);
+
+    const unit = document.createElement("td");
+    unit.textContent = getUom(quants[fkey]?.type); //Add unit function
+    row.appendChild(unit);
+    const material = document.createElement("td");
+    material.textContent = mat;
+    row.appendChild(material);
+    const emmisionsPerUnit = getEmission(mat); //Add emissions function
+    const dataEmissionsPerUnit = document.createElement("td");
+    dataEmissionsPerUnit.textContent = emmisionsPerUnit.toFixed(2);
+    row.appendChild(dataEmissionsPerUnit);
+
+    const emissions = quantity * emmisionsPerUnit;
+    const dataEmissions = document.createElement("td");
+    dataEmissions.textContent = emissions.toFixed(2);
+    row.appendChild(dataEmissions);
+
+    row.style.fontWeight = "normal";
+    table.appendChild(row);
   }
-  qtyTypeSelector.classList.add("quantity-type");
-  qtyTypeSelector.innerHTML = options;
-  quantityType.appendChild(qtyTypeSelector);
-  // quantityType.textContent = "Quantity Type"; //Add dropdown function here
-  row.appendChild(quantityType);
 
-  const dataQuantity = document.createElement("td");
-  dataQuantity.quants = quants;
-  const quantity = quants[fkey]?.value.toFixed(2); //Add quantity function here
-  dataQuantity.textContent = quantity;
-  row.appendChild(dataQuantity);
-
-  const unit = document.createElement("td");
-  unit.textContent = getUom(quants[fkey]?.type); //Add unit function
-  row.appendChild(unit);
-
-  const material = document.createElement("td");
-  for (let index = 0; index < materials.length; index++) {
-    const eachMaterial = document.createElement("div");
-    const element = String(materials[index]);
-    eachMaterial.textContent = element ? element : "Undefined"; //Add material function
-    material.appendChild(eachMaterial);
-  }
-  row.appendChild(material);
-
-  const emmisionsPerUnit = getEmission(materials[0]); //Add emissions function
-  const dataEmissionsPerUnit = document.createElement("td");
-  dataEmissionsPerUnit.textContent = emmisionsPerUnit.toFixed(2);
-  row.appendChild(dataEmissionsPerUnit);
-
-  const emissions = quantity * emmisionsPerUnit;
-  const dataEmissions = document.createElement("td");
-  dataEmissions.textContent = emissions.toFixed(2);
-  row.appendChild(dataEmissions);
-
-  row.style.fontWeight = "normal";
-  table.appendChild(row);
+  // for (let index = 0; index < materials.length; index++) {
+  //   const eachMaterial = document.createElement("div");
+  //   const element = String(materials[index]);
+  //   eachMaterial.textContent = element ? element : "Undefined"; //Add material function
+  //   material.appendChild(eachMaterial);
+  // }
+  // row.appendChild(material);
 }
 
 function groupCategories(children) {
