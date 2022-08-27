@@ -106268,13 +106268,12 @@ async function createTreeTable(ifcProject, modelObj, ifcloader) {
       const factor = tdUoM.nextElementSibling.nextElementSibling;
       const emissionOld = factor.nextElementSibling.textContent;
       emissionsTotal -= emissionOld;
- 
+
       const emission = factor.textContent * quants;
       factor.nextElementSibling.textContent = emission.toFixed(2);
       emissionsTotal += emission;
       const emissionsTotalData = document.getElementById("emissionsTotal");
       emissionsTotalData.textContent = emissionsTotal.toFixed(2);
-
     }
   });
 }
@@ -106299,7 +106298,7 @@ function getUom(type) {
 }
 
 async function populateIfcTable(table, ifcProject) {
-  const initialDepth = 0;  
+  const initialDepth = 0;
   const header = document.createElement("thead");
   createHeader(header);
   table.appendChild(header);
@@ -106401,13 +106400,13 @@ async function createLeafRow(parentRow, table, node, depth) {
   let count = 0;
   for (const mat of materials) {
     const row = document.createElement("tr");
-    parentRow.insertAdjacentElement('afterend', row);
+    parentRow.insertAdjacentElement("afterend", row);
     const className = "level" + depth;
     row.classList.add(className);
     row.classList.add("table-collapse");
-    row.setAttribute("data-depth", depth);
     let element;
     if (count === 0) {
+      row.setAttribute("data-depth", depth);
       element = document.createElement("td");
       element.classList.add("data-ifc-element");
       element.textContent = node.type;
@@ -106416,6 +106415,7 @@ async function createLeafRow(parentRow, table, node, depth) {
     }
     count++;
     const quantityType = document.createElement("td");
+    quantityType.classList.add("quantity-type-container");
     const qtyTypeSelector = document.createElement("select");
     let options = "";
     let fkey = null;
@@ -106433,7 +106433,7 @@ async function createLeafRow(parentRow, table, node, depth) {
 
     const dataQuantity = document.createElement("td");
     dataQuantity.quants = quants;
-    const quantity = quants[fkey]?.value.toFixed(2);
+    const quantity = quants[fkey] ? quants[fkey].value.toFixed(2) : 0;
     dataQuantity.textContent = quantity;
     row.appendChild(dataQuantity);
 
@@ -106461,14 +106461,13 @@ async function createLeafRow(parentRow, table, node, depth) {
 
     row.style.fontWeight = "normal";
 
-
     row.onmouseenter = function () {
       removeTmpHighlights();
-  
+
       row.classList.add("tmphighlight");
       highlightFromSpatial(node.expressID);
     };
-  
+
     row.onclick = function () {
       removeHighlights();
       row.classList.add("highlight");
@@ -106477,7 +106476,6 @@ async function createLeafRow(parentRow, table, node, depth) {
     };
 
     parentRow = row;
-
   }
 }
 
