@@ -556,3 +556,7 @@ select {
   width: 3.5rem;
   height: 1.2rem;
 }
+
+.quantity-type-container {
+  display: contents;
+}
