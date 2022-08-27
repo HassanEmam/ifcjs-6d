@@ -179,7 +179,6 @@ async function createLeafRow(parentRow, table, node, depth) {
   const quants = await getQuantityByElement(ifcLoader, model, node.expressID);
   const materials = await getMaterial(ifcLoader, model, node.expressID);
   let count = 0;
-  console.log(node, materials);
   if (materials?.length > 0) {
     for (const mat of materials) {
       const row = document.createElement("tr");
