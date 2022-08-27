@@ -232,12 +232,12 @@ a {
 }
 
 .highlight {
-  background-color: var(--dark-blue);
+  background-color: var(--middle-blue);
   opacity: 1;
 }
 
 .tmphighlight {
-  background-color: var(--dark-blue);
+  background-color: var(--middle-blue);
 }
 
 .tab {
