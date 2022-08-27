@@ -105755,19 +105755,6 @@ class IFCLoader extends Loader {
 
 }
 
-async function loadIfc(ifcFile, ifcLoader) {
-  console.log("Loading IFC file...", ifcFile);
-  const model = await ifcLoader.loadAsync(ifcFile);
-  return model;
-}
-
-new MeshLambertMaterial({
-  transparent: true,
-  opacity: 0.9,
-  color: 0xff88ff,
-  depthTest: true,
-});
-
 let psetsObject = {};
 let objMap = {};
 let generated = false;
@@ -105935,6 +105922,205 @@ async function getQuantityByElement(ifcLoader, model, elementId) {
   }
   return qtyRet;
 }
+
+const emission = {
+  "Ortbeton - bewehrt": 72.5,
+  "Ortbeton - bewehrt Verputzt": 420.407,
+  "Vinyl Composition Tile": 0.5,
+  "Concrete, Lightweight": 312.6,
+  "Metal Deck": 514.32,
+  "Structure, Steel Bar Joist Layer": 314.56,
+  "Concrete, Cast-in-Place gray": 420.407,
+  "Steel, 45-345": 514.32,
+  "Holz - Dunkelbraun 90-80-70": 120.17,
+  "Metall - Edelstahl gebürstet": 480.78,
+  "Metall - Edelstahl satiniert": 563.62,
+  "Lack - grau 80-80-80": 120.17,
+  "Kunststoff - grau 70-70-70": 120.17,
+  "Asphalt Shingle": 3456.54,
+  "Plywood, Sheathing": 2345.33,
+  "Structure, Wood Joist/Rafter Layer, Batt Insulation": 2850.23,
+  Glass: 680.8,
+};
+
+function getEmission(material) {
+  const emissionFactor = emission[material] ? emission[material] : 0;
+  return emissionFactor;
+}
+
+async function getAllEmissions(ifcLoader, model, currentProjectID, allEmissionsOfItems, itemsAndEmissions, ifcTypesIds) {
+
+    const emissionsOfItem = {
+        id: null,
+        emission: null,
+    };
+    
+    ifcTypesIds.forEach(async ifcTypeId => {
+        await EmissionsOfIfcType(ifcLoader, model, currentProjectID, ifcTypeId, allEmissionsOfItems, emissionsOfItem, itemsAndEmissions);
+    });
+}
+
+async function EmissionsOfIfcType(ifcLoader, model, currentProjectID, ifcTypeId, allEmissionsOfItems, emissionsOfItem, itemsAndEmissions) {
+    const elementsOfTypeIDs = await ifcLoader.ifcManager.getAllItemsOfType(model.modelID, ifcTypeId);
+
+    for(let i = 0; i < elementsOfTypeIDs.length; i++) {
+        const elementID = elementsOfTypeIDs[i];
+
+        const NetVolume = await getNetVolume(ifcLoader, model, elementID);
+        const materials = await getMaterial(ifcLoader, model, elementID);
+        for (const mat of materials) {
+            const emissionOfmaterial = NetVolume * getEmission(mat);
+            allEmissionsOfItems.push(emissionOfmaterial);
+
+            const ItemAndEmission = Object.create(emissionsOfItem);
+            const existingItem = itemsAndEmissions.find(element => element.id == elementID);
+            if(existingItem != undefined) {
+                existingItem.id = elementID;
+                existingItem.emission = existingItem.emission + emissionOfmaterial;
+            } else {
+                ItemAndEmission.id = elementID;
+                ItemAndEmission.emission = emissionOfmaterial;
+                itemsAndEmissions.push(ItemAndEmission);
+            }
+        }
+    }
+
+    return allEmissionsOfItems
+}
+
+async function getNetVolume(ifcLoader, model, elementID) { 
+    const quants = await getQuantityByElement(ifcLoader, model, elementID);
+    const NetVolumeObject = Object.values(quants).find((obj) => {
+        return obj.type == "volume"
+    });
+    const NetVolumeValue = NetVolumeObject.value;
+    return NetVolumeValue
+}
+
+
+function colorization(ifcLoader, model, itemsAndEmissions, scene) {
+    // Emissions per Object (All materials of an object)
+    let emissionsAllItems = [];
+    itemsAndEmissions.forEach(element => {
+        emissionsAllItems.push(element.emission);
+    });
+
+    // Degree according to amount of emissions
+    const highestEmission = Math.max(...emissionsAllItems);
+    const lowestEmission = Math.min(...emissionsAllItems);
+    const VeryHigh = highestEmission;
+    const Medium = (highestEmission - lowestEmission)/2;
+    const VeryLow = lowestEmission;
+    const High = Medium + ((VeryHigh - Medium)/2);
+    const Low = VeryLow + (Medium - VeryLow)/2;
+
+    // Materials
+    const materialVeryHigh = new MeshBasicMaterial({
+        transparent: true,
+        opacity: 0.8,
+        color: 0xff0000,
+        depthTest: true,
+    });
+    const materialHigh = new MeshBasicMaterial({
+        transparent: true,
+        opacity: 0.8,
+        color: 0xffa700,
+        depthTest: true,
+    });
+    const materialMedium = new MeshBasicMaterial({
+        transparent: true,
+        opacity: 0.8,
+        color: 0xfff400,
+        depthTest: true,
+    });
+    const materialLow = new MeshBasicMaterial({
+        transparent: true,
+        opacity: 0.8,
+        color: 0xa3ff00,
+        depthTest: true,
+    });
+    const materialVeryLow = new MeshBasicMaterial({
+        transparent: true,
+        opacity: 0.8,
+        color: 0x2cba00,
+        depthTest: true,
+    });
+
+    itemsAndEmissions.forEach(element => {
+        const elementId = element.id;
+        // Creates subset
+        if(element.emission >= VeryHigh) {
+            ifcLoader.ifcManager.createSubset({
+                modelID: model.modelID,
+                ids: [elementId],
+                material: materialVeryHigh,
+                scene: scene,
+                removePrevious: false,
+                customID: 'VeryHighEmission'
+            });
+        } else if (element.emission < VeryHigh & element.emission >= High) {
+            ifcLoader.ifcManager.createSubset({
+                modelID: model.modelID,
+                ids: [elementId],
+                material: materialHigh,
+                scene: scene,
+                removePrevious: false,
+                customID: 'HighEmission'
+            });  
+        }
+        else if (element.emission < High & element.emission >= Medium) {
+            ifcLoader.ifcManager.createSubset({
+                modelID: model.modelID,
+                ids: [elementId],
+                material: materialMedium,
+                scene: scene,
+                removePrevious: false,
+                customID: 'MediumEmission'
+            });  
+        }
+        else if (element.emission < Medium & element.emission >= Low) {
+            ifcLoader.ifcManager.createSubset({
+                modelID: model.modelID,
+                ids: [elementId],
+                material: materialLow,
+                scene: scene,
+                removePrevious: false,
+                customID: 'LowEmission'
+            });  
+        }
+        else if (element.emission < Low & element.emission >= VeryLow) {
+            ifcLoader.ifcManager.createSubset({
+                modelID: model.modelID,
+                ids: [elementId],
+                material: materialVeryLow,
+                scene: scene,
+                removePrevious: false,
+                customID: 'VeryLowEmission'
+            });  
+        }
+    });
+}
+
+const ifcTypesIds = [
+  IFCSLAB,
+  IFCPLATE,
+  IFCWALLSTANDARDCASE,
+  IFCCOLUMN
+];
+
+async function loadIfc(ifcFile, ifcLoader, currentProjectID, allEmissionsOfItems, itemsAndEmissions) {
+  console.log("Loading IFC file...", ifcFile);
+  const model = await ifcLoader.loadAsync(ifcFile);
+  await getAllEmissions(ifcLoader, model, currentProjectID, allEmissionsOfItems, itemsAndEmissions, ifcTypesIds);
+  return model;
+}
+
+new MeshLambertMaterial({
+  transparent: true,
+  opacity: 0.9,
+  color: 0xff88ff,
+  depthTest: true,
+});
 
 function leftView(cameraControls, model) {
     cameraControls.setLookAt(-50, 2.7, 0, 0, 2.7, 0);
@@ -106140,31 +106326,6 @@ function getObject(found, model, ifcLoader, scene, lastModel) {
       removePrevious: true,
     });
   }
-}
-
-const emission = {
-  "Ortbeton - bewehrt": 72.5,
-  "Ortbeton - bewehrt Verputzt": 420.407,
-  "Vinyl Composition Tile": 0.5,
-  "Concrete, Lightweight": 312.6,
-  "Metal Deck": 514.32,
-  "Structure, Steel Bar Joist Layer": 314.56,
-  "Concrete, Cast-in-Place gray": 420.407,
-  "Steel, 45-345": 514.32,
-  "Holz - Dunkelbraun 90-80-70": 120.17,
-  "Metall - Edelstahl gebürstet": 480.78,
-  "Metall - Edelstahl satiniert": 563.62,
-  "Lack - grau 80-80-80": 120.17,
-  "Kunststoff - grau 70-70-70": 120.17,
-  "Asphalt Shingle": 3456.54,
-  "Plywood, Sheathing": 2345.33,
-  "Structure, Wood Joist/Rafter Layer, Batt Insulation": 2850.23,
-  Glass: 680.8,
-};
-
-function getEmission(material) {
-  const emissionFactor = emission[material] ? emission[material] : 0;
-  return emissionFactor;
 }
 
 const units = {
@@ -106820,6 +106981,8 @@ scene.add(axes);
 const ifcModels = [];
 
 let model = null;
+let allEmissionsOfItems = [];
+const itemsAndEmissions = [];
 const ifcLoader = new IFCLoader();
 await ifcLoader.ifcManager.useWebWorkers(true, "IFCWorker.js");
 // await ifcLoader.ifcManager.setWasmPath("./");
@@ -106827,7 +106990,7 @@ await ifcLoader.ifcManager.useWebWorkers(true, "IFCWorker.js");
 // create spatial tree
 let spatial = null;
 async function init() {
-  model = await loadIfc(projectURL, ifcLoader);
+  model = await loadIfc(projectURL, ifcLoader, currentProjectID, allEmissionsOfItems, itemsAndEmissions);
   ifcModels.push(model);
   scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
@@ -107158,3 +107321,41 @@ const deleteMeasurementsButton = document.getElementById("deleteMeasurements");
 deleteMeasurementsButton.onclick = () => {
   deleteMeasurements(scene);
 };
+
+// Hide Objects
+const carbonFootprintButton = document.getElementById("carbon-footprint");
+let carbonEnabled = null;
+carbonFootprintButton.onclick = () => {
+  if (carbonEnabled == null) {
+    carbonEnabled = true;
+    carbonFootprintButton.style.backgroundImage = "url('./asset/icon-carbonEnabled.png')";
+    carbonFootprintButton.style.backgroundColor = "#ded2c570";
+    carbonFootprintButton.style.transform = "scale(1.1)";
+    carbonFootprintButton.style.border = "1.5px solid #927ee3";
+    return;
+  }
+  if (carbonEnabled == true) {
+    carbonEnabled = false;
+    carbonFootprintButton.style.backgroundImage = "url('./asset/icon-carbonDisabled.png')";
+    carbonFootprintButton.style.backgroundColor = "";
+    carbonFootprintButton.style.transform = "";
+    carbonFootprintButton.style.border = "";
+    return;
+  } 
+  if (carbonEnabled == false) {
+    carbonEnabled = true;
+    carbonFootprintButton.style.backgroundImage = "url('./asset/icon-carbonEnabled.png')";
+    carbonFootprintButton.style.backgroundColor = "#ded2c570";
+    carbonFootprintButton.style.transform = "scale(1.1)";
+    carbonFootprintButton.style.border = "1.5px solid #927ee3";
+    return;
+  }
+};
+
+//Hide selected objects
+carbonFootprintButton.addEventListener('click', function(event) {
+  if (carbonEnabled == true) {
+    //Emissions Colorization
+    colorization(ifcLoader, model, itemsAndEmissions, scene);
+  }
+});
