@@ -244,7 +244,8 @@ const ifcModels = [];
 
 let model = null;
 const ifcLoader = new IFCLoader();
-// ifcLoader.ifcManager.useWebWorkers(true, "IFCWorker.js");
+await ifcLoader.ifcManager.useWebWorkers(true, "IFCWorker.js");
+// await ifcLoader.ifcManager.setWasmPath("./");
 
 // create spatial tree
 let spatial = null;

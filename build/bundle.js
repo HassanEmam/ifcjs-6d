@@ -29,11 +29,7 @@ const projects = [
     id: "05",
     url: "./ifc/05.ifc",
   },
-  {
-    name: "Model 6",
-    id: "06",
-    url: "./ifc/06.ifc",
-  },
+
   {
     name: "Model 7",
     id: "07",
@@ -106670,7 +106666,8 @@ const ifcModels = [];
 
 let model = null;
 const ifcLoader = new IFCLoader();
-// ifcLoader.ifcManager.useWebWorkers(true, "IFCWorker.js");
+await ifcLoader.ifcManager.useWebWorkers(true, "IFCWorker.js");
+// await ifcLoader.ifcManager.setWasmPath("./");
 
 // create spatial tree
 let spatial = null;
