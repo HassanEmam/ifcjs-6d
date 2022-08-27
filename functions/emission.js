@@ -12,6 +12,9 @@ const emission = {
   "Metall - Edelstahl satiniert": 563.62,
   "Lack - grau 80-80-80": 120.17,
   "Kunststoff - grau 70-70-70": 120.17,
+  "Asphalt Shingle": 3456.54,
+  "Plywood, Sheathing": 2345.33,
+  "Structure, Wood Joist/Rafter Layer, Batt Insulation": 2850.23,
   Glass: 680.8,
 };
 
