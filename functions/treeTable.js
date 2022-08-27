@@ -140,24 +140,24 @@ async function createNode(table, node, depth, children) {
 }
 
 function createBranchRow(table, node, depth, children) {
-  // const row = document.createElement("tr");
-  // const className = "level" + depth;
-  // row.classList.add(className);
-  // row.classList.add("table-collapse");
-  // row.setAttribute("data-depth", depth);
+  const row = document.createElement("tr");
+  const className = "level" + depth;
+  row.classList.add(className);
+  row.classList.add("table-collapse");
+  row.setAttribute("data-depth", depth);
 
-  // const element = document.createElement("td");
-  // element.colSpan = 7;
-  // element.classList.add("data-ifc-element");
-  // const toggle = document.createElement("span");
-  // toggle.classList.add("toggle");
-  // toggle.classList.add("table-collapse");
+  const element = document.createElement("td");
+  element.colSpan = 7;
+  element.classList.add("data-ifc-element");
+  const toggle = document.createElement("span");
+  toggle.classList.add("toggle");
+  toggle.classList.add("table-collapse");
 
-  // element.textContent = node.type;
-  // element.insertBefore(toggle, element.firstChild);
+  element.textContent = node.type;
+  element.insertBefore(toggle, element.firstChild);
 
-  // row.appendChild(element);
-  // table.appendChild(row);
+  row.appendChild(element);
+  table.appendChild(row);
 
   depth++;
 
@@ -165,20 +165,20 @@ function createBranchRow(table, node, depth, children) {
     if (child.children.length > 0) {
       await createNode(table, child, depth, child.children);
     } else {
-      await createLeafRow(table, child, depth);
+      await createLeafRow(row, table, child, depth);
     }
   });
 }
 
-async function createLeafRow(table, node, depth) {
+async function createLeafRow(parentRow, table, node, depth) {
   const quants = await getQuantityByElement(ifcLoader, model, node.expressID);
   const materials = await getMaterial(ifcLoader, model, node.expressID);
   let count = 0;
   for (const mat of materials) {
     const row = document.createElement("tr");
-    table.appendChild(row);
+    parentRow.insertAdjacentElement('afterend', row);
     const className = "level" + depth;
-    // row.classList.add(className);
+    row.classList.add(className);
     row.classList.add("table-collapse");
     row.setAttribute("data-depth", depth);
     let element;
@@ -251,6 +251,8 @@ async function createLeafRow(table, node, depth) {
       highlightFromSpatial(node.expressID);
       selectedElementId = node.expressID;
     };
+
+    parentRow = row;
 
   }
 }
