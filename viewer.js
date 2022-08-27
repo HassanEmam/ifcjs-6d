@@ -257,7 +257,7 @@ async function init() {
   ifcModels.push(model);
   scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
-  await createTreeTable(spatial, model, ifcLoader);
+  await createTreeTable(spatial, model, ifcLoader, currentProjectID);
 
   threeCanvas.onmousemove = (event) => {
     const found = cast(event)[0];
@@ -302,11 +302,11 @@ async function init() {
   };
   // const ulItem = document.getElementById("myUL");
   // ulItem.animate({ scrollTop: ulItem.scrollHeight }, 1000);
-  const psets = await getAllPropertyNames(model, ifcLoader);
-  const prop = await getElementProperties(model, ifcLoader, 144);
-  const materials = await getMaterial(ifcLoader, model, 22620);
-  const selection = await createPropertySelection(model, ifcLoader);
-  const quanty = await getQuantityByElement(ifcLoader, model, 284);
+  const psets = await getAllPropertyNames(currentProjectID, ifcLoader);
+  const prop = await getElementProperties(currentProjectID, ifcLoader, 144);
+  const materials = await getMaterial(ifcLoader, currentProjectID, 22620);
+  const selection = await createPropertySelection(currentProjectID, ifcLoader);
+  const quanty = await getQuantityByElement(ifcLoader, currentProjectID, 284);
   document.body.appendChild(selection);
 }
 

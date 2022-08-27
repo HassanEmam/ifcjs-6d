@@ -1,7 +1,6 @@
 // import { ifcLoader, model } from "./loadIfc";
 // import { createPropertySelection } from "./quantities";
 
-import { MeshLambertMaterial } from "three";
 import getEmission from "./emission";
 import { getMaterial } from "./materials";
 import { getQuantityByElement } from "./quantities";
@@ -9,24 +8,21 @@ import { getUoM, fillUoM } from "./uom";
 
 let model;
 let ifcLoader;
-let scene;
-let selectedElementId;
-let emissionsTotal = 0;
+let projectID;
 
-const preselectMat = new MeshLambertMaterial({
-  transparent: true,
-  opacity: 1,
-  color: 0x0396a6,
-  depthTest: true,
-});
-
-export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
+export default function createTreeTable(
+  ifcProject,
+  modelObj,
+  ifcloader,
+  currentProjectID
+) {
+  projectID = currentProjectID;
   const tableRoot = document.getElementById("boq");
   model = modelObj;
   ifcLoader = ifcloader;
-  const uom = await fillUoM(ifcLoader, model, "length");
+  const uom = fillUoM(ifcLoader, currentProjectID, "length");
   removeAllChildren(tableRoot);
-  await populateIfcTable(tableRoot, ifcProject, model, ifcLoader);
+  populateIfcTable(tableRoot, ifcProject, model, ifcLoader);
   implementTreeLogic();
 
   const qtySelector = document.getElementsByClassName("quantity-type");
@@ -45,17 +41,9 @@ export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
       const tdUoM =
         event.target.parentElement.nextElementSibling.nextElementSibling;
       tdUoM.textContent = uom;
-
       const factor = tdUoM.nextElementSibling.nextElementSibling;
-      const emissionOld = factor.nextElementSibling.textContent;
-      emissionsTotal -= emissionOld;
- 
       const emission = factor.textContent * quants;
       factor.nextElementSibling.textContent = emission.toFixed(2);
-      emissionsTotal += emission;
-      const emissionsTotalData = document.getElementById("emissionsTotal");
-      emissionsTotalData.textContent = emissionsTotal.toFixed(2);
-
     }
   });
 }
@@ -64,13 +52,13 @@ function getUom(type) {
   let uom = "";
   switch (type) {
     case "length":
-      uom = getUoM(ifcLoader, model, "length");
+      uom = getUoM("length");
       break;
     case "area":
-      uom = getUoM(ifcLoader, model, "area");
+      uom = getUoM("area");
       break;
     case "volume":
-      uom = getUoM(ifcLoader, model, "volume");
+      uom = getUoM("volume");
       break;
     default:
       uom = "";
@@ -79,19 +67,10 @@ function getUom(type) {
   return uom;
 }
 
-async function populateIfcTable(table, ifcProject) {
-  const initialDepth = 0;  
-  const header = document.createElement("thead");
-  createHeader(header);
-  table.appendChild(header);
-
-  const body = document.createElement("tbody");
-  await createNode(body, ifcProject, initialDepth, ifcProject.children);
-  table.appendChild(body);
-
-  const footer = document.createElement("tfoot");
-  createTotal(table);
-  table.appendChild(footer);
+function populateIfcTable(table, ifcProject) {
+  const initialDepth = 0;
+  createHeader(table);
+  createNode(table, ifcProject, initialDepth, ifcProject.children);
 }
 
 function createHeader(table) {
@@ -121,23 +100,9 @@ function createHeader(table) {
   table.appendChild(row);
 }
 
-function createTotal(table) {
-  const row = document.createElement("tr");
-  const element = document.createElement("th");
-  element.textContent = "Total emissions: ";
-  element.colSpan = 6;
-  row.appendChild(element);
-
-  const emissions = document.createElement("td");
-  emissions.id = "emissionsTotal";
-  emissions.textContent = emissionsTotal.toFixed(2);
-  row.appendChild(emissions);
-  table.appendChild(row);
-}
-
-async function createNode(table, node, depth, children) {
+function createNode(table, node, depth, children) {
   if (children.length === 0) {
-    await createLeafRow(table, node, depth);
+    createLeafRow(table, node, depth);
   } else {
     // If there are multiple categories, group them together
     const grouped = groupCategories(children);
@@ -167,24 +132,26 @@ function createBranchRow(table, node, depth, children) {
 
   depth++;
 
-  children.forEach(async (child) => {
+  children.forEach((child) => {
     if (child.children.length > 0) {
-      await createNode(table, child, depth, child.children);
+      createNode(table, child, depth, child.children);
     } else {
-      await createLeafRow(row, table, child, depth);
+      createLeafRow(table, child, depth);
     }
   });
 }
 
-async function createLeafRow(parentRow, table, node, depth) {
-  const quants = await getQuantityByElement(ifcLoader, model, node.expressID);
-  const materials = await getMaterial(ifcLoader, model, node.expressID);
+function createLeafRow(table, node, depth) {
+  const quants = getQuantityByElement(ifcLoader, projectID, node.expressID);
+  const materials = getMaterial(ifcLoader, projectID, node.expressID);
+  console.log(quants);
   let count = 0;
   for (const mat of materials) {
     const row = document.createElement("tr");
-    parentRow.insertAdjacentElement('afterend', row);
+    table.appendChild(row);
+
     const className = "level" + depth;
-    row.classList.add(className);
+    // row.classList.add(className);
     row.classList.add("table-collapse");
     row.setAttribute("data-depth", depth);
     let element;
@@ -193,11 +160,11 @@ async function createLeafRow(parentRow, table, node, depth) {
       element.classList.add("data-ifc-element");
       element.textContent = node.type;
       element.setAttribute("rowspan", materials.length);
+      element.style.paddingLeft = 1 + "rem";
       row.appendChild(element);
     }
     count++;
     const quantityType = document.createElement("td");
-    quantityType.classList.add("quantity-type-container");
     const qtyTypeSelector = document.createElement("select");
     let options = "";
     let fkey = null;
@@ -215,80 +182,28 @@ async function createLeafRow(parentRow, table, node, depth) {
 
     const dataQuantity = document.createElement("td");
     dataQuantity.quants = quants;
-    const quantity = quants[fkey]?.value.toFixed(2);
+    const quantity = quants[fkey]?.value.toFixed(2); //Add quantity function here
     dataQuantity.textContent = quantity;
     row.appendChild(dataQuantity);
 
     const unit = document.createElement("td");
-    unit.textContent = getUom(quants[fkey]?.type);
+    unit.textContent = getUom(quants[fkey]?.type); //Add unit function
     row.appendChild(unit);
     const material = document.createElement("td");
     material.textContent = mat;
     row.appendChild(material);
-    const emmisionsPerUnit = getEmission(mat);
+    const emmisionsPerUnit = getEmission(mat); //Add emissions function
     const dataEmissionsPerUnit = document.createElement("td");
     dataEmissionsPerUnit.textContent = emmisionsPerUnit.toFixed(2);
     row.appendChild(dataEmissionsPerUnit);
 
     const emissions = quantity * emmisionsPerUnit;
-
-    // Update total emissions
-    emissionsTotal += emissions;
-    const emissionsTotalData = document.getElementById("emissionsTotal");
-    emissionsTotalData.textContent = emissionsTotal.toFixed(2);
-
     const dataEmissions = document.createElement("td");
     dataEmissions.textContent = emissions.toFixed(2);
     row.appendChild(dataEmissions);
 
     row.style.fontWeight = "normal";
-
-
-    row.onmouseenter = function () {
-      removeTmpHighlights();
-  
-      row.classList.add("tmphighlight");
-      highlightFromSpatial(node.expressID);
-    };
-  
-    row.onclick = function () {
-      removeHighlights();
-      row.classList.add("highlight");
-      highlightFromSpatial(node.expressID);
-      selectedElementId = node.expressID;
-    };
-
-    parentRow = row;
-
   }
-}
-
-function removeHighlights() {
-  const highlighted = document.getElementsByClassName("highlight");
-  for (let h of highlighted) {
-    if (h) {
-      h.classList.remove("highlight");
-    }
-  }
-}
-
-function removeTmpHighlights() {
-  const highlighted = document.getElementsByClassName("tmphighlight");
-  for (let h of highlighted) {
-    if (h) {
-      h.classList.remove("tmphighlight");
-    }
-  }
-}
-
-function highlightFromSpatial(id) {
-  ifcLoader.ifcManager.createSubset({
-    modelID: model.modelID,
-    ids: [id],
-    material: preselectMat,
-    scene: scene,
-    removePrevious: true,
-  });
 }
 
 function groupCategories(children) {
