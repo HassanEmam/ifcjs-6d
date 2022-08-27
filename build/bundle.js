@@ -106229,6 +106229,7 @@ function getUoM(ifcLoader, model, type) {
 
 let model$1;
 let ifcLoader$1;
+let scene$1;
 
 async function createTreeTable(ifcProject, modelObj, ifcloader) {
   const tableRoot = document.getElementById("boq");
@@ -106414,7 +106415,57 @@ async function createLeafRow(table, node, depth) {
 
     row.style.fontWeight = "normal";
     table.appendChild(row);
+
+    row.onmouseenter = function () {
+      removeTmpHighlights();
+  
+      row.classList.add("tmphighlight");
+      highlightFromSpatial(node.expressID);
+    };
+  
+    row.onclick = function () {
+      removeHighlights();
+      row.classList.add("highlight");
+      highlightFromSpatial(node.expressID);
+      node.expressID;
+    };
+
   }
+}
+
+function removeHighlights() {
+  const highlighted = document.getElementsByClassName("highlight");
+  for (let h of highlighted) {
+    if (h) {
+      h.classList.remove("highlight");
+    }
+  }
+}
+
+function removeTmpHighlights() {
+  const highlighted = document.getElementsByClassName("tmphighlight");
+  for (let h of highlighted) {
+    if (h) {
+      h.classList.remove("tmphighlight");
+    }
+  }
+}
+
+const preselectMat$1 = new MeshLambertMaterial({
+  transparent: true,
+  opacity: 0.9,
+  color: 0xff88ff,
+  depthTest: true,
+});
+
+function highlightFromSpatial(id) {
+  ifcLoader$1.ifcManager.createSubset({
+    modelID: model$1.modelID,
+    ids: [id],
+    material: preselectMat$1,
+    scene: scene$1,
+    removePrevious: true,
+  });
 }
 
 function groupCategories(children) {

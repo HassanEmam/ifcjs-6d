@@ -1,6 +1,7 @@
 // import { ifcLoader, model } from "./loadIfc";
 // import { createPropertySelection } from "./quantities";
 
+import { MeshLambertMaterial } from "three";
 import getEmission from "./emission";
 import { getMaterial } from "./materials";
 import { getQuantityByElement } from "./quantities";
@@ -8,6 +9,8 @@ import { getUoM, fillUoM } from "./uom";
 
 let model;
 let ifcLoader;
+let scene;
+let selectedElementId;
 
 export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
   const tableRoot = document.getElementById("boq");
@@ -194,7 +197,57 @@ async function createLeafRow(table, node, depth) {
 
     row.style.fontWeight = "normal";
     table.appendChild(row);
+
+    row.onmouseenter = function () {
+      removeTmpHighlights();
+  
+      row.classList.add("tmphighlight");
+      highlightFromSpatial(node.expressID);
+    };
+  
+    row.onclick = function () {
+      removeHighlights();
+      row.classList.add("highlight");
+      highlightFromSpatial(node.expressID);
+      selectedElementId = node.expressID;
+    };
+
   }
+}
+
+function removeHighlights() {
+  const highlighted = document.getElementsByClassName("highlight");
+  for (let h of highlighted) {
+    if (h) {
+      h.classList.remove("highlight");
+    }
+  }
+}
+
+function removeTmpHighlights() {
+  const highlighted = document.getElementsByClassName("tmphighlight");
+  for (let h of highlighted) {
+    if (h) {
+      h.classList.remove("tmphighlight");
+    }
+  }
+}
+
+const preselectMat = new MeshLambertMaterial({
+  transparent: true,
+  opacity: 0.9,
+  color: 0xff88ff,
+  depthTest: true,
+});
+
+function highlightFromSpatial(id) {
+  ifcLoader.ifcManager.createSubset({
+    modelID: model.modelID,
+    ids: [id],
+    material: preselectMat,
+    scene: scene,
+    removePrevious: true,
+  });
 }
 
 function groupCategories(children) {
