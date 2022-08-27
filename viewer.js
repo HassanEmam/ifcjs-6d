@@ -82,6 +82,7 @@ import {
   arrowsKeysControls,
 } from "./functions/keysControls.js";
 import { selectObject } from "./functions/Selection.js";
+import { colorization } from "./functions/getAllEmissions.js"
 import { IFCBUILDINGSTOREY } from "web-ifc";
 import createTreeTable from "./functions/treeTable.js";
 
@@ -246,6 +247,8 @@ scene.add(axes);
 const ifcModels = [];
 
 let model = null;
+let allEmissionsOfItems = [];
+const itemsAndEmissions = [];
 const ifcLoader = new IFCLoader();
 await ifcLoader.ifcManager.useWebWorkers(true, "IFCWorker.js");
 // await ifcLoader.ifcManager.setWasmPath("./");
@@ -253,10 +256,11 @@ await ifcLoader.ifcManager.useWebWorkers(true, "IFCWorker.js");
 // create spatial tree
 let spatial = null;
 async function init() {
-  model = await loadIfc(projectURL, ifcLoader);
+  model = await loadIfc(projectURL, ifcLoader, currentProjectID, allEmissionsOfItems, itemsAndEmissions);
   ifcModels.push(model);
   scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
+
   await createTreeTable(spatial, model, ifcLoader, currentProjectID);
 
   threeCanvas.onmousemove = (event) => {
@@ -308,6 +312,9 @@ async function init() {
   const selection = await createPropertySelection(currentProjectID, ifcLoader);
   const quanty = await getQuantityByElement(ifcLoader, currentProjectID, 284);
   document.body.appendChild(selection);
+
+  //Emissions Colorization
+  colorization(ifcLoader, model, itemsAndEmissions, scene)
 }
 
 if (projectURL) {
