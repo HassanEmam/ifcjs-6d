@@ -27,6 +27,6 @@ export async function getMaterial(ifcLoader, model, selectedElementId) {
       let matName = DecodeIFCString(material.Name?.value);
       materials.push(matName);
     }
-    return materials;
   }
+  return materials;
 }

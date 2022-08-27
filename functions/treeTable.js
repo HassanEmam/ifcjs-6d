@@ -179,22 +179,101 @@ async function createLeafRow(parentRow, table, node, depth) {
   const quants = await getQuantityByElement(ifcLoader, model, node.expressID);
   const materials = await getMaterial(ifcLoader, model, node.expressID);
   let count = 0;
-  for (const mat of materials) {
+  console.log(node, materials);
+  if (materials?.length > 0) {
+    for (const mat of materials) {
+      const row = document.createElement("tr");
+      parentRow.insertAdjacentElement("afterend", row);
+      const className = "level" + depth;
+      row.classList.add(className);
+      row.classList.add("table-collapse");
+      let element;
+      if (count === 0) {
+        row.setAttribute("data-depth", depth);
+        element = document.createElement("td");
+        element.classList.add("data-ifc-element");
+        element.textContent = node.type;
+        element.setAttribute("rowspan", materials.length);
+        row.appendChild(element);
+      }
+      count++;
+      const quantityType = document.createElement("td");
+      quantityType.classList.add("quantity-type-container");
+      const qtyTypeSelector = document.createElement("select");
+      let options = "";
+      let fkey = null;
+      for (const [key, value] of Object.entries(quants)) {
+        if (!fkey) {
+          fkey = key;
+        }
+        options += `<option value="${key}">${key}</option>`;
+      }
+      qtyTypeSelector.classList.add("quantity-type");
+      qtyTypeSelector.style.padding = "0px";
+      qtyTypeSelector.innerHTML = options;
+      quantityType.appendChild(qtyTypeSelector);
+      row.appendChild(quantityType);
+
+      const dataQuantity = document.createElement("td");
+      dataQuantity.quants = quants;
+      const quantity = quants[fkey] ? quants[fkey].value.toFixed(2) : 0;
+      dataQuantity.textContent = quantity;
+      row.appendChild(dataQuantity);
+
+      const unit = document.createElement("td");
+      unit.textContent = getUom(quants[fkey]?.type);
+      row.appendChild(unit);
+      const material = document.createElement("td");
+      material.textContent = mat;
+      row.appendChild(material);
+      const emmisionsPerUnit = getEmission(mat);
+      const dataEmissionsPerUnit = document.createElement("td");
+      dataEmissionsPerUnit.textContent = emmisionsPerUnit.toFixed(2);
+      row.appendChild(dataEmissionsPerUnit);
+
+      const emissions = quantity * emmisionsPerUnit;
+
+      // Update total emissions
+      emissionsTotal += emissions;
+      const emissionsTotalData = document.getElementById("emissionsTotal");
+      emissionsTotalData.textContent = emissionsTotal.toFixed(2);
+
+      const dataEmissions = document.createElement("td");
+      dataEmissions.textContent = emissions.toFixed(2);
+      row.appendChild(dataEmissions);
+
+      row.style.fontWeight = "normal";
+
+      row.onmouseenter = function () {
+        removeTmpHighlights();
+
+        row.classList.add("tmphighlight");
+        highlightFromSpatial(node.expressID);
+      };
+
+      row.onclick = function () {
+        removeHighlights();
+        row.classList.add("highlight");
+        highlightFromSpatial(node.expressID);
+        selectedElementId = node.expressID;
+      };
+
+      parentRow = row;
+    }
+  } else {
     const row = document.createElement("tr");
     parentRow.insertAdjacentElement("afterend", row);
     const className = "level" + depth;
     row.classList.add(className);
     row.classList.add("table-collapse");
     let element;
-    if (count === 0) {
-      row.setAttribute("data-depth", depth);
-      element = document.createElement("td");
-      element.classList.add("data-ifc-element");
-      element.textContent = node.type;
-      element.setAttribute("rowspan", materials.length);
-      row.appendChild(element);
-    }
-    count++;
+
+    row.setAttribute("data-depth", depth);
+    element = document.createElement("td");
+    element.classList.add("data-ifc-element");
+    element.textContent = node.type;
+    row.appendChild(element);
+
     const quantityType = document.createElement("td");
     quantityType.classList.add("quantity-type-container");
     const qtyTypeSelector = document.createElement("select");
@@ -222,9 +301,9 @@ async function createLeafRow(parentRow, table, node, depth) {
     unit.textContent = getUom(quants[fkey]?.type);
     row.appendChild(unit);
     const material = document.createElement("td");
-    material.textContent = mat;
+    material.textContent = "";
     row.appendChild(material);
-    const emmisionsPerUnit = getEmission(mat);
+    const emmisionsPerUnit = 0.0;
     const dataEmissionsPerUnit = document.createElement("td");
     dataEmissionsPerUnit.textContent = emmisionsPerUnit.toFixed(2);
     row.appendChild(dataEmissionsPerUnit);
