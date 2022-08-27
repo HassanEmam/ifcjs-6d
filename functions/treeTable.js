@@ -12,6 +12,7 @@ let ifcLoader;
 let scene;
 let selectedElementId;
 let emissionsTotal = 0;
+let preselectMat;
 
 export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
   const tableRoot = document.getElementById("boq");
@@ -271,13 +272,6 @@ function removeTmpHighlights() {
     }
   }
 }
-
-const preselectMat = new MeshLambertMaterial({
-  transparent: true,
-  opacity: 0.9,
-  color: 0x0396a6,
-  depthTest: true,
-});
 
 function highlightFromSpatial(id) {
   ifcLoader.ifcManager.createSubset({
