@@ -8,14 +8,21 @@ import { getUoM, fillUoM } from "./uom";
 
 let model;
 let ifcLoader;
+let projectID;
 
-export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
+export default function createTreeTable(
+  ifcProject,
+  modelObj,
+  ifcloader,
+  currentProjectID
+) {
+  projectID = currentProjectID;
   const tableRoot = document.getElementById("boq");
   model = modelObj;
   ifcLoader = ifcloader;
-  const uom = await fillUoM(ifcLoader, model, "length");
+  const uom = fillUoM(ifcLoader, currentProjectID, "length");
   removeAllChildren(tableRoot);
-  await populateIfcTable(tableRoot, ifcProject, model, ifcLoader);
+  populateIfcTable(tableRoot, ifcProject, model, ifcLoader);
   implementTreeLogic();
 
   const qtySelector = document.getElementsByClassName("quantity-type");
@@ -45,13 +52,13 @@ function getUom(type) {
   let uom = "";
   switch (type) {
     case "length":
-      uom = getUoM(ifcLoader, model, "length");
+      uom = getUoM("length");
       break;
     case "area":
-      uom = getUoM(ifcLoader, model, "area");
+      uom = getUoM("area");
       break;
     case "volume":
-      uom = getUoM(ifcLoader, model, "volume");
+      uom = getUoM("volume");
       break;
     default:
       uom = "";
@@ -60,10 +67,10 @@ function getUom(type) {
   return uom;
 }
 
-async function populateIfcTable(table, ifcProject) {
+function populateIfcTable(table, ifcProject) {
   const initialDepth = 0;
   createHeader(table);
-  await createNode(table, ifcProject, initialDepth, ifcProject.children);
+  createNode(table, ifcProject, initialDepth, ifcProject.children);
 }
 
 function createHeader(table) {
@@ -93,9 +100,9 @@ function createHeader(table) {
   table.appendChild(row);
 }
 
-async function createNode(table, node, depth, children) {
+function createNode(table, node, depth, children) {
   if (children.length === 0) {
-    await createLeafRow(table, node, depth);
+    createLeafRow(table, node, depth);
   } else {
     // If there are multiple categories, group them together
     const grouped = groupCategories(children);
@@ -104,39 +111,40 @@ async function createNode(table, node, depth, children) {
 }
 
 function createBranchRow(table, node, depth, children) {
-  // const row = document.createElement("tr");
-  // const className = "level" + depth;
-  // row.classList.add(className);
-  // row.classList.add("table-collapse");
-  // row.setAttribute("data-depth", depth);
+  const row = document.createElement("tr");
+  const className = "level" + depth;
+  row.classList.add(className);
+  row.classList.add("table-collapse");
+  row.setAttribute("data-depth", depth);
 
-  // const element = document.createElement("td");
-  // element.colSpan = 7;
-  // element.classList.add("data-ifc-element");
-  // const toggle = document.createElement("span");
-  // toggle.classList.add("toggle");
-  // toggle.classList.add("table-collapse");
+  const element = document.createElement("td");
+  element.colSpan = 7;
+  element.classList.add("data-ifc-element");
+  const toggle = document.createElement("span");
+  toggle.classList.add("toggle");
+  toggle.classList.add("table-collapse");
 
-  // element.textContent = node.type;
-  // element.insertBefore(toggle, element.firstChild);
+  element.textContent = node.type;
+  element.insertBefore(toggle, element.firstChild);
 
-  // row.appendChild(element);
-  // table.appendChild(row);
+  row.appendChild(element);
+  table.appendChild(row);
 
   depth++;
 
-  children.forEach(async (child) => {
+  children.forEach((child) => {
     if (child.children.length > 0) {
-      await createNode(table, child, depth, child.children);
+      createNode(table, child, depth, child.children);
     } else {
-      await createLeafRow(table, child, depth);
+      createLeafRow(table, child, depth);
     }
   });
 }
 
-async function createLeafRow(table, node, depth) {
-  const quants = await getQuantityByElement(ifcLoader, model, node.expressID);
-  const materials = await getMaterial(ifcLoader, model, node.expressID);
+function createLeafRow(table, node, depth) {
+  const quants = getQuantityByElement(ifcLoader, projectID, node.expressID);
+  const materials = getMaterial(ifcLoader, projectID, node.expressID);
+  console.log(quants);
   let count = 0;
   for (const mat of materials) {
     const row = document.createElement("tr");
