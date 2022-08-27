@@ -54,7 +54,7 @@ export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
       factor.nextElementSibling.textContent = emission.toFixed(2);
       emissionsTotal += emission;
       const emissionsTotalData = document.getElementById("emissionsTotal");
-      emissionsTotalData.textContent = emissionsTotal.toFixed(2);
+      // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
     }
   });
 }
@@ -89,7 +89,7 @@ async function populateIfcTable(table, ifcProject) {
   table.appendChild(body);
 
   const footer = document.createElement("tfoot");
-  createTotal(table);
+  // createTotal(table);
   table.appendChild(footer);
 }
 
@@ -140,11 +140,11 @@ async function createNode(table, node, depth, children) {
   } else {
     // If there are multiple categories, group them together
     const grouped = groupCategories(children);
-    createBranchRow(table, node, depth, grouped);
+    await createBranchRow(table, node, depth, grouped);
   }
 }
 
-function createBranchRow(table, node, depth, children) {
+async function createBranchRow(table, node, depth, children) {
   const row = document.createElement("tr");
   const className = "level" + depth;
   row.classList.add(className);
@@ -165,14 +165,13 @@ function createBranchRow(table, node, depth, children) {
   table.appendChild(row);
 
   depth++;
-
-  children.forEach(async (child) => {
+  for (const child of children) {
     if (child.children.length > 0) {
       await createNode(table, child, depth, child.children);
     } else {
       await createLeafRow(row, table, child, depth);
     }
-  });
+  }
 }
 
 async function createLeafRow(parentRow, table, node, depth) {
@@ -235,7 +234,7 @@ async function createLeafRow(parentRow, table, node, depth) {
       // Update total emissions
       emissionsTotal += emissions;
       const emissionsTotalData = document.getElementById("emissionsTotal");
-      emissionsTotalData.textContent = emissionsTotal.toFixed(2);
+      // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
 
       const dataEmissions = document.createElement("td");
       dataEmissions.textContent = emissions.toFixed(2);
@@ -312,7 +311,7 @@ async function createLeafRow(parentRow, table, node, depth) {
     // Update total emissions
     emissionsTotal += emissions;
     const emissionsTotalData = document.getElementById("emissionsTotal");
-    emissionsTotalData.textContent = emissionsTotal.toFixed(2);
+    // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
 
     const dataEmissions = document.createElement("td");
     dataEmissions.textContent = emissions.toFixed(2);
@@ -375,7 +374,7 @@ function groupCategories(children) {
       return {
         expressID: -1,
         type: type + "S",
-        children: children.filter((child) => child.type.includes(type)),
+        children: children.filter((child) => child.type === type),
       };
     });
   }
