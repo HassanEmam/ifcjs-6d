@@ -106361,6 +106361,7 @@ async function createLeafRow(table, node, depth) {
   let count = 0;
   for (const mat of materials) {
     const row = document.createElement("tr");
+    table.appendChild(row);
     // row.classList.add(className);
     row.classList.add("table-collapse");
     row.setAttribute("data-depth", depth);
@@ -106413,7 +106414,6 @@ async function createLeafRow(table, node, depth) {
     row.appendChild(dataEmissions);
 
     row.style.fontWeight = "normal";
-    table.appendChild(row);
   }
 }
 
