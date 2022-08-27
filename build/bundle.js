@@ -47274,6 +47274,3331 @@ function DecodeIFCString (ifcString)
     return resultString;
 }
 
+async function getMaterial(ifcLoader, model, selectedElementId) {
+  const materialprop = await ifcLoader.ifcManager.getMaterialsProperties(
+    model.modelID,
+    selectedElementId,
+    true
+  );
+  const materials = [];
+  for (const material of materialprop) {
+    if (material.ForLayerSet) {
+      for (const mat of material.ForLayerSet.MaterialLayers) {
+        let matName = DecodeIFCString(mat.Material.Name?.value);
+        materials.push(matName);
+      }
+    } else if (material.MaterialLayers) {
+      for (const mat of material.MaterialLayers) {
+        let matName = DecodeIFCString(mat.Material.Name?.value);
+        materials.push(matName);
+      }
+    } else if (material.Materials) {
+      for (const mat of material.Materials) {
+        let matName = DecodeIFCString(mat.Name?.value);
+        materials.push(matName);
+      }
+    } else {
+      let matName = DecodeIFCString(material.Name?.value);
+      materials.push(matName);
+    }
+  }
+  return materials;
+}
+
+// This set of controls performs orbiting, dollying (zooming), and panning.
+// Unlike TrackballControls, it maintains the "up" direction object.up (+Y by default).
+//
+//    Orbit - left mouse / touch: one-finger move
+//    Zoom - middle mouse, or mousewheel / touch: two-finger spread or squish
+//    Pan - right mouse, or left mouse + ctrl/meta/shiftKey, or arrow keys / touch: two-finger move
+
+const _changeEvent = { type: 'change' };
+const _startEvent = { type: 'start' };
+const _endEvent = { type: 'end' };
+
+class OrbitControls extends EventDispatcher$1 {
+
+	constructor( object, domElement ) {
+
+		super();
+
+		if ( domElement === undefined ) console.warn( 'THREE.OrbitControls: The second parameter "domElement" is now mandatory.' );
+		if ( domElement === document ) console.error( 'THREE.OrbitControls: "document" should not be used as the target "domElement". Please use "renderer.domElement" instead.' );
+
+		this.object = object;
+		this.domElement = domElement;
+		this.domElement.style.touchAction = 'none'; // disable touch scroll
+
+		// Set to false to disable this control
+		this.enabled = true;
+
+		// "target" sets the location of focus, where the object orbits around
+		this.target = new Vector3$1();
+
+		// How far you can dolly in and out ( PerspectiveCamera only )
+		this.minDistance = 0;
+		this.maxDistance = Infinity;
+
+		// How far you can zoom in and out ( OrthographicCamera only )
+		this.minZoom = 0;
+		this.maxZoom = Infinity;
+
+		// How far you can orbit vertically, upper and lower limits.
+		// Range is 0 to Math.PI radians.
+		this.minPolarAngle = 0; // radians
+		this.maxPolarAngle = Math.PI; // radians
+
+		// How far you can orbit horizontally, upper and lower limits.
+		// If set, the interval [ min, max ] must be a sub-interval of [ - 2 PI, 2 PI ], with ( max - min < 2 PI )
+		this.minAzimuthAngle = - Infinity; // radians
+		this.maxAzimuthAngle = Infinity; // radians
+
+		// Set to true to enable damping (inertia)
+		// If damping is enabled, you must call controls.update() in your animation loop
+		this.enableDamping = false;
+		this.dampingFactor = 0.05;
+
+		// This option actually enables dollying in and out; left as "zoom" for backwards compatibility.
+		// Set to false to disable zooming
+		this.enableZoom = true;
+		this.zoomSpeed = 1.0;
+
+		// Set to false to disable rotating
+		this.enableRotate = true;
+		this.rotateSpeed = 1.0;
+
+		// Set to false to disable panning
+		this.enablePan = true;
+		this.panSpeed = 1.0;
+		this.screenSpacePanning = true; // if false, pan orthogonal to world-space direction camera.up
+		this.keyPanSpeed = 7.0;	// pixels moved per arrow key push
+
+		// Set to true to automatically rotate around the target
+		// If auto-rotate is enabled, you must call controls.update() in your animation loop
+		this.autoRotate = false;
+		this.autoRotateSpeed = 2.0; // 30 seconds per orbit when fps is 60
+
+		// The four arrow keys
+		this.keys = { LEFT: 'ArrowLeft', UP: 'ArrowUp', RIGHT: 'ArrowRight', BOTTOM: 'ArrowDown' };
+
+		// Mouse buttons
+		this.mouseButtons = { LEFT: MOUSE.ROTATE, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.PAN };
+
+		// Touch fingers
+		this.touches = { ONE: TOUCH.ROTATE, TWO: TOUCH.DOLLY_PAN };
+
+		// for reset
+		this.target0 = this.target.clone();
+		this.position0 = this.object.position.clone();
+		this.zoom0 = this.object.zoom;
+
+		// the target DOM element for key events
+		this._domElementKeyEvents = null;
+
+		//
+		// public methods
+		//
+
+		this.getPolarAngle = function () {
+
+			return spherical.phi;
+
+		};
+
+		this.getAzimuthalAngle = function () {
+
+			return spherical.theta;
+
+		};
+
+		this.getDistance = function () {
+
+			return this.object.position.distanceTo( this.target );
+
+		};
+
+		this.listenToKeyEvents = function ( domElement ) {
+
+			domElement.addEventListener( 'keydown', onKeyDown );
+			this._domElementKeyEvents = domElement;
+
+		};
+
+		this.saveState = function () {
+
+			scope.target0.copy( scope.target );
+			scope.position0.copy( scope.object.position );
+			scope.zoom0 = scope.object.zoom;
+
+		};
+
+		this.reset = function () {
+
+			scope.target.copy( scope.target0 );
+			scope.object.position.copy( scope.position0 );
+			scope.object.zoom = scope.zoom0;
+
+			scope.object.updateProjectionMatrix();
+			scope.dispatchEvent( _changeEvent );
+
+			scope.update();
+
+			state = STATE.NONE;
+
+		};
+
+		// this method is exposed, but perhaps it would be better if we can make it private...
+		this.update = function () {
+
+			const offset = new Vector3$1();
+
+			// so camera.up is the orbit axis
+			const quat = new Quaternion$1().setFromUnitVectors( object.up, new Vector3$1( 0, 1, 0 ) );
+			const quatInverse = quat.clone().invert();
+
+			const lastPosition = new Vector3$1();
+			const lastQuaternion = new Quaternion$1();
+
+			const twoPI = 2 * Math.PI;
+
+			return function update() {
+
+				const position = scope.object.position;
+
+				offset.copy( position ).sub( scope.target );
+
+				// rotate offset to "y-axis-is-up" space
+				offset.applyQuaternion( quat );
+
+				// angle from z-axis around y-axis
+				spherical.setFromVector3( offset );
+
+				if ( scope.autoRotate && state === STATE.NONE ) {
+
+					rotateLeft( getAutoRotationAngle() );
+
+				}
+
+				if ( scope.enableDamping ) {
+
+					spherical.theta += sphericalDelta.theta * scope.dampingFactor;
+					spherical.phi += sphericalDelta.phi * scope.dampingFactor;
+
+				} else {
+
+					spherical.theta += sphericalDelta.theta;
+					spherical.phi += sphericalDelta.phi;
+
+				}
+
+				// restrict theta to be between desired limits
+
+				let min = scope.minAzimuthAngle;
+				let max = scope.maxAzimuthAngle;
+
+				if ( isFinite( min ) && isFinite( max ) ) {
+
+					if ( min < - Math.PI ) min += twoPI; else if ( min > Math.PI ) min -= twoPI;
+
+					if ( max < - Math.PI ) max += twoPI; else if ( max > Math.PI ) max -= twoPI;
+
+					if ( min <= max ) {
+
+						spherical.theta = Math.max( min, Math.min( max, spherical.theta ) );
+
+					} else {
+
+						spherical.theta = ( spherical.theta > ( min + max ) / 2 ) ?
+							Math.max( min, spherical.theta ) :
+							Math.min( max, spherical.theta );
+
+					}
+
+				}
+
+				// restrict phi to be between desired limits
+				spherical.phi = Math.max( scope.minPolarAngle, Math.min( scope.maxPolarAngle, spherical.phi ) );
+
+				spherical.makeSafe();
+
+
+				spherical.radius *= scale;
+
+				// restrict radius to be between desired limits
+				spherical.radius = Math.max( scope.minDistance, Math.min( scope.maxDistance, spherical.radius ) );
+
+				// move target to panned location
+
+				if ( scope.enableDamping === true ) {
+
+					scope.target.addScaledVector( panOffset, scope.dampingFactor );
+
+				} else {
+
+					scope.target.add( panOffset );
+
+				}
+
+				offset.setFromSpherical( spherical );
+
+				// rotate offset back to "camera-up-vector-is-up" space
+				offset.applyQuaternion( quatInverse );
+
+				position.copy( scope.target ).add( offset );
+
+				scope.object.lookAt( scope.target );
+
+				if ( scope.enableDamping === true ) {
+
+					sphericalDelta.theta *= ( 1 - scope.dampingFactor );
+					sphericalDelta.phi *= ( 1 - scope.dampingFactor );
+
+					panOffset.multiplyScalar( 1 - scope.dampingFactor );
+
+				} else {
+
+					sphericalDelta.set( 0, 0, 0 );
+
+					panOffset.set( 0, 0, 0 );
+
+				}
+
+				scale = 1;
+
+				// update condition is:
+				// min(camera displacement, camera rotation in radians)^2 > EPS
+				// using small-angle approximation cos(x/2) = 1 - x^2 / 8
+
+				if ( zoomChanged ||
+					lastPosition.distanceToSquared( scope.object.position ) > EPS ||
+					8 * ( 1 - lastQuaternion.dot( scope.object.quaternion ) ) > EPS ) {
+
+					scope.dispatchEvent( _changeEvent );
+
+					lastPosition.copy( scope.object.position );
+					lastQuaternion.copy( scope.object.quaternion );
+					zoomChanged = false;
+
+					return true;
+
+				}
+
+				return false;
+
+			};
+
+		}();
+
+		this.dispose = function () {
+
+			scope.domElement.removeEventListener( 'contextmenu', onContextMenu );
+
+			scope.domElement.removeEventListener( 'pointerdown', onPointerDown );
+			scope.domElement.removeEventListener( 'pointercancel', onPointerCancel );
+			scope.domElement.removeEventListener( 'wheel', onMouseWheel );
+
+			scope.domElement.removeEventListener( 'pointermove', onPointerMove );
+			scope.domElement.removeEventListener( 'pointerup', onPointerUp );
+
+
+			if ( scope._domElementKeyEvents !== null ) {
+
+				scope._domElementKeyEvents.removeEventListener( 'keydown', onKeyDown );
+
+			}
+
+			//scope.dispatchEvent( { type: 'dispose' } ); // should this be added here?
+
+		};
+
+		//
+		// internals
+		//
+
+		const scope = this;
+
+		const STATE = {
+			NONE: - 1,
+			ROTATE: 0,
+			DOLLY: 1,
+			PAN: 2,
+			TOUCH_ROTATE: 3,
+			TOUCH_PAN: 4,
+			TOUCH_DOLLY_PAN: 5,
+			TOUCH_DOLLY_ROTATE: 6
+		};
+
+		let state = STATE.NONE;
+
+		const EPS = 0.000001;
+
+		// current position in spherical coordinates
+		const spherical = new Spherical();
+		const sphericalDelta = new Spherical();
+
+		let scale = 1;
+		const panOffset = new Vector3$1();
+		let zoomChanged = false;
+
+		const rotateStart = new Vector2$1();
+		const rotateEnd = new Vector2$1();
+		const rotateDelta = new Vector2$1();
+
+		const panStart = new Vector2$1();
+		const panEnd = new Vector2$1();
+		const panDelta = new Vector2$1();
+
+		const dollyStart = new Vector2$1();
+		const dollyEnd = new Vector2$1();
+		const dollyDelta = new Vector2$1();
+
+		const pointers = [];
+		const pointerPositions = {};
+
+		function getAutoRotationAngle() {
+
+			return 2 * Math.PI / 60 / 60 * scope.autoRotateSpeed;
+
+		}
+
+		function getZoomScale() {
+
+			return Math.pow( 0.95, scope.zoomSpeed );
+
+		}
+
+		function rotateLeft( angle ) {
+
+			sphericalDelta.theta -= angle;
+
+		}
+
+		function rotateUp( angle ) {
+
+			sphericalDelta.phi -= angle;
+
+		}
+
+		const panLeft = function () {
+
+			const v = new Vector3$1();
+
+			return function panLeft( distance, objectMatrix ) {
+
+				v.setFromMatrixColumn( objectMatrix, 0 ); // get X column of objectMatrix
+				v.multiplyScalar( - distance );
+
+				panOffset.add( v );
+
+			};
+
+		}();
+
+		const panUp = function () {
+
+			const v = new Vector3$1();
+
+			return function panUp( distance, objectMatrix ) {
+
+				if ( scope.screenSpacePanning === true ) {
+
+					v.setFromMatrixColumn( objectMatrix, 1 );
+
+				} else {
+
+					v.setFromMatrixColumn( objectMatrix, 0 );
+					v.crossVectors( scope.object.up, v );
+
+				}
+
+				v.multiplyScalar( distance );
+
+				panOffset.add( v );
+
+			};
+
+		}();
+
+		// deltaX and deltaY are in pixels; right and down are positive
+		const pan = function () {
+
+			const offset = new Vector3$1();
+
+			return function pan( deltaX, deltaY ) {
+
+				const element = scope.domElement;
+
+				if ( scope.object.isPerspectiveCamera ) {
+
+					// perspective
+					const position = scope.object.position;
+					offset.copy( position ).sub( scope.target );
+					let targetDistance = offset.length();
+
+					// half of the fov is center to top of screen
+					targetDistance *= Math.tan( ( scope.object.fov / 2 ) * Math.PI / 180.0 );
+
+					// we use only clientHeight here so aspect ratio does not distort speed
+					panLeft( 2 * deltaX * targetDistance / element.clientHeight, scope.object.matrix );
+					panUp( 2 * deltaY * targetDistance / element.clientHeight, scope.object.matrix );
+
+				} else if ( scope.object.isOrthographicCamera ) {
+
+					// orthographic
+					panLeft( deltaX * ( scope.object.right - scope.object.left ) / scope.object.zoom / element.clientWidth, scope.object.matrix );
+					panUp( deltaY * ( scope.object.top - scope.object.bottom ) / scope.object.zoom / element.clientHeight, scope.object.matrix );
+
+				} else {
+
+					// camera neither orthographic nor perspective
+					console.warn( 'WARNING: OrbitControls.js encountered an unknown camera type - pan disabled.' );
+					scope.enablePan = false;
+
+				}
+
+			};
+
+		}();
+
+		function dollyOut( dollyScale ) {
+
+			if ( scope.object.isPerspectiveCamera ) {
+
+				scale /= dollyScale;
+
+			} else if ( scope.object.isOrthographicCamera ) {
+
+				scope.object.zoom = Math.max( scope.minZoom, Math.min( scope.maxZoom, scope.object.zoom * dollyScale ) );
+				scope.object.updateProjectionMatrix();
+				zoomChanged = true;
+
+			} else {
+
+				console.warn( 'WARNING: OrbitControls.js encountered an unknown camera type - dolly/zoom disabled.' );
+				scope.enableZoom = false;
+
+			}
+
+		}
+
+		function dollyIn( dollyScale ) {
+
+			if ( scope.object.isPerspectiveCamera ) {
+
+				scale *= dollyScale;
+
+			} else if ( scope.object.isOrthographicCamera ) {
+
+				scope.object.zoom = Math.max( scope.minZoom, Math.min( scope.maxZoom, scope.object.zoom / dollyScale ) );
+				scope.object.updateProjectionMatrix();
+				zoomChanged = true;
+
+			} else {
+
+				console.warn( 'WARNING: OrbitControls.js encountered an unknown camera type - dolly/zoom disabled.' );
+				scope.enableZoom = false;
+
+			}
+
+		}
+
+		//
+		// event callbacks - update the object state
+		//
+
+		function handleMouseDownRotate( event ) {
+
+			rotateStart.set( event.clientX, event.clientY );
+
+		}
+
+		function handleMouseDownDolly( event ) {
+
+			dollyStart.set( event.clientX, event.clientY );
+
+		}
+
+		function handleMouseDownPan( event ) {
+
+			panStart.set( event.clientX, event.clientY );
+
+		}
+
+		function handleMouseMoveRotate( event ) {
+
+			rotateEnd.set( event.clientX, event.clientY );
+
+			rotateDelta.subVectors( rotateEnd, rotateStart ).multiplyScalar( scope.rotateSpeed );
+
+			const element = scope.domElement;
+
+			rotateLeft( 2 * Math.PI * rotateDelta.x / element.clientHeight ); // yes, height
+
+			rotateUp( 2 * Math.PI * rotateDelta.y / element.clientHeight );
+
+			rotateStart.copy( rotateEnd );
+
+			scope.update();
+
+		}
+
+		function handleMouseMoveDolly( event ) {
+
+			dollyEnd.set( event.clientX, event.clientY );
+
+			dollyDelta.subVectors( dollyEnd, dollyStart );
+
+			if ( dollyDelta.y > 0 ) {
+
+				dollyOut( getZoomScale() );
+
+			} else if ( dollyDelta.y < 0 ) {
+
+				dollyIn( getZoomScale() );
+
+			}
+
+			dollyStart.copy( dollyEnd );
+
+			scope.update();
+
+		}
+
+		function handleMouseMovePan( event ) {
+
+			panEnd.set( event.clientX, event.clientY );
+
+			panDelta.subVectors( panEnd, panStart ).multiplyScalar( scope.panSpeed );
+
+			pan( panDelta.x, panDelta.y );
+
+			panStart.copy( panEnd );
+
+			scope.update();
+
+		}
+
+		function handleMouseWheel( event ) {
+
+			if ( event.deltaY < 0 ) {
+
+				dollyIn( getZoomScale() );
+
+			} else if ( event.deltaY > 0 ) {
+
+				dollyOut( getZoomScale() );
+
+			}
+
+			scope.update();
+
+		}
+
+		function handleKeyDown( event ) {
+
+			let needsUpdate = false;
+
+			switch ( event.code ) {
+
+				case scope.keys.UP:
+					pan( 0, scope.keyPanSpeed );
+					needsUpdate = true;
+					break;
+
+				case scope.keys.BOTTOM:
+					pan( 0, - scope.keyPanSpeed );
+					needsUpdate = true;
+					break;
+
+				case scope.keys.LEFT:
+					pan( scope.keyPanSpeed, 0 );
+					needsUpdate = true;
+					break;
+
+				case scope.keys.RIGHT:
+					pan( - scope.keyPanSpeed, 0 );
+					needsUpdate = true;
+					break;
+
+			}
+
+			if ( needsUpdate ) {
+
+				// prevent the browser from scrolling on cursor keys
+				event.preventDefault();
+
+				scope.update();
+
+			}
+
+
+		}
+
+		function handleTouchStartRotate() {
+
+			if ( pointers.length === 1 ) {
+
+				rotateStart.set( pointers[ 0 ].pageX, pointers[ 0 ].pageY );
+
+			} else {
+
+				const x = 0.5 * ( pointers[ 0 ].pageX + pointers[ 1 ].pageX );
+				const y = 0.5 * ( pointers[ 0 ].pageY + pointers[ 1 ].pageY );
+
+				rotateStart.set( x, y );
+
+			}
+
+		}
+
+		function handleTouchStartPan() {
+
+			if ( pointers.length === 1 ) {
+
+				panStart.set( pointers[ 0 ].pageX, pointers[ 0 ].pageY );
+
+			} else {
+
+				const x = 0.5 * ( pointers[ 0 ].pageX + pointers[ 1 ].pageX );
+				const y = 0.5 * ( pointers[ 0 ].pageY + pointers[ 1 ].pageY );
+
+				panStart.set( x, y );
+
+			}
+
+		}
+
+		function handleTouchStartDolly() {
+
+			const dx = pointers[ 0 ].pageX - pointers[ 1 ].pageX;
+			const dy = pointers[ 0 ].pageY - pointers[ 1 ].pageY;
+
+			const distance = Math.sqrt( dx * dx + dy * dy );
+
+			dollyStart.set( 0, distance );
+
+		}
+
+		function handleTouchStartDollyPan() {
+
+			if ( scope.enableZoom ) handleTouchStartDolly();
+
+			if ( scope.enablePan ) handleTouchStartPan();
+
+		}
+
+		function handleTouchStartDollyRotate() {
+
+			if ( scope.enableZoom ) handleTouchStartDolly();
+
+			if ( scope.enableRotate ) handleTouchStartRotate();
+
+		}
+
+		function handleTouchMoveRotate( event ) {
+
+			if ( pointers.length == 1 ) {
+
+				rotateEnd.set( event.pageX, event.pageY );
+
+			} else {
+
+				const position = getSecondPointerPosition( event );
+
+				const x = 0.5 * ( event.pageX + position.x );
+				const y = 0.5 * ( event.pageY + position.y );
+
+				rotateEnd.set( x, y );
+
+			}
+
+			rotateDelta.subVectors( rotateEnd, rotateStart ).multiplyScalar( scope.rotateSpeed );
+
+			const element = scope.domElement;
+
+			rotateLeft( 2 * Math.PI * rotateDelta.x / element.clientHeight ); // yes, height
+
+			rotateUp( 2 * Math.PI * rotateDelta.y / element.clientHeight );
+
+			rotateStart.copy( rotateEnd );
+
+		}
+
+		function handleTouchMovePan( event ) {
+
+			if ( pointers.length === 1 ) {
+
+				panEnd.set( event.pageX, event.pageY );
+
+			} else {
+
+				const position = getSecondPointerPosition( event );
+
+				const x = 0.5 * ( event.pageX + position.x );
+				const y = 0.5 * ( event.pageY + position.y );
+
+				panEnd.set( x, y );
+
+			}
+
+			panDelta.subVectors( panEnd, panStart ).multiplyScalar( scope.panSpeed );
+
+			pan( panDelta.x, panDelta.y );
+
+			panStart.copy( panEnd );
+
+		}
+
+		function handleTouchMoveDolly( event ) {
+
+			const position = getSecondPointerPosition( event );
+
+			const dx = event.pageX - position.x;
+			const dy = event.pageY - position.y;
+
+			const distance = Math.sqrt( dx * dx + dy * dy );
+
+			dollyEnd.set( 0, distance );
+
+			dollyDelta.set( 0, Math.pow( dollyEnd.y / dollyStart.y, scope.zoomSpeed ) );
+
+			dollyOut( dollyDelta.y );
+
+			dollyStart.copy( dollyEnd );
+
+		}
+
+		function handleTouchMoveDollyPan( event ) {
+
+			if ( scope.enableZoom ) handleTouchMoveDolly( event );
+
+			if ( scope.enablePan ) handleTouchMovePan( event );
+
+		}
+
+		function handleTouchMoveDollyRotate( event ) {
+
+			if ( scope.enableZoom ) handleTouchMoveDolly( event );
+
+			if ( scope.enableRotate ) handleTouchMoveRotate( event );
+
+		}
+
+		//
+		// event handlers - FSM: listen for events and reset state
+		//
+
+		function onPointerDown( event ) {
+
+			if ( scope.enabled === false ) return;
+
+			if ( pointers.length === 0 ) {
+
+				scope.domElement.setPointerCapture( event.pointerId );
+
+				scope.domElement.addEventListener( 'pointermove', onPointerMove );
+				scope.domElement.addEventListener( 'pointerup', onPointerUp );
+
+			}
+
+			//
+
+			addPointer( event );
+
+			if ( event.pointerType === 'touch' ) {
+
+				onTouchStart( event );
+
+			} else {
+
+				onMouseDown( event );
+
+			}
+
+		}
+
+		function onPointerMove( event ) {
+
+			if ( scope.enabled === false ) return;
+
+			if ( event.pointerType === 'touch' ) {
+
+				onTouchMove( event );
+
+			} else {
+
+				onMouseMove( event );
+
+			}
+
+		}
+
+		function onPointerUp( event ) {
+
+		    removePointer( event );
+
+		    if ( pointers.length === 0 ) {
+
+		        scope.domElement.releasePointerCapture( event.pointerId );
+
+		        scope.domElement.removeEventListener( 'pointermove', onPointerMove );
+		        scope.domElement.removeEventListener( 'pointerup', onPointerUp );
+
+		    }
+
+		    scope.dispatchEvent( _endEvent );
+
+		    state = STATE.NONE;
+
+		}
+
+		function onPointerCancel( event ) {
+
+			removePointer( event );
+
+		}
+
+		function onMouseDown( event ) {
+
+			let mouseAction;
+
+			switch ( event.button ) {
+
+				case 0:
+
+					mouseAction = scope.mouseButtons.LEFT;
+					break;
+
+				case 1:
+
+					mouseAction = scope.mouseButtons.MIDDLE;
+					break;
+
+				case 2:
+
+					mouseAction = scope.mouseButtons.RIGHT;
+					break;
+
+				default:
+
+					mouseAction = - 1;
+
+			}
+
+			switch ( mouseAction ) {
+
+				case MOUSE.DOLLY:
+
+					if ( scope.enableZoom === false ) return;
+
+					handleMouseDownDolly( event );
+
+					state = STATE.DOLLY;
+
+					break;
+
+				case MOUSE.ROTATE:
+
+					if ( event.ctrlKey || event.metaKey || event.shiftKey ) {
+
+						if ( scope.enablePan === false ) return;
+
+						handleMouseDownPan( event );
+
+						state = STATE.PAN;
+
+					} else {
+
+						if ( scope.enableRotate === false ) return;
+
+						handleMouseDownRotate( event );
+
+						state = STATE.ROTATE;
+
+					}
+
+					break;
+
+				case MOUSE.PAN:
+
+					if ( event.ctrlKey || event.metaKey || event.shiftKey ) {
+
+						if ( scope.enableRotate === false ) return;
+
+						handleMouseDownRotate( event );
+
+						state = STATE.ROTATE;
+
+					} else {
+
+						if ( scope.enablePan === false ) return;
+
+						handleMouseDownPan( event );
+
+						state = STATE.PAN;
+
+					}
+
+					break;
+
+				default:
+
+					state = STATE.NONE;
+
+			}
+
+			if ( state !== STATE.NONE ) {
+
+				scope.dispatchEvent( _startEvent );
+
+			}
+
+		}
+
+		function onMouseMove( event ) {
+
+			if ( scope.enabled === false ) return;
+
+			switch ( state ) {
+
+				case STATE.ROTATE:
+
+					if ( scope.enableRotate === false ) return;
+
+					handleMouseMoveRotate( event );
+
+					break;
+
+				case STATE.DOLLY:
+
+					if ( scope.enableZoom === false ) return;
+
+					handleMouseMoveDolly( event );
+
+					break;
+
+				case STATE.PAN:
+
+					if ( scope.enablePan === false ) return;
+
+					handleMouseMovePan( event );
+
+					break;
+
+			}
+
+		}
+
+		function onMouseWheel( event ) {
+
+			if ( scope.enabled === false || scope.enableZoom === false || state !== STATE.NONE ) return;
+
+			event.preventDefault();
+
+			scope.dispatchEvent( _startEvent );
+
+			handleMouseWheel( event );
+
+			scope.dispatchEvent( _endEvent );
+
+		}
+
+		function onKeyDown( event ) {
+
+			if ( scope.enabled === false || scope.enablePan === false ) return;
+
+			handleKeyDown( event );
+
+		}
+
+		function onTouchStart( event ) {
+
+			trackPointer( event );
+
+			switch ( pointers.length ) {
+
+				case 1:
+
+					switch ( scope.touches.ONE ) {
+
+						case TOUCH.ROTATE:
+
+							if ( scope.enableRotate === false ) return;
+
+							handleTouchStartRotate();
+
+							state = STATE.TOUCH_ROTATE;
+
+							break;
+
+						case TOUCH.PAN:
+
+							if ( scope.enablePan === false ) return;
+
+							handleTouchStartPan();
+
+							state = STATE.TOUCH_PAN;
+
+							break;
+
+						default:
+
+							state = STATE.NONE;
+
+					}
+
+					break;
+
+				case 2:
+
+					switch ( scope.touches.TWO ) {
+
+						case TOUCH.DOLLY_PAN:
+
+							if ( scope.enableZoom === false && scope.enablePan === false ) return;
+
+							handleTouchStartDollyPan();
+
+							state = STATE.TOUCH_DOLLY_PAN;
+
+							break;
+
+						case TOUCH.DOLLY_ROTATE:
+
+							if ( scope.enableZoom === false && scope.enableRotate === false ) return;
+
+							handleTouchStartDollyRotate();
+
+							state = STATE.TOUCH_DOLLY_ROTATE;
+
+							break;
+
+						default:
+
+							state = STATE.NONE;
+
+					}
+
+					break;
+
+				default:
+
+					state = STATE.NONE;
+
+			}
+
+			if ( state !== STATE.NONE ) {
+
+				scope.dispatchEvent( _startEvent );
+
+			}
+
+		}
+
+		function onTouchMove( event ) {
+
+			trackPointer( event );
+
+			switch ( state ) {
+
+				case STATE.TOUCH_ROTATE:
+
+					if ( scope.enableRotate === false ) return;
+
+					handleTouchMoveRotate( event );
+
+					scope.update();
+
+					break;
+
+				case STATE.TOUCH_PAN:
+
+					if ( scope.enablePan === false ) return;
+
+					handleTouchMovePan( event );
+
+					scope.update();
+
+					break;
+
+				case STATE.TOUCH_DOLLY_PAN:
+
+					if ( scope.enableZoom === false && scope.enablePan === false ) return;
+
+					handleTouchMoveDollyPan( event );
+
+					scope.update();
+
+					break;
+
+				case STATE.TOUCH_DOLLY_ROTATE:
+
+					if ( scope.enableZoom === false && scope.enableRotate === false ) return;
+
+					handleTouchMoveDollyRotate( event );
+
+					scope.update();
+
+					break;
+
+				default:
+
+					state = STATE.NONE;
+
+			}
+
+		}
+
+		function onContextMenu( event ) {
+
+			if ( scope.enabled === false ) return;
+
+			event.preventDefault();
+
+		}
+
+		function addPointer( event ) {
+
+			pointers.push( event );
+
+		}
+
+		function removePointer( event ) {
+
+			delete pointerPositions[ event.pointerId ];
+
+			for ( let i = 0; i < pointers.length; i ++ ) {
+
+				if ( pointers[ i ].pointerId == event.pointerId ) {
+
+					pointers.splice( i, 1 );
+					return;
+
+				}
+
+			}
+
+		}
+
+		function trackPointer( event ) {
+
+			let position = pointerPositions[ event.pointerId ];
+
+			if ( position === undefined ) {
+
+				position = new Vector2$1();
+				pointerPositions[ event.pointerId ] = position;
+
+			}
+
+			position.set( event.pageX, event.pageY );
+
+		}
+
+		function getSecondPointerPosition( event ) {
+
+			const pointer = ( event.pointerId === pointers[ 0 ].pointerId ) ? pointers[ 1 ] : pointers[ 0 ];
+
+			return pointerPositions[ pointer.pointerId ];
+
+		}
+
+		//
+
+		scope.domElement.addEventListener( 'contextmenu', onContextMenu );
+
+		scope.domElement.addEventListener( 'pointerdown', onPointerDown );
+		scope.domElement.addEventListener( 'pointercancel', onPointerCancel );
+		scope.domElement.addEventListener( 'wheel', onMouseWheel, { passive: false } );
+
+		// force an update at start
+
+		this.update();
+
+	}
+
+}
+
+/*!
+ * camera-controls
+ * https://github.com/yomotsu/camera-controls
+ * (c) 2017 @yomotsu
+ * Released under the MIT License.
+ */
+// see https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/buttons#value
+const MOUSE_BUTTON = {
+    LEFT: 1,
+    RIGHT: 2,
+    MIDDLE: 4,
+};
+const ACTION = Object.freeze({
+    NONE: 0,
+    ROTATE: 1,
+    TRUCK: 2,
+    OFFSET: 4,
+    DOLLY: 8,
+    ZOOM: 16,
+    TOUCH_ROTATE: 32,
+    TOUCH_TRUCK: 64,
+    TOUCH_OFFSET: 128,
+    TOUCH_DOLLY: 256,
+    TOUCH_ZOOM: 512,
+    TOUCH_DOLLY_TRUCK: 1024,
+    TOUCH_DOLLY_OFFSET: 2048,
+    TOUCH_ZOOM_TRUCK: 4096,
+    TOUCH_ZOOM_OFFSET: 8192,
+});
+function isPerspectiveCamera(camera) {
+    return camera.isPerspectiveCamera;
+}
+function isOrthographicCamera(camera) {
+    return camera.isOrthographicCamera;
+}
+
+const PI_2 = Math.PI * 2;
+const PI_HALF = Math.PI / 2;
+
+const EPSILON = 1e-5;
+function approxZero(number, error = EPSILON) {
+    return Math.abs(number) < error;
+}
+function approxEquals(a, b, error = EPSILON) {
+    return approxZero(a - b, error);
+}
+function roundToStep(value, step) {
+    return Math.round(value / step) * step;
+}
+function infinityToMaxNumber(value) {
+    if (isFinite(value))
+        return value;
+    if (value < 0)
+        return -Number.MAX_VALUE;
+    return Number.MAX_VALUE;
+}
+function maxNumberToInfinity(value) {
+    if (Math.abs(value) < Number.MAX_VALUE)
+        return value;
+    return value * Infinity;
+}
+
+function extractClientCoordFromEvent(pointers, out) {
+    out.set(0, 0);
+    pointers.forEach((pointer) => {
+        out.x += pointer.clientX;
+        out.y += pointer.clientY;
+    });
+    out.x /= pointers.length;
+    out.y /= pointers.length;
+}
+
+function notSupportedInOrthographicCamera(camera, message) {
+    if (isOrthographicCamera(camera)) {
+        console.warn(`${message} is not supported in OrthographicCamera`);
+        return true;
+    }
+    return false;
+}
+
+/**
+ * A compat function for `Quaternion.invert()` / `Quaternion.inverse()`.
+ * `Quaternion.invert()` is introduced in r123 and `Quaternion.inverse()` emits a warning.
+ * We are going to use this compat for a while.
+ * @param target A target quaternion
+ */
+function quatInvertCompat(target) {
+    if (target.invert) {
+        target.invert();
+    }
+    else {
+        target.inverse();
+    }
+    return target;
+}
+
+class EventDispatcher {
+    constructor() {
+        this._listeners = {};
+    }
+    /**
+     * Adds the specified event listener.
+     * @param type event name
+     * @param listener handler function
+     * @category Methods
+     */
+    addEventListener(type, listener) {
+        const listeners = this._listeners;
+        if (listeners[type] === undefined)
+            listeners[type] = [];
+        if (listeners[type].indexOf(listener) === -1)
+            listeners[type].push(listener);
+    }
+    // hasEventListener( type: string, listener: Listener ): boolean {
+    // 	const listeners = this._listeners;
+    // 	return listeners[ type ] !== undefined && listeners[ type ].indexOf( listener ) !== - 1;
+    // }
+    /**
+     * Removes the specified event listener
+     * @param type event name
+     * @param listener handler function
+     * @category Methods
+     */
+    removeEventListener(type, listener) {
+        const listeners = this._listeners;
+        const listenerArray = listeners[type];
+        if (listenerArray !== undefined) {
+            const index = listenerArray.indexOf(listener);
+            if (index !== -1)
+                listenerArray.splice(index, 1);
+        }
+    }
+    /**
+     * Removes all event listeners
+     * @param type event name
+     * @category Methods
+     */
+    removeAllEventListeners(type) {
+        if (!type) {
+            this._listeners = {};
+            return;
+        }
+        if (Array.isArray(this._listeners[type]))
+            this._listeners[type].length = 0;
+    }
+    /**
+     * Fire an event type.
+     * @param event DispatcherEvent
+     * @category Methods
+     */
+    dispatchEvent(event) {
+        const listeners = this._listeners;
+        const listenerArray = listeners[event.type];
+        if (listenerArray !== undefined) {
+            event.target = this;
+            const array = listenerArray.slice(0);
+            for (let i = 0, l = array.length; i < l; i++) {
+                array[i].call(this, event);
+            }
+        }
+    }
+}
+
+const isBrowser = typeof window !== 'undefined';
+const isMac = isBrowser && /Mac/.test(navigator.platform);
+const isPointerEventsNotSupported = !(isBrowser && 'PointerEvent' in window); // Safari 12 does not support PointerEvents API
+const TOUCH_DOLLY_FACTOR = 1 / 8;
+let THREE;
+let _ORIGIN;
+let _AXIS_Y;
+let _AXIS_Z;
+let _v2;
+let _v3A;
+let _v3B;
+let _v3C;
+let _xColumn;
+let _yColumn;
+let _zColumn;
+let _deltaTarget;
+let _deltaOffset;
+let _sphericalA;
+let _sphericalB;
+let _box3A;
+let _box3B;
+let _sphere;
+let _quaternionA;
+let _quaternionB;
+let _rotationMatrix;
+let _raycaster;
+class CameraControls extends EventDispatcher {
+    /**
+     * Creates a `CameraControls` instance.
+     *
+     * Note:
+     * You **must install** three.js before using camera-controls. see [#install](#install)
+     * Not doing so will lead to runtime errors (`undefined` references to THREE).
+     *
+     * e.g.
+     * ```
+     * CameraControls.install( { THREE } );
+     * const cameraControls = new CameraControls( camera, domElement );
+     * ```
+     *
+     * @param camera A `THREE.PerspectiveCamera` or `THREE.OrthographicCamera` to be controlled.
+     * @param domElement A `HTMLElement` for the draggable area, usually `renderer.domElement`.
+     * @category Constructor
+     */
+    constructor(camera, domElement) {
+        super();
+        /**
+         * Minimum vertical angle in radians.
+         * The angle has to be between `0` and `.maxPolarAngle` inclusive.
+         * The default value is `0`.
+         *
+         * e.g.
+         * ```
+         * cameraControls.maxPolarAngle = 0;
+         * ```
+         * @category Properties
+         */
+        this.minPolarAngle = 0; // radians
+        /**
+         * Maximum vertical angle in radians.
+         * The angle has to be between `.maxPolarAngle` and `Math.PI` inclusive.
+         * The default value is `Math.PI`.
+         *
+         * e.g.
+         * ```
+         * cameraControls.maxPolarAngle = Math.PI;
+         * ```
+         * @category Properties
+         */
+        this.maxPolarAngle = Math.PI; // radians
+        /**
+         * Minimum horizontal angle in radians.
+         * The angle has to be less than `.maxAzimuthAngle`.
+         * The default value is `- Infinity`.
+         *
+         * e.g.
+         * ```
+         * cameraControls.minAzimuthAngle = - Infinity;
+         * ```
+         * @category Properties
+         */
+        this.minAzimuthAngle = -Infinity; // radians
+        /**
+         * Maximum horizontal angle in radians.
+         * The angle has to be greater than `.minAzimuthAngle`.
+         * The default value is `Infinity`.
+         *
+         * e.g.
+         * ```
+         * cameraControls.maxAzimuthAngle = Infinity;
+         * ```
+         * @category Properties
+         */
+        this.maxAzimuthAngle = Infinity; // radians
+        // How far you can dolly in and out ( PerspectiveCamera only )
+        /**
+         * Minimum distance for dolly. The value must be higher than `0`.
+         * PerspectiveCamera only.
+         * @category Properties
+         */
+        this.minDistance = 0;
+        /**
+         * Maximum distance for dolly. The value must be higher than `minDistance`.
+         * PerspectiveCamera only.
+         * @category Properties
+         */
+        this.maxDistance = Infinity;
+        /**
+         * `true` to enable Infinity Dolly.
+         * When the Dolly distance is less than the `minDistance`, radius of the sphere will be set `minDistance` automatically.
+         * @category Properties
+         */
+        this.infinityDolly = false;
+        /**
+         * Minimum camera zoom.
+         * @category Properties
+         */
+        this.minZoom = 0.01;
+        /**
+         * Maximum camera zoom.
+         * @category Properties
+         */
+        this.maxZoom = Infinity;
+        /**
+         * The damping inertia.
+         * The value must be between `Math.EPSILON` to `1` inclusive.
+         * Setting `1` to disable smooth transitions.
+         * @category Properties
+         */
+        this.dampingFactor = 0.05;
+        /**
+         * The damping inertia while dragging.
+         * The value must be between `Math.EPSILON` to `1` inclusive.
+         * Setting `1` to disable smooth transitions.
+         * @category Properties
+         */
+        this.draggingDampingFactor = 0.25;
+        /**
+         * Speed of azimuth (horizontal) rotation.
+         * @category Properties
+         */
+        this.azimuthRotateSpeed = 1.0;
+        /**
+         * Speed of polar (vertical) rotation.
+         * @category Properties
+         */
+        this.polarRotateSpeed = 1.0;
+        /**
+         * Speed of mouse-wheel dollying.
+         * @category Properties
+         */
+        this.dollySpeed = 1.0;
+        /**
+         * Speed of drag for truck and pedestal.
+         * @category Properties
+         */
+        this.truckSpeed = 2.0;
+        /**
+         * `true` to enable Dolly-in to the mouse cursor coords.
+         * @category Properties
+         */
+        this.dollyToCursor = false;
+        /**
+         * @category Properties
+         */
+        this.dragToOffset = false;
+        /**
+         * The same as `.screenSpacePanning` in three.js's OrbitControls.
+         * @category Properties
+         */
+        this.verticalDragToForward = false;
+        /**
+         * Friction ratio of the boundary.
+         * @category Properties
+         */
+        this.boundaryFriction = 0.0;
+        /**
+         * Controls how soon the `rest` event fires as the camera slows.
+         * @category Properties
+         */
+        this.restThreshold = 0.01;
+        /**
+         * An array of Meshes to collide with camera.
+         * Be aware colliderMeshes may decrease performance. The collision test uses 4 raycasters from the camera since the near plane has 4 corners.
+         * @category Properties
+         */
+        this.colliderMeshes = [];
+        /**
+         * Force cancel user dragging.
+         * @category Methods
+         */
+        // cancel will be overwritten in the constructor.
+        this.cancel = () => { };
+        this._enabled = true;
+        this._state = ACTION.NONE;
+        this._viewport = null;
+        this._dollyControlAmount = 0;
+        this._hasRested = true;
+        this._boundaryEnclosesCamera = false;
+        this._needsUpdate = true;
+        this._updatedLastTime = false;
+        this._elementRect = new DOMRect();
+        this._activePointers = [];
+        this._truckInternal = (deltaX, deltaY, dragToOffset) => {
+            if (isPerspectiveCamera(this._camera)) {
+                const offset = _v3A.copy(this._camera.position).sub(this._target);
+                // half of the fov is center to top of screen
+                const fov = this._camera.getEffectiveFOV() * THREE.MathUtils.DEG2RAD;
+                const targetDistance = offset.length() * Math.tan(fov * 0.5);
+                const truckX = (this.truckSpeed * deltaX * targetDistance / this._elementRect.height);
+                const pedestalY = (this.truckSpeed * deltaY * targetDistance / this._elementRect.height);
+                if (this.verticalDragToForward) {
+                    dragToOffset ?
+                        this.setFocalOffset(this._focalOffsetEnd.x + truckX, this._focalOffsetEnd.y, this._focalOffsetEnd.z, true) :
+                        this.truck(truckX, 0, true);
+                    this.forward(-pedestalY, true);
+                }
+                else {
+                    dragToOffset ?
+                        this.setFocalOffset(this._focalOffsetEnd.x + truckX, this._focalOffsetEnd.y + pedestalY, this._focalOffsetEnd.z, true) :
+                        this.truck(truckX, pedestalY, true);
+                }
+            }
+            else if (isOrthographicCamera(this._camera)) {
+                // orthographic
+                const camera = this._camera;
+                const truckX = deltaX * (camera.right - camera.left) / camera.zoom / this._elementRect.width;
+                const pedestalY = deltaY * (camera.top - camera.bottom) / camera.zoom / this._elementRect.height;
+                dragToOffset ?
+                    this.setFocalOffset(this._focalOffsetEnd.x + truckX, this._focalOffsetEnd.y + pedestalY, this._focalOffsetEnd.z, true) :
+                    this.truck(truckX, pedestalY, true);
+            }
+        };
+        this._rotateInternal = (deltaX, deltaY) => {
+            const theta = PI_2 * this.azimuthRotateSpeed * deltaX / this._elementRect.height; // divide by *height* to refer the resolution
+            const phi = PI_2 * this.polarRotateSpeed * deltaY / this._elementRect.height;
+            this.rotate(theta, phi, true);
+        };
+        this._dollyInternal = (delta, x, y) => {
+            const dollyScale = Math.pow(0.95, -delta * this.dollySpeed);
+            const distance = this._sphericalEnd.radius * dollyScale;
+            const prevRadius = this._sphericalEnd.radius;
+            const signedPrevRadius = prevRadius * (delta >= 0 ? -1 : 1);
+            this.dollyTo(distance);
+            if (this.infinityDolly && (distance < this.minDistance || this.maxDistance === this.minDistance)) {
+                this._camera.getWorldDirection(_v3A);
+                this._targetEnd.add(_v3A.normalize().multiplyScalar(signedPrevRadius));
+                this._target.add(_v3A.normalize().multiplyScalar(signedPrevRadius));
+            }
+            if (this.dollyToCursor) {
+                this._dollyControlAmount += this._sphericalEnd.radius - prevRadius;
+                if (this.infinityDolly && (distance < this.minDistance || this.maxDistance === this.minDistance)) {
+                    this._dollyControlAmount -= signedPrevRadius;
+                }
+                this._dollyControlCoord.set(x, y);
+            }
+            return;
+        };
+        this._zoomInternal = (delta, x, y) => {
+            const zoomScale = Math.pow(0.95, delta * this.dollySpeed);
+            // for both PerspectiveCamera and OrthographicCamera
+            this.zoomTo(this._zoom * zoomScale);
+            if (this.dollyToCursor) {
+                this._dollyControlAmount = this._zoomEnd;
+                this._dollyControlCoord.set(x, y);
+            }
+            return;
+        };
+        // Check if the user has installed THREE
+        if (typeof THREE === 'undefined') {
+            console.error('camera-controls: `THREE` is undefined. You must first run `CameraControls.install( { THREE: THREE } )`. Check the docs for further information.');
+        }
+        this._camera = camera;
+        this._yAxisUpSpace = new THREE.Quaternion().setFromUnitVectors(this._camera.up, _AXIS_Y);
+        this._yAxisUpSpaceInverse = quatInvertCompat(this._yAxisUpSpace.clone());
+        this._state = ACTION.NONE;
+        this._domElement = domElement;
+        this._domElement.style.touchAction = 'none';
+        this._domElement.style.userSelect = 'none';
+        this._domElement.style.webkitUserSelect = 'none';
+        // the location
+        this._target = new THREE.Vector3();
+        this._targetEnd = this._target.clone();
+        this._focalOffset = new THREE.Vector3();
+        this._focalOffsetEnd = this._focalOffset.clone();
+        // rotation
+        this._spherical = new THREE.Spherical().setFromVector3(_v3A.copy(this._camera.position).applyQuaternion(this._yAxisUpSpace));
+        this._sphericalEnd = this._spherical.clone();
+        this._zoom = this._camera.zoom;
+        this._zoomEnd = this._zoom;
+        // collisionTest uses nearPlane.s
+        this._nearPlaneCorners = [
+            new THREE.Vector3(),
+            new THREE.Vector3(),
+            new THREE.Vector3(),
+            new THREE.Vector3(),
+        ];
+        this._updateNearPlaneCorners();
+        // Target cannot move outside of this box
+        this._boundary = new THREE.Box3(new THREE.Vector3(-Infinity, -Infinity, -Infinity), new THREE.Vector3(Infinity, Infinity, Infinity));
+        // reset
+        this._target0 = this._target.clone();
+        this._position0 = this._camera.position.clone();
+        this._zoom0 = this._zoom;
+        this._focalOffset0 = this._focalOffset.clone();
+        this._dollyControlAmount = 0;
+        this._dollyControlCoord = new THREE.Vector2();
+        // configs
+        this.mouseButtons = {
+            left: ACTION.ROTATE,
+            middle: ACTION.DOLLY,
+            right: ACTION.TRUCK,
+            wheel: isPerspectiveCamera(this._camera) ? ACTION.DOLLY :
+                isOrthographicCamera(this._camera) ? ACTION.ZOOM :
+                    ACTION.NONE,
+        };
+        this.touches = {
+            one: ACTION.TOUCH_ROTATE,
+            two: isPerspectiveCamera(this._camera) ? ACTION.TOUCH_DOLLY_TRUCK :
+                isOrthographicCamera(this._camera) ? ACTION.TOUCH_ZOOM_TRUCK :
+                    ACTION.NONE,
+            three: ACTION.TOUCH_TRUCK,
+        };
+        if (this._domElement) {
+            const dragStartPosition = new THREE.Vector2();
+            const lastDragPosition = new THREE.Vector2();
+            const dollyStart = new THREE.Vector2();
+            const onPointerDown = (event) => {
+                if (!this._enabled)
+                    return;
+                // Don't call `event.preventDefault()` on the pointerdown event
+                // to keep receiving pointermove evens outside dragging iframe
+                // https://taye.me/blog/tips/2015/11/16/mouse-drag-outside-iframe/
+                const pointer = {
+                    pointerId: event.pointerId,
+                    clientX: event.clientX,
+                    clientY: event.clientY,
+                    deltaX: 0,
+                    deltaY: 0,
+                };
+                this._activePointers.push(pointer);
+                // eslint-disable-next-line no-undef
+                this._domElement.ownerDocument.removeEventListener('pointermove', onPointerMove, { passive: false });
+                this._domElement.ownerDocument.removeEventListener('pointerup', onPointerUp);
+                this._domElement.ownerDocument.addEventListener('pointermove', onPointerMove, { passive: false });
+                this._domElement.ownerDocument.addEventListener('pointerup', onPointerUp);
+                startDragging(event);
+            };
+            const onMouseDown = (event) => {
+                if (!this._enabled)
+                    return;
+                const pointer = {
+                    pointerId: 0,
+                    clientX: event.clientX,
+                    clientY: event.clientY,
+                    deltaX: 0,
+                    deltaY: 0,
+                };
+                this._activePointers.push(pointer);
+                // see https://github.com/microsoft/TypeScript/issues/32912#issuecomment-522142969
+                // eslint-disable-next-line no-undef
+                this._domElement.ownerDocument.removeEventListener('mousemove', onMouseMove);
+                this._domElement.ownerDocument.removeEventListener('mouseup', onMouseUp);
+                this._domElement.ownerDocument.addEventListener('mousemove', onMouseMove);
+                this._domElement.ownerDocument.addEventListener('mouseup', onMouseUp);
+                startDragging(event);
+            };
+            const onTouchStart = (event) => {
+                if (!this._enabled)
+                    return;
+                event.preventDefault();
+                Array.prototype.forEach.call(event.changedTouches, (touch) => {
+                    const pointer = {
+                        pointerId: touch.identifier,
+                        clientX: touch.clientX,
+                        clientY: touch.clientY,
+                        deltaX: 0,
+                        deltaY: 0,
+                    };
+                    this._activePointers.push(pointer);
+                });
+                // eslint-disable-next-line no-undef
+                this._domElement.ownerDocument.removeEventListener('touchmove', onTouchMove, { passive: false });
+                this._domElement.ownerDocument.removeEventListener('touchend', onTouchEnd);
+                this._domElement.ownerDocument.addEventListener('touchmove', onTouchMove, { passive: false });
+                this._domElement.ownerDocument.addEventListener('touchend', onTouchEnd);
+                startDragging(event);
+            };
+            const onPointerMove = (event) => {
+                if (event.cancelable)
+                    event.preventDefault();
+                const pointerId = event.pointerId;
+                const pointer = this._findPointerById(pointerId);
+                if (!pointer)
+                    return;
+                pointer.clientX = event.clientX;
+                pointer.clientY = event.clientY;
+                pointer.deltaX = event.movementX;
+                pointer.deltaY = event.movementY;
+                if (event.pointerType === 'touch') {
+                    switch (this._activePointers.length) {
+                        case 1:
+                            this._state = this.touches.one;
+                            break;
+                        case 2:
+                            this._state = this.touches.two;
+                            break;
+                        case 3:
+                            this._state = this.touches.three;
+                            break;
+                    }
+                }
+                else {
+                    this._state = 0;
+                    if ((event.buttons & MOUSE_BUTTON.LEFT) === MOUSE_BUTTON.LEFT) {
+                        this._state = this._state | this.mouseButtons.left;
+                    }
+                    if ((event.buttons & MOUSE_BUTTON.MIDDLE) === MOUSE_BUTTON.MIDDLE) {
+                        this._state = this._state | this.mouseButtons.middle;
+                    }
+                    if ((event.buttons & MOUSE_BUTTON.RIGHT) === MOUSE_BUTTON.RIGHT) {
+                        this._state = this._state | this.mouseButtons.right;
+                    }
+                }
+                dragging();
+            };
+            const onMouseMove = (event) => {
+                const pointer = this._findPointerById(0);
+                if (!pointer)
+                    return;
+                pointer.clientX = event.clientX;
+                pointer.clientY = event.clientY;
+                pointer.deltaX = event.movementX;
+                pointer.deltaY = event.movementY;
+                this._state = 0;
+                if ((event.buttons & MOUSE_BUTTON.LEFT) === MOUSE_BUTTON.LEFT) {
+                    this._state = this._state | this.mouseButtons.left;
+                }
+                if ((event.buttons & MOUSE_BUTTON.MIDDLE) === MOUSE_BUTTON.MIDDLE) {
+                    this._state = this._state | this.mouseButtons.middle;
+                }
+                if ((event.buttons & MOUSE_BUTTON.RIGHT) === MOUSE_BUTTON.RIGHT) {
+                    this._state = this._state | this.mouseButtons.right;
+                }
+                dragging();
+            };
+            const onTouchMove = (event) => {
+                if (event.cancelable)
+                    event.preventDefault();
+                Array.prototype.forEach.call(event.changedTouches, (touch) => {
+                    const pointerId = touch.identifier;
+                    const pointer = this._findPointerById(pointerId);
+                    if (!pointer)
+                        return;
+                    pointer.clientX = touch.clientX;
+                    pointer.clientY = touch.clientY;
+                    // touch event does not have movementX and movementY.
+                });
+                dragging();
+            };
+            const onPointerUp = (event) => {
+                const pointerId = event.pointerId;
+                const pointer = this._findPointerById(pointerId);
+                pointer && this._activePointers.splice(this._activePointers.indexOf(pointer), 1);
+                if (event.pointerType === 'touch') {
+                    switch (this._activePointers.length) {
+                        case 0:
+                            this._state = ACTION.NONE;
+                            break;
+                        case 1:
+                            this._state = this.touches.one;
+                            break;
+                        case 2:
+                            this._state = this.touches.two;
+                            break;
+                        case 3:
+                            this._state = this.touches.three;
+                            break;
+                    }
+                }
+                else {
+                    this._state = ACTION.NONE;
+                }
+                endDragging();
+            };
+            const onMouseUp = () => {
+                const pointer = this._findPointerById(0);
+                pointer && this._activePointers.splice(this._activePointers.indexOf(pointer), 1);
+                this._state = ACTION.NONE;
+                endDragging();
+            };
+            const onTouchEnd = (event) => {
+                Array.prototype.forEach.call(event.changedTouches, (touch) => {
+                    const pointerId = touch.identifier;
+                    const pointer = this._findPointerById(pointerId);
+                    pointer && this._activePointers.splice(this._activePointers.indexOf(pointer), 1);
+                });
+                switch (this._activePointers.length) {
+                    case 0:
+                        this._state = ACTION.NONE;
+                        break;
+                    case 1:
+                        this._state = this.touches.one;
+                        break;
+                    case 2:
+                        this._state = this.touches.two;
+                        break;
+                    case 3:
+                        this._state = this.touches.three;
+                        break;
+                }
+                endDragging();
+            };
+            let lastScrollTimeStamp = -1;
+            const onMouseWheel = (event) => {
+                if (!this._enabled || this.mouseButtons.wheel === ACTION.NONE)
+                    return;
+                event.preventDefault();
+                if (this.dollyToCursor ||
+                    this.mouseButtons.wheel === ACTION.ROTATE ||
+                    this.mouseButtons.wheel === ACTION.TRUCK) {
+                    const now = performance.now();
+                    // only need to fire this at scroll start.
+                    if (lastScrollTimeStamp - now < 1000)
+                        this._getClientRect(this._elementRect);
+                    lastScrollTimeStamp = now;
+                }
+                // Ref: https://github.com/cedricpinson/osgjs/blob/00e5a7e9d9206c06fdde0436e1d62ab7cb5ce853/sources/osgViewer/input/source/InputSourceMouse.js#L89-L103
+                const deltaYFactor = isMac ? -1 : -3;
+                const delta = (event.deltaMode === 1) ? event.deltaY / deltaYFactor : event.deltaY / (deltaYFactor * 10);
+                const x = this.dollyToCursor ? (event.clientX - this._elementRect.x) / this._elementRect.width * 2 - 1 : 0;
+                const y = this.dollyToCursor ? (event.clientY - this._elementRect.y) / this._elementRect.height * -2 + 1 : 0;
+                switch (this.mouseButtons.wheel) {
+                    case ACTION.ROTATE: {
+                        this._rotateInternal(event.deltaX, event.deltaY);
+                        break;
+                    }
+                    case ACTION.TRUCK: {
+                        this._truckInternal(event.deltaX, event.deltaY, false);
+                        break;
+                    }
+                    case ACTION.OFFSET: {
+                        this._truckInternal(event.deltaX, event.deltaY, true);
+                        break;
+                    }
+                    case ACTION.DOLLY: {
+                        this._dollyInternal(-delta, x, y);
+                        break;
+                    }
+                    case ACTION.ZOOM: {
+                        this._zoomInternal(-delta, x, y);
+                        break;
+                    }
+                }
+                this.dispatchEvent({ type: 'control' });
+            };
+            const onContextMenu = (event) => {
+                if (!this._enabled)
+                    return;
+                event.preventDefault();
+            };
+            const startDragging = (event) => {
+                if (!this._enabled)
+                    return;
+                extractClientCoordFromEvent(this._activePointers, _v2);
+                this._getClientRect(this._elementRect);
+                dragStartPosition.copy(_v2);
+                lastDragPosition.copy(_v2);
+                const isMultiTouch = this._activePointers.length >= 2;
+                if (isMultiTouch) {
+                    // 2 finger pinch
+                    const dx = _v2.x - this._activePointers[1].clientX;
+                    const dy = _v2.y - this._activePointers[1].clientY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    dollyStart.set(0, distance);
+                    // center coords of 2 finger truck
+                    const x = (this._activePointers[0].clientX + this._activePointers[1].clientX) * 0.5;
+                    const y = (this._activePointers[0].clientY + this._activePointers[1].clientY) * 0.5;
+                    lastDragPosition.set(x, y);
+                }
+                if ('touches' in event ||
+                    'pointerType' in event && event.pointerType === 'touch') {
+                    switch (this._activePointers.length) {
+                        case 1:
+                            this._state = this.touches.one;
+                            break;
+                        case 2:
+                            this._state = this.touches.two;
+                            break;
+                        case 3:
+                            this._state = this.touches.three;
+                            break;
+                    }
+                }
+                else {
+                    this._state = 0;
+                    if ((event.buttons & MOUSE_BUTTON.LEFT) === MOUSE_BUTTON.LEFT) {
+                        this._state = this._state | this.mouseButtons.left;
+                    }
+                    if ((event.buttons & MOUSE_BUTTON.MIDDLE) === MOUSE_BUTTON.MIDDLE) {
+                        this._state = this._state | this.mouseButtons.middle;
+                    }
+                    if ((event.buttons & MOUSE_BUTTON.RIGHT) === MOUSE_BUTTON.RIGHT) {
+                        this._state = this._state | this.mouseButtons.right;
+                    }
+                }
+                this.dispatchEvent({ type: 'controlstart' });
+            };
+            const dragging = () => {
+                if (!this._enabled)
+                    return;
+                extractClientCoordFromEvent(this._activePointers, _v2);
+                // When pointer lock is enabled clientX, clientY, screenX, and screenY remain 0.
+                // If pointer lock is enabled, use the Delta directory, and assume active-pointer is not multiple.
+                const isPointerLockActive = this._domElement && document.pointerLockElement === this._domElement;
+                const deltaX = isPointerLockActive ? -this._activePointers[0].deltaX : lastDragPosition.x - _v2.x;
+                const deltaY = isPointerLockActive ? -this._activePointers[0].deltaY : lastDragPosition.y - _v2.y;
+                lastDragPosition.copy(_v2);
+                if ((this._state & ACTION.ROTATE) === ACTION.ROTATE ||
+                    (this._state & ACTION.TOUCH_ROTATE) === ACTION.TOUCH_ROTATE) {
+                    this._rotateInternal(deltaX, deltaY);
+                }
+                if ((this._state & ACTION.DOLLY) === ACTION.DOLLY ||
+                    (this._state & ACTION.ZOOM) === ACTION.ZOOM) {
+                    const dollyX = this.dollyToCursor ? (dragStartPosition.x - this._elementRect.x) / this._elementRect.width * 2 - 1 : 0;
+                    const dollyY = this.dollyToCursor ? (dragStartPosition.y - this._elementRect.y) / this._elementRect.height * -2 + 1 : 0;
+                    this._state === ACTION.DOLLY ?
+                        this._dollyInternal(deltaY * TOUCH_DOLLY_FACTOR, dollyX, dollyY) :
+                        this._zoomInternal(deltaY * TOUCH_DOLLY_FACTOR, dollyX, dollyY);
+                }
+                if ((this._state & ACTION.TOUCH_DOLLY) === ACTION.TOUCH_DOLLY ||
+                    (this._state & ACTION.TOUCH_ZOOM) === ACTION.TOUCH_ZOOM ||
+                    (this._state & ACTION.TOUCH_DOLLY_TRUCK) === ACTION.TOUCH_DOLLY_TRUCK ||
+                    (this._state & ACTION.TOUCH_ZOOM_TRUCK) === ACTION.TOUCH_ZOOM_TRUCK ||
+                    (this._state & ACTION.TOUCH_DOLLY_OFFSET) === ACTION.TOUCH_DOLLY_OFFSET ||
+                    (this._state & ACTION.TOUCH_ZOOM_OFFSET) === ACTION.TOUCH_ZOOM_OFFSET) {
+                    const dx = _v2.x - this._activePointers[1].clientX;
+                    const dy = _v2.y - this._activePointers[1].clientY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const dollyDelta = dollyStart.y - distance;
+                    dollyStart.set(0, distance);
+                    const dollyX = this.dollyToCursor ? (lastDragPosition.x - this._elementRect.x) / this._elementRect.width * 2 - 1 : 0;
+                    const dollyY = this.dollyToCursor ? (lastDragPosition.y - this._elementRect.y) / this._elementRect.height * -2 + 1 : 0;
+                    this._state === ACTION.TOUCH_DOLLY ||
+                        this._state === ACTION.TOUCH_DOLLY_TRUCK ||
+                        this._state === ACTION.TOUCH_DOLLY_OFFSET ?
+                        this._dollyInternal(dollyDelta * TOUCH_DOLLY_FACTOR, dollyX, dollyY) :
+                        this._zoomInternal(dollyDelta * TOUCH_DOLLY_FACTOR, dollyX, dollyY);
+                }
+                if ((this._state & ACTION.TRUCK) === ACTION.TRUCK ||
+                    (this._state & ACTION.TOUCH_TRUCK) === ACTION.TOUCH_TRUCK ||
+                    (this._state & ACTION.TOUCH_DOLLY_TRUCK) === ACTION.TOUCH_DOLLY_TRUCK ||
+                    (this._state & ACTION.TOUCH_ZOOM_TRUCK) === ACTION.TOUCH_ZOOM_TRUCK) {
+                    this._truckInternal(deltaX, deltaY, false);
+                }
+                if ((this._state & ACTION.OFFSET) === ACTION.OFFSET ||
+                    (this._state & ACTION.TOUCH_OFFSET) === ACTION.TOUCH_OFFSET ||
+                    (this._state & ACTION.TOUCH_DOLLY_OFFSET) === ACTION.TOUCH_DOLLY_OFFSET ||
+                    (this._state & ACTION.TOUCH_ZOOM_OFFSET) === ACTION.TOUCH_ZOOM_OFFSET) {
+                    this._truckInternal(deltaX, deltaY, true);
+                }
+                this.dispatchEvent({ type: 'control' });
+            };
+            const endDragging = () => {
+                extractClientCoordFromEvent(this._activePointers, _v2);
+                lastDragPosition.copy(_v2);
+                if (this._activePointers.length === 0) {
+                    // eslint-disable-next-line no-undef
+                    this._domElement.ownerDocument.removeEventListener('pointermove', onPointerMove, { passive: false });
+                    this._domElement.ownerDocument.removeEventListener('pointerup', onPointerUp);
+                    // eslint-disable-next-line no-undef
+                    this._domElement.ownerDocument.removeEventListener('touchmove', onTouchMove, { passive: false });
+                    this._domElement.ownerDocument.removeEventListener('touchend', onTouchEnd);
+                    this.dispatchEvent({ type: 'controlend' });
+                }
+            };
+            this._domElement.addEventListener('pointerdown', onPointerDown);
+            isPointerEventsNotSupported && this._domElement.addEventListener('mousedown', onMouseDown);
+            isPointerEventsNotSupported && this._domElement.addEventListener('touchstart', onTouchStart);
+            this._domElement.addEventListener('pointercancel', onPointerUp);
+            this._domElement.addEventListener('wheel', onMouseWheel, { passive: false });
+            this._domElement.addEventListener('contextmenu', onContextMenu);
+            this._removeAllEventListeners = () => {
+                this._domElement.removeEventListener('pointerdown', onPointerDown);
+                this._domElement.removeEventListener('mousedown', onMouseDown);
+                this._domElement.removeEventListener('touchstart', onTouchStart);
+                this._domElement.removeEventListener('pointercancel', onPointerUp);
+                // https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/removeEventListener#matching_event_listeners_for_removal
+                // > it's probably wise to use the same values used for the call to `addEventListener()` when calling `removeEventListener()`
+                // see https://github.com/microsoft/TypeScript/issues/32912#issuecomment-522142969
+                // eslint-disable-next-line no-undef
+                this._domElement.removeEventListener('wheel', onMouseWheel, { passive: false });
+                this._domElement.removeEventListener('contextmenu', onContextMenu);
+                // eslint-disable-next-line no-undef
+                this._domElement.ownerDocument.removeEventListener('pointermove', onPointerMove, { passive: false });
+                this._domElement.ownerDocument.removeEventListener('mousemove', onMouseMove);
+                // eslint-disable-next-line no-undef
+                this._domElement.ownerDocument.removeEventListener('touchmove', onTouchMove, { passive: false });
+                this._domElement.ownerDocument.removeEventListener('pointerup', onPointerUp);
+                this._domElement.ownerDocument.removeEventListener('mouseup', onMouseUp);
+                this._domElement.ownerDocument.removeEventListener('touchend', onTouchEnd);
+            };
+            this.cancel = () => {
+                if (this._state === ACTION.NONE)
+                    return;
+                this._state = ACTION.NONE;
+                this._activePointers.length = 0;
+                endDragging();
+            };
+        }
+        this.update(0);
+    }
+    /**
+     * Injects THREE as the dependency. You can then proceed to use CameraControls.
+     *
+     * e.g
+     * ```javascript
+     * CameraControls.install( { THREE: THREE } );
+     * ```
+     *
+     * Note: If you do not wish to use enter three.js to reduce file size(tree-shaking for example), make a subset to install.
+     *
+     * ```js
+     * import {
+     * 	Vector2,
+     * 	Vector3,
+     * 	Vector4,
+     * 	Quaternion,
+     * 	Matrix4,
+     * 	Spherical,
+     * 	Box3,
+     * 	Sphere,
+     * 	Raycaster,
+     * 	MathUtils,
+     * } from 'three';
+     *
+     * const subsetOfTHREE = {
+     * 	Vector2   : Vector2,
+     * 	Vector3   : Vector3,
+     * 	Vector4   : Vector4,
+     * 	Quaternion: Quaternion,
+     * 	Matrix4   : Matrix4,
+     * 	Spherical : Spherical,
+     * 	Box3      : Box3,
+     * 	Sphere    : Sphere,
+     * 	Raycaster : Raycaster,
+     * 	MathUtils : {
+     * 		DEG2RAD: MathUtils.DEG2RAD,
+     * 		clamp: MathUtils.clamp,
+     * 	},
+     * };
+
+     * CameraControls.install( { THREE: subsetOfTHREE } );
+     * ```
+     * @category Statics
+     */
+    static install(libs) {
+        THREE = libs.THREE;
+        _ORIGIN = Object.freeze(new THREE.Vector3(0, 0, 0));
+        _AXIS_Y = Object.freeze(new THREE.Vector3(0, 1, 0));
+        _AXIS_Z = Object.freeze(new THREE.Vector3(0, 0, 1));
+        _v2 = new THREE.Vector2();
+        _v3A = new THREE.Vector3();
+        _v3B = new THREE.Vector3();
+        _v3C = new THREE.Vector3();
+        _xColumn = new THREE.Vector3();
+        _yColumn = new THREE.Vector3();
+        _zColumn = new THREE.Vector3();
+        _deltaTarget = new THREE.Vector3();
+        _deltaOffset = new THREE.Vector3();
+        _sphericalA = new THREE.Spherical();
+        _sphericalB = new THREE.Spherical();
+        _box3A = new THREE.Box3();
+        _box3B = new THREE.Box3();
+        _sphere = new THREE.Sphere();
+        _quaternionA = new THREE.Quaternion();
+        _quaternionB = new THREE.Quaternion();
+        _rotationMatrix = new THREE.Matrix4();
+        _raycaster = new THREE.Raycaster();
+    }
+    /**
+     * list all ACTIONs
+     * @category Statics
+     */
+    static get ACTION() {
+        return ACTION;
+    }
+    /**
+     * The camera to be controlled
+     * @category Properties
+     */
+    get camera() {
+        return this._camera;
+    }
+    set camera(camera) {
+        this._camera = camera;
+        this.updateCameraUp();
+        this._camera.updateProjectionMatrix();
+        this._updateNearPlaneCorners();
+        this._needsUpdate = true;
+    }
+    /**
+     * Whether or not the controls are enabled.
+     * `false` to disable user dragging/touch-move, but all methods works.
+     * @category Properties
+     */
+    get enabled() {
+        return this._enabled;
+    }
+    set enabled(enabled) {
+        this._enabled = enabled;
+        if (enabled) {
+            this._domElement.style.touchAction = 'none';
+            this._domElement.style.userSelect = 'none';
+            this._domElement.style.webkitUserSelect = 'none';
+        }
+        else {
+            this.cancel();
+            this._domElement.style.touchAction = '';
+            this._domElement.style.userSelect = '';
+            this._domElement.style.webkitUserSelect = '';
+        }
+    }
+    /**
+     * Returns `true` if the controls are active updating.
+     * readonly value.
+     * @category Properties
+     */
+    get active() {
+        return !this._hasRested;
+    }
+    /**
+     * Getter for the current `ACTION`.
+     * readonly value.
+     * @category Properties
+     */
+    get currentAction() {
+        return this._state;
+    }
+    /**
+     * get/set Current distance.
+     * @category Properties
+     */
+    get distance() {
+        return this._spherical.radius;
+    }
+    set distance(distance) {
+        if (this._spherical.radius === distance &&
+            this._sphericalEnd.radius === distance)
+            return;
+        this._spherical.radius = distance;
+        this._sphericalEnd.radius = distance;
+        this._needsUpdate = true;
+    }
+    // horizontal angle
+    /**
+     * get/set the azimuth angle (horizontal) in radians.
+     * Every 360 degrees turn is added to `.azimuthAngle` value, which is accumulative.
+     * @category Properties
+     */
+    get azimuthAngle() {
+        return this._spherical.theta;
+    }
+    set azimuthAngle(azimuthAngle) {
+        if (this._spherical.theta === azimuthAngle &&
+            this._sphericalEnd.theta === azimuthAngle)
+            return;
+        this._spherical.theta = azimuthAngle;
+        this._sphericalEnd.theta = azimuthAngle;
+        this._needsUpdate = true;
+    }
+    // vertical angle
+    /**
+     * get/set the polar angle (vertical) in radians.
+     * @category Properties
+     */
+    get polarAngle() {
+        return this._spherical.phi;
+    }
+    set polarAngle(polarAngle) {
+        if (this._spherical.phi === polarAngle &&
+            this._sphericalEnd.phi === polarAngle)
+            return;
+        this._spherical.phi = polarAngle;
+        this._sphericalEnd.phi = polarAngle;
+        this._needsUpdate = true;
+    }
+    /**
+     * Whether camera position should be enclosed in the boundary or not.
+     * @category Properties
+     */
+    get boundaryEnclosesCamera() {
+        return this._boundaryEnclosesCamera;
+    }
+    set boundaryEnclosesCamera(boundaryEnclosesCamera) {
+        this._boundaryEnclosesCamera = boundaryEnclosesCamera;
+        this._needsUpdate = true;
+    }
+    /**
+     * Adds the specified event listener.
+     * Applicable event types (which is `K`) are:
+     * | Event name          | Timing |
+     * | ------------------- | ------ |
+     * | `'controlstart'`    | When the user starts to control the camera via mouse / touches. ¹ |
+     * | `'control'`         | When the user controls the camera (dragging). |
+     * | `'controlend'`      | When the user ends to control the camera. ¹ |
+     * | `'transitionstart'` | When any kind of transition starts, either user control or using a method with `enableTransition = true` |
+     * | `'update'`          | When the camera position is updated. |
+     * | `'wake'`            | When the camera starts moving. |
+     * | `'rest'`            | When the camera movement is below `.restThreshold` ². |
+     * | `'sleep'`           | When the camera end moving. |
+     *
+     * 1. `mouseButtons.wheel` (Mouse wheel control) does not emit `'controlstart'` and `'controlend'`. `mouseButtons.wheel` uses scroll-event internally, and scroll-event happens intermittently. That means "start" and "end" cannot be detected.
+     * 2. Due to damping, `sleep` will usually fire a few seconds after the camera _appears_ to have stopped moving. If you want to do something (e.g. enable UI, perform another transition) at the point when the camera has stopped, you probably want the `rest` event. This can be fine tuned using the `.restThreshold` parameter. See the [Rest and Sleep Example](https://yomotsu.github.io/camera-controls/examples/rest-and-sleep.html).
+     *
+     * e.g.
+     * ```
+     * cameraControl.addEventListener( 'controlstart', myCallbackFunction );
+     * ```
+     * @param type event name
+     * @param listener handler function
+     * @category Methods
+     */
+    addEventListener(type, listener) {
+        super.addEventListener(type, listener);
+    }
+    /**
+     * Removes the specified event listener
+     * e.g.
+     * ```
+     * cameraControl.addEventListener( 'controlstart', myCallbackFunction );
+     * ```
+     * @param type event name
+     * @param listener handler function
+     * @category Methods
+     */
+    removeEventListener(type, listener) {
+        super.removeEventListener(type, listener);
+    }
+    /**
+     * Rotate azimuthal angle(horizontal) and polar angle(vertical).
+     * Every value is added to the current value.
+     * @param azimuthAngle Azimuth rotate angle. In radian.
+     * @param polarAngle Polar rotate angle. In radian.
+     * @param enableTransition Whether to move smoothly or immediately
+     * @category Methods
+     */
+    rotate(azimuthAngle, polarAngle, enableTransition = false) {
+        return this.rotateTo(this._sphericalEnd.theta + azimuthAngle, this._sphericalEnd.phi + polarAngle, enableTransition);
+    }
+    /**
+     * Rotate azimuthal angle(horizontal) to the given angle and keep the same polar angle(vertical) target.
+     *
+     * e.g.
+     * ```
+     * cameraControls.rotateAzimuthTo( 30 * THREE.MathUtils.DEG2RAD, true );
+     * ```
+     * @param azimuthAngle Azimuth rotate angle. In radian.
+     * @param enableTransition Whether to move smoothly or immediately
+     * @category Methods
+     */
+    rotateAzimuthTo(azimuthAngle, enableTransition = false) {
+        return this.rotateTo(azimuthAngle, this._sphericalEnd.phi, enableTransition);
+    }
+    /**
+     * Rotate polar angle(vertical) to the given angle and keep the same azimuthal angle(horizontal) target.
+     *
+     * e.g.
+     * ```
+     * cameraControls.rotatePolarTo( 30 * THREE.MathUtils.DEG2RAD, true );
+     * ```
+     * @param polarAngle Polar rotate angle. In radian.
+     * @param enableTransition Whether to move smoothly or immediately
+     * @category Methods
+     */
+    rotatePolarTo(polarAngle, enableTransition = false) {
+        return this.rotateTo(this._sphericalEnd.theta, polarAngle, enableTransition);
+    }
+    /**
+     * Rotate azimuthal angle(horizontal) and polar angle(vertical) to the given angle.
+     * Camera view will rotate over the orbit pivot absolutely:
+     *
+     * azimuthAngle
+     * ```
+     *       0º
+     *         \
+     * 90º -----+----- -90º
+     *           \
+     *           180º
+     * ```
+     * | direction | angle                  |
+     * | --------- | ---------------------- |
+     * | front     | 0º                     |
+     * | left      | 90º (`Math.PI / 2`)    |
+     * | right     | -90º (`- Math.PI / 2`) |
+     * | back      | 180º (`Math.PI`)       |
+     *
+     * polarAngle
+     * ```
+     *     180º
+     *      |
+     *      90º
+     *      |
+     *      0º
+     * ```
+     * | direction            | angle                  |
+     * | -------------------- | ---------------------- |
+     * | top/sky              | 180º (`Math.PI`)       |
+     * | horizontal from view | 90º (`Math.PI / 2`)    |
+     * | bottom/floor         | 0º                     |
+     *
+     * @param azimuthAngle Azimuth rotate angle to. In radian.
+     * @param polarAngle Polar rotate angle to. In radian.
+     * @param enableTransition  Whether to move smoothly or immediately
+     * @category Methods
+     */
+    rotateTo(azimuthAngle, polarAngle, enableTransition = false) {
+        const theta = THREE.MathUtils.clamp(azimuthAngle, this.minAzimuthAngle, this.maxAzimuthAngle);
+        const phi = THREE.MathUtils.clamp(polarAngle, this.minPolarAngle, this.maxPolarAngle);
+        this._sphericalEnd.theta = theta;
+        this._sphericalEnd.phi = phi;
+        this._sphericalEnd.makeSafe();
+        this._needsUpdate = true;
+        if (!enableTransition) {
+            this._spherical.theta = this._sphericalEnd.theta;
+            this._spherical.phi = this._sphericalEnd.phi;
+        }
+        const resolveImmediately = !enableTransition ||
+            approxEquals(this._spherical.theta, this._sphericalEnd.theta, this.restThreshold) &&
+                approxEquals(this._spherical.phi, this._sphericalEnd.phi, this.restThreshold);
+        return this._createOnRestPromise(resolveImmediately);
+    }
+    /**
+     * Dolly in/out camera position.
+     * @param distance Distance of dollyIn. Negative number for dollyOut.
+     * @param enableTransition Whether to move smoothly or immediately.
+     * @category Methods
+     */
+    dolly(distance, enableTransition = false) {
+        return this.dollyTo(this._sphericalEnd.radius - distance, enableTransition);
+    }
+    /**
+     * Dolly in/out camera position to given distance.
+     * @param distance Distance of dolly.
+     * @param enableTransition Whether to move smoothly or immediately.
+     * @category Methods
+     */
+    dollyTo(distance, enableTransition = false) {
+        const lastRadius = this._sphericalEnd.radius;
+        const newRadius = THREE.MathUtils.clamp(distance, this.minDistance, this.maxDistance);
+        const hasCollider = this.colliderMeshes.length >= 1;
+        if (hasCollider) {
+            const maxDistanceByCollisionTest = this._collisionTest();
+            const isCollided = approxEquals(maxDistanceByCollisionTest, this._spherical.radius);
+            const isDollyIn = lastRadius > newRadius;
+            if (!isDollyIn && isCollided)
+                return Promise.resolve();
+            this._sphericalEnd.radius = Math.min(newRadius, maxDistanceByCollisionTest);
+        }
+        else {
+            this._sphericalEnd.radius = newRadius;
+        }
+        this._needsUpdate = true;
+        if (!enableTransition) {
+            this._spherical.radius = this._sphericalEnd.radius;
+        }
+        const resolveImmediately = !enableTransition || approxEquals(this._spherical.radius, this._sphericalEnd.radius, this.restThreshold);
+        return this._createOnRestPromise(resolveImmediately);
+    }
+    /**
+     * Zoom in/out camera. The value is added to camera zoom.
+     * Limits set with `.minZoom` and `.maxZoom`
+     * @param zoomStep zoom scale
+     * @param enableTransition Whether to move smoothly or immediately
+     * @category Methods
+     */
+    zoom(zoomStep, enableTransition = false) {
+        return this.zoomTo(this._zoomEnd + zoomStep, enableTransition);
+    }
+    /**
+     * Zoom in/out camera to given scale. The value overwrites camera zoom.
+     * Limits set with .minZoom and .maxZoom
+     * @param zoom
+     * @param enableTransition
+     * @category Methods
+     */
+    zoomTo(zoom, enableTransition = false) {
+        this._zoomEnd = THREE.MathUtils.clamp(zoom, this.minZoom, this.maxZoom);
+        this._needsUpdate = true;
+        if (!enableTransition) {
+            this._zoom = this._zoomEnd;
+        }
+        const resolveImmediately = !enableTransition || approxEquals(this._zoom, this._zoomEnd, this.restThreshold);
+        return this._createOnRestPromise(resolveImmediately);
+    }
+    /**
+     * @deprecated `pan()` has been renamed to `truck()`
+     * @category Methods
+     */
+    pan(x, y, enableTransition = false) {
+        console.warn('`pan` has been renamed to `truck`');
+        return this.truck(x, y, enableTransition);
+    }
+    /**
+     * Truck and pedestal camera using current azimuthal angle
+     * @param x Horizontal translate amount
+     * @param y Vertical translate amount
+     * @param enableTransition Whether to move smoothly or immediately
+     * @category Methods
+     */
+    truck(x, y, enableTransition = false) {
+        this._camera.updateMatrix();
+        _xColumn.setFromMatrixColumn(this._camera.matrix, 0);
+        _yColumn.setFromMatrixColumn(this._camera.matrix, 1);
+        _xColumn.multiplyScalar(x);
+        _yColumn.multiplyScalar(-y);
+        const offset = _v3A.copy(_xColumn).add(_yColumn);
+        const to = _v3B.copy(this._targetEnd).add(offset);
+        return this.moveTo(to.x, to.y, to.z, enableTransition);
+    }
+    /**
+     * Move forward / backward.
+     * @param distance Amount to move forward / backward. Negative value to move backward
+     * @param enableTransition Whether to move smoothly or immediately
+     * @category Methods
+     */
+    forward(distance, enableTransition = false) {
+        _v3A.setFromMatrixColumn(this._camera.matrix, 0);
+        _v3A.crossVectors(this._camera.up, _v3A);
+        _v3A.multiplyScalar(distance);
+        const to = _v3B.copy(this._targetEnd).add(_v3A);
+        return this.moveTo(to.x, to.y, to.z, enableTransition);
+    }
+    /**
+     * Move target position to given point.
+     * @param x x coord to move center position
+     * @param y y coord to move center position
+     * @param z z coord to move center position
+     * @param enableTransition Whether to move smoothly or immediately
+     * @category Methods
+     */
+    moveTo(x, y, z, enableTransition = false) {
+        const offset = _v3A.set(x, y, z).sub(this._targetEnd);
+        this._encloseToBoundary(this._targetEnd, offset, this.boundaryFriction);
+        this._needsUpdate = true;
+        if (!enableTransition) {
+            this._target.copy(this._targetEnd);
+        }
+        const resolveImmediately = !enableTransition ||
+            approxEquals(this._target.x, this._targetEnd.x, this.restThreshold) &&
+                approxEquals(this._target.y, this._targetEnd.y, this.restThreshold) &&
+                approxEquals(this._target.z, this._targetEnd.z, this.restThreshold);
+        return this._createOnRestPromise(resolveImmediately);
+    }
+    /**
+     * Fit the viewport to the box or the bounding box of the object, using the nearest axis. paddings are in unit.
+     * set `cover: true` to fill enter screen.
+     * e.g.
+     * ```
+     * cameraControls.fitToBox( myMesh );
+     * ```
+     * @param box3OrObject Axis aligned bounding box to fit the view.
+     * @param enableTransition Whether to move smoothly or immediately.
+     * @param options | `<object>` { cover: boolean, paddingTop: number, paddingLeft: number, paddingBottom: number, paddingRight: number }
+     * @returns Transition end promise
+     * @category Methods
+     */
+    fitToBox(box3OrObject, enableTransition, { cover = false, paddingLeft = 0, paddingRight = 0, paddingBottom = 0, paddingTop = 0 } = {}) {
+        const promises = [];
+        const aabb = box3OrObject.isBox3
+            ? _box3A.copy(box3OrObject)
+            : _box3A.setFromObject(box3OrObject);
+        if (aabb.isEmpty()) {
+            console.warn('camera-controls: fitTo() cannot be used with an empty box. Aborting');
+            Promise.resolve();
+        }
+        // round to closest axis ( forward | backward | right | left | top | bottom )
+        const theta = roundToStep(this._sphericalEnd.theta, PI_HALF);
+        const phi = roundToStep(this._sphericalEnd.phi, PI_HALF);
+        promises.push(this.rotateTo(theta, phi, enableTransition));
+        const normal = _v3A.setFromSpherical(this._sphericalEnd).normalize();
+        const rotation = _quaternionA.setFromUnitVectors(normal, _AXIS_Z);
+        const viewFromPolar = approxEquals(Math.abs(normal.y), 1);
+        if (viewFromPolar) {
+            rotation.multiply(_quaternionB.setFromAxisAngle(_AXIS_Y, theta));
+        }
+        rotation.multiply(this._yAxisUpSpaceInverse);
+        // make oriented bounding box
+        const bb = _box3B.makeEmpty();
+        // left bottom back corner
+        _v3B.copy(aabb.min).applyQuaternion(rotation);
+        bb.expandByPoint(_v3B);
+        // right bottom back corner
+        _v3B.copy(aabb.min).setX(aabb.max.x).applyQuaternion(rotation);
+        bb.expandByPoint(_v3B);
+        // left top back corner
+        _v3B.copy(aabb.min).setY(aabb.max.y).applyQuaternion(rotation);
+        bb.expandByPoint(_v3B);
+        // right top back corner
+        _v3B.copy(aabb.max).setZ(aabb.min.z).applyQuaternion(rotation);
+        bb.expandByPoint(_v3B);
+        // left bottom front corner
+        _v3B.copy(aabb.min).setZ(aabb.max.z).applyQuaternion(rotation);
+        bb.expandByPoint(_v3B);
+        // right bottom front corner
+        _v3B.copy(aabb.max).setY(aabb.min.y).applyQuaternion(rotation);
+        bb.expandByPoint(_v3B);
+        // left top front corner
+        _v3B.copy(aabb.max).setX(aabb.min.x).applyQuaternion(rotation);
+        bb.expandByPoint(_v3B);
+        // right top front corner
+        _v3B.copy(aabb.max).applyQuaternion(rotation);
+        bb.expandByPoint(_v3B);
+        // add padding
+        bb.min.x -= paddingLeft;
+        bb.min.y -= paddingBottom;
+        bb.max.x += paddingRight;
+        bb.max.y += paddingTop;
+        rotation.setFromUnitVectors(_AXIS_Z, normal);
+        if (viewFromPolar) {
+            rotation.premultiply(_quaternionB.invert());
+        }
+        rotation.premultiply(this._yAxisUpSpace);
+        const bbSize = bb.getSize(_v3A);
+        const center = bb.getCenter(_v3B).applyQuaternion(rotation);
+        if (isPerspectiveCamera(this._camera)) {
+            const distance = this.getDistanceToFitBox(bbSize.x, bbSize.y, bbSize.z, cover);
+            promises.push(this.moveTo(center.x, center.y, center.z, enableTransition));
+            promises.push(this.dollyTo(distance, enableTransition));
+            promises.push(this.setFocalOffset(0, 0, 0, enableTransition));
+        }
+        else if (isOrthographicCamera(this._camera)) {
+            const camera = this._camera;
+            const width = camera.right - camera.left;
+            const height = camera.top - camera.bottom;
+            const zoom = cover ? Math.max(width / bbSize.x, height / bbSize.y) : Math.min(width / bbSize.x, height / bbSize.y);
+            promises.push(this.moveTo(center.x, center.y, center.z, enableTransition));
+            promises.push(this.zoomTo(zoom, enableTransition));
+            promises.push(this.setFocalOffset(0, 0, 0, enableTransition));
+        }
+        return Promise.all(promises);
+    }
+    /**
+     * Fit the viewport to the sphere or the bounding sphere of the object.
+     * @param sphereOrMesh
+     * @param enableTransition
+     * @category Methods
+     */
+    fitToSphere(sphereOrMesh, enableTransition) {
+        const promises = [];
+        const isSphere = sphereOrMesh instanceof THREE.Sphere;
+        const boundingSphere = isSphere ?
+            _sphere.copy(sphereOrMesh) :
+            createBoundingSphere(sphereOrMesh, _sphere);
+        promises.push(this.moveTo(boundingSphere.center.x, boundingSphere.center.y, boundingSphere.center.z, enableTransition));
+        if (isPerspectiveCamera(this._camera)) {
+            const distanceToFit = this.getDistanceToFitSphere(boundingSphere.radius);
+            promises.push(this.dollyTo(distanceToFit, enableTransition));
+        }
+        else if (isOrthographicCamera(this._camera)) {
+            const width = this._camera.right - this._camera.left;
+            const height = this._camera.top - this._camera.bottom;
+            const diameter = 2 * boundingSphere.radius;
+            const zoom = Math.min(width / diameter, height / diameter);
+            promises.push(this.zoomTo(zoom, enableTransition));
+        }
+        promises.push(this.setFocalOffset(0, 0, 0, enableTransition));
+        return Promise.all(promises);
+    }
+    /**
+     * Make an orbit with given points.
+     * @param positionX
+     * @param positionY
+     * @param positionZ
+     * @param targetX
+     * @param targetY
+     * @param targetZ
+     * @param enableTransition
+     * @category Methods
+     */
+    setLookAt(positionX, positionY, positionZ, targetX, targetY, targetZ, enableTransition = false) {
+        const target = _v3B.set(targetX, targetY, targetZ);
+        const position = _v3A.set(positionX, positionY, positionZ);
+        this._targetEnd.copy(target);
+        this._sphericalEnd.setFromVector3(position.sub(target).applyQuaternion(this._yAxisUpSpace));
+        this.normalizeRotations();
+        this._needsUpdate = true;
+        if (!enableTransition) {
+            this._target.copy(this._targetEnd);
+            this._spherical.copy(this._sphericalEnd);
+        }
+        const resolveImmediately = !enableTransition ||
+            approxEquals(this._target.x, this._targetEnd.x, this.restThreshold) &&
+                approxEquals(this._target.y, this._targetEnd.y, this.restThreshold) &&
+                approxEquals(this._target.z, this._targetEnd.z, this.restThreshold) &&
+                approxEquals(this._spherical.theta, this._sphericalEnd.theta, this.restThreshold) &&
+                approxEquals(this._spherical.phi, this._sphericalEnd.phi, this.restThreshold) &&
+                approxEquals(this._spherical.radius, this._sphericalEnd.radius, this.restThreshold);
+        return this._createOnRestPromise(resolveImmediately);
+    }
+    /**
+     * Similar to setLookAt, but it interpolates between two states.
+     * @param positionAX
+     * @param positionAY
+     * @param positionAZ
+     * @param targetAX
+     * @param targetAY
+     * @param targetAZ
+     * @param positionBX
+     * @param positionBY
+     * @param positionBZ
+     * @param targetBX
+     * @param targetBY
+     * @param targetBZ
+     * @param t
+     * @param enableTransition
+     * @category Methods
+     */
+    lerpLookAt(positionAX, positionAY, positionAZ, targetAX, targetAY, targetAZ, positionBX, positionBY, positionBZ, targetBX, targetBY, targetBZ, t, enableTransition = false) {
+        const targetA = _v3A.set(targetAX, targetAY, targetAZ);
+        const positionA = _v3B.set(positionAX, positionAY, positionAZ);
+        _sphericalA.setFromVector3(positionA.sub(targetA).applyQuaternion(this._yAxisUpSpace));
+        const targetB = _v3C.set(targetBX, targetBY, targetBZ);
+        const positionB = _v3B.set(positionBX, positionBY, positionBZ);
+        _sphericalB.setFromVector3(positionB.sub(targetB).applyQuaternion(this._yAxisUpSpace));
+        this._targetEnd.copy(targetA.lerp(targetB, t)); // tricky
+        const deltaTheta = _sphericalB.theta - _sphericalA.theta;
+        const deltaPhi = _sphericalB.phi - _sphericalA.phi;
+        const deltaRadius = _sphericalB.radius - _sphericalA.radius;
+        this._sphericalEnd.set(_sphericalA.radius + deltaRadius * t, _sphericalA.phi + deltaPhi * t, _sphericalA.theta + deltaTheta * t);
+        this.normalizeRotations();
+        this._needsUpdate = true;
+        if (!enableTransition) {
+            this._target.copy(this._targetEnd);
+            this._spherical.copy(this._sphericalEnd);
+        }
+        const resolveImmediately = !enableTransition ||
+            approxEquals(this._target.x, this._targetEnd.x, this.restThreshold) &&
+                approxEquals(this._target.y, this._targetEnd.y, this.restThreshold) &&
+                approxEquals(this._target.z, this._targetEnd.z, this.restThreshold) &&
+                approxEquals(this._spherical.theta, this._sphericalEnd.theta, this.restThreshold) &&
+                approxEquals(this._spherical.phi, this._sphericalEnd.phi, this.restThreshold) &&
+                approxEquals(this._spherical.radius, this._sphericalEnd.radius, this.restThreshold);
+        return this._createOnRestPromise(resolveImmediately);
+    }
+    /**
+     * setLookAt without target, keep gazing at the current target
+     * @param positionX
+     * @param positionY
+     * @param positionZ
+     * @param enableTransition
+     * @category Methods
+     */
+    setPosition(positionX, positionY, positionZ, enableTransition = false) {
+        return this.setLookAt(positionX, positionY, positionZ, this._targetEnd.x, this._targetEnd.y, this._targetEnd.z, enableTransition);
+    }
+    /**
+     * setLookAt without position, Stay still at the position.
+     * @param targetX
+     * @param targetY
+     * @param targetZ
+     * @param enableTransition
+     * @category Methods
+     */
+    setTarget(targetX, targetY, targetZ, enableTransition = false) {
+        const pos = this.getPosition(_v3A);
+        return this.setLookAt(pos.x, pos.y, pos.z, targetX, targetY, targetZ, enableTransition);
+    }
+    /**
+     * Set focal offset using the screen parallel coordinates. z doesn't affect in Orthographic as with Dolly.
+     * @param x
+     * @param y
+     * @param z
+     * @param enableTransition
+     * @category Methods
+     */
+    setFocalOffset(x, y, z, enableTransition = false) {
+        this._focalOffsetEnd.set(x, y, z);
+        this._needsUpdate = true;
+        if (!enableTransition) {
+            this._focalOffset.copy(this._focalOffsetEnd);
+        }
+        const resolveImmediately = !enableTransition ||
+            approxEquals(this._focalOffset.x, this._focalOffsetEnd.x, this.restThreshold) &&
+                approxEquals(this._focalOffset.y, this._focalOffsetEnd.y, this.restThreshold) &&
+                approxEquals(this._focalOffset.z, this._focalOffsetEnd.z, this.restThreshold);
+        return this._createOnRestPromise(resolveImmediately);
+    }
+    /**
+     * Set orbit point without moving the camera.
+     * @param targetX
+     * @param targetY
+     * @param targetZ
+     * @category Methods
+     */
+    setOrbitPoint(targetX, targetY, targetZ) {
+        _xColumn.setFromMatrixColumn(this._camera.matrixWorldInverse, 0);
+        _yColumn.setFromMatrixColumn(this._camera.matrixWorldInverse, 1);
+        _zColumn.setFromMatrixColumn(this._camera.matrixWorldInverse, 2);
+        const position = _v3A.set(targetX, targetY, targetZ);
+        const distance = position.distanceTo(this._camera.position);
+        const cameraToPoint = position.sub(this._camera.position);
+        _xColumn.multiplyScalar(cameraToPoint.x);
+        _yColumn.multiplyScalar(cameraToPoint.y);
+        _zColumn.multiplyScalar(cameraToPoint.z);
+        _v3A.copy(_xColumn).add(_yColumn).add(_zColumn);
+        _v3A.z = _v3A.z + distance;
+        this.dollyTo(distance, false);
+        this.setFocalOffset(-_v3A.x, _v3A.y, -_v3A.z, false);
+        this.moveTo(targetX, targetY, targetZ, false);
+    }
+    /**
+     * Set the boundary box that encloses the target of the camera. box3 is in THREE.Box3
+     * @param box3
+     * @category Methods
+     */
+    setBoundary(box3) {
+        if (!box3) {
+            this._boundary.min.set(-Infinity, -Infinity, -Infinity);
+            this._boundary.max.set(Infinity, Infinity, Infinity);
+            this._needsUpdate = true;
+            return;
+        }
+        this._boundary.copy(box3);
+        this._boundary.clampPoint(this._targetEnd, this._targetEnd);
+        this._needsUpdate = true;
+    }
+    /**
+     * Set (or unset) the current viewport.
+     * Set this when you want to use renderer viewport and .dollyToCursor feature at the same time.
+     * @param viewportOrX
+     * @param y
+     * @param width
+     * @param height
+     * @category Methods
+     */
+    setViewport(viewportOrX, y, width, height) {
+        if (viewportOrX === null) { // null
+            this._viewport = null;
+            return;
+        }
+        this._viewport = this._viewport || new THREE.Vector4();
+        if (typeof viewportOrX === 'number') { // number
+            this._viewport.set(viewportOrX, y, width, height);
+        }
+        else { // Vector4
+            this._viewport.copy(viewportOrX);
+        }
+    }
+    /**
+     * Calculate the distance to fit the box.
+     * @param width box width
+     * @param height box height
+     * @param depth box depth
+     * @returns distance
+     * @category Methods
+     */
+    getDistanceToFitBox(width, height, depth, cover = false) {
+        if (notSupportedInOrthographicCamera(this._camera, 'getDistanceToFitBox'))
+            return this._spherical.radius;
+        const boundingRectAspect = width / height;
+        const fov = this._camera.getEffectiveFOV() * THREE.MathUtils.DEG2RAD;
+        const aspect = this._camera.aspect;
+        const heightToFit = (cover ? boundingRectAspect > aspect : boundingRectAspect < aspect) ? height : width / aspect;
+        return heightToFit * 0.5 / Math.tan(fov * 0.5) + depth * 0.5;
+    }
+    /**
+     * Calculate the distance to fit the sphere.
+     * @param radius sphere radius
+     * @returns distance
+     * @category Methods
+     */
+    getDistanceToFitSphere(radius) {
+        if (notSupportedInOrthographicCamera(this._camera, 'getDistanceToFitSphere'))
+            return this._spherical.radius;
+        // https://stackoverflow.com/a/44849975
+        const vFOV = this._camera.getEffectiveFOV() * THREE.MathUtils.DEG2RAD;
+        const hFOV = Math.atan(Math.tan(vFOV * 0.5) * this._camera.aspect) * 2;
+        const fov = 1 < this._camera.aspect ? vFOV : hFOV;
+        return radius / (Math.sin(fov * 0.5));
+    }
+    /**
+     * Returns its current gazing target, which is the center position of the orbit.
+     * @param out current gazing target
+     * @category Methods
+     */
+    getTarget(out) {
+        const _out = !!out && out.isVector3 ? out : new THREE.Vector3();
+        return _out.copy(this._targetEnd);
+    }
+    /**
+     * Returns its current position.
+     * @param out current position
+     * @category Methods
+     */
+    getPosition(out) {
+        const _out = !!out && out.isVector3 ? out : new THREE.Vector3();
+        return _out.setFromSpherical(this._sphericalEnd).applyQuaternion(this._yAxisUpSpaceInverse).add(this._targetEnd);
+    }
+    /**
+     * Returns its current focal offset, which is how much the camera appears to be translated in screen parallel coordinates.
+     * @param out current focal offset
+     * @category Methods
+     */
+    getFocalOffset(out) {
+        const _out = !!out && out.isVector3 ? out : new THREE.Vector3();
+        return _out.copy(this._focalOffsetEnd);
+    }
+    /**
+     * Normalize camera azimuth angle rotation between 0 and 360 degrees.
+     * @category Methods
+     */
+    normalizeRotations() {
+        this._sphericalEnd.theta = this._sphericalEnd.theta % PI_2;
+        if (this._sphericalEnd.theta < 0)
+            this._sphericalEnd.theta += PI_2;
+        this._spherical.theta += PI_2 * Math.round((this._sphericalEnd.theta - this._spherical.theta) / PI_2);
+    }
+    /**
+     * Reset all rotation and position to defaults.
+     * @param enableTransition
+     * @category Methods
+     */
+    reset(enableTransition = false) {
+        const promises = [
+            this.setLookAt(this._position0.x, this._position0.y, this._position0.z, this._target0.x, this._target0.y, this._target0.z, enableTransition),
+            this.setFocalOffset(this._focalOffset0.x, this._focalOffset0.y, this._focalOffset0.z, enableTransition),
+            this.zoomTo(this._zoom0, enableTransition),
+        ];
+        return Promise.all(promises);
+    }
+    /**
+     * Set current camera position as the default position.
+     * @category Methods
+     */
+    saveState() {
+        this._target0.copy(this._target);
+        this._position0.copy(this._camera.position);
+        this._zoom0 = this._zoom;
+    }
+    /**
+     * Sync camera-up direction.
+     * When camera-up vector is changed, `.updateCameraUp()` must be called.
+     * @category Methods
+     */
+    updateCameraUp() {
+        this._yAxisUpSpace.setFromUnitVectors(this._camera.up, _AXIS_Y);
+        quatInvertCompat(this._yAxisUpSpaceInverse.copy(this._yAxisUpSpace));
+    }
+    /**
+     * Update camera position and directions.
+     * This should be called in your tick loop every time, and returns true if re-rendering is needed.
+     * @param delta
+     * @returns updated
+     * @category Methods
+     */
+    update(delta) {
+        const dampingFactor = this._state === ACTION.NONE ? this.dampingFactor : this.draggingDampingFactor;
+        // The original THREE.OrbitControls assume 60 FPS fixed and does NOT rely on delta time.
+        // (that must be a problem of the original one though)
+        // To to emulate the speed of the original one under 60 FPS, multiply `60` to delta,
+        // but ours are more flexible to any FPS unlike the original.
+        const lerpRatio = Math.min(dampingFactor * delta * 60, 1);
+        const deltaTheta = this._sphericalEnd.theta - this._spherical.theta;
+        const deltaPhi = this._sphericalEnd.phi - this._spherical.phi;
+        const deltaRadius = this._sphericalEnd.radius - this._spherical.radius;
+        const deltaTarget = _deltaTarget.subVectors(this._targetEnd, this._target);
+        const deltaOffset = _deltaOffset.subVectors(this._focalOffsetEnd, this._focalOffset);
+        if (!approxZero(deltaTheta) ||
+            !approxZero(deltaPhi) ||
+            !approxZero(deltaRadius) ||
+            !approxZero(deltaTarget.x) ||
+            !approxZero(deltaTarget.y) ||
+            !approxZero(deltaTarget.z) ||
+            !approxZero(deltaOffset.x) ||
+            !approxZero(deltaOffset.y) ||
+            !approxZero(deltaOffset.z)) {
+            this._spherical.set(this._spherical.radius + deltaRadius * lerpRatio, this._spherical.phi + deltaPhi * lerpRatio, this._spherical.theta + deltaTheta * lerpRatio);
+            this._target.add(deltaTarget.multiplyScalar(lerpRatio));
+            this._focalOffset.add(deltaOffset.multiplyScalar(lerpRatio));
+            this._needsUpdate = true;
+        }
+        else {
+            this._spherical.copy(this._sphericalEnd);
+            this._target.copy(this._targetEnd);
+            this._focalOffset.copy(this._focalOffsetEnd);
+        }
+        if (this._dollyControlAmount !== 0) {
+            if (isPerspectiveCamera(this._camera)) {
+                const camera = this._camera;
+                const direction = _v3A.setFromSpherical(this._sphericalEnd).applyQuaternion(this._yAxisUpSpaceInverse).normalize().negate();
+                const planeX = _v3B.copy(direction).cross(camera.up).normalize();
+                if (planeX.lengthSq() === 0)
+                    planeX.x = 1.0;
+                const planeY = _v3C.crossVectors(planeX, direction);
+                const worldToScreen = this._sphericalEnd.radius * Math.tan(camera.getEffectiveFOV() * THREE.MathUtils.DEG2RAD * 0.5);
+                const prevRadius = this._sphericalEnd.radius - this._dollyControlAmount;
+                const lerpRatio = (prevRadius - this._sphericalEnd.radius) / this._sphericalEnd.radius;
+                const cursor = _v3A.copy(this._targetEnd)
+                    .add(planeX.multiplyScalar(this._dollyControlCoord.x * worldToScreen * camera.aspect))
+                    .add(planeY.multiplyScalar(this._dollyControlCoord.y * worldToScreen));
+                this._targetEnd.lerp(cursor, lerpRatio);
+                this._target.copy(this._targetEnd);
+            }
+            else if (isOrthographicCamera(this._camera)) {
+                const camera = this._camera;
+                const worldPosition = _v3A.set(this._dollyControlCoord.x, this._dollyControlCoord.y, (camera.near + camera.far) / (camera.near - camera.far)).unproject(camera);
+                const quaternion = _v3B.set(0, 0, -1).applyQuaternion(camera.quaternion);
+                const divisor = quaternion.dot(camera.up);
+                const distance = approxZero(divisor) ? -worldPosition.dot(camera.up) : -worldPosition.dot(camera.up) / divisor;
+                const cursor = _v3C.copy(worldPosition).add(quaternion.multiplyScalar(distance));
+                this._targetEnd.lerp(cursor, 1 - camera.zoom / this._dollyControlAmount);
+                this._target.copy(this._targetEnd);
+            }
+            this._dollyControlAmount = 0;
+        }
+        const maxDistance = this._collisionTest();
+        this._spherical.radius = Math.min(this._spherical.radius, maxDistance);
+        // decompose spherical to the camera position
+        this._spherical.makeSafe();
+        this._camera.position.setFromSpherical(this._spherical).applyQuaternion(this._yAxisUpSpaceInverse).add(this._target);
+        this._camera.lookAt(this._target);
+        // set offset after the orbit movement
+        const affectOffset = !approxZero(this._focalOffset.x) ||
+            !approxZero(this._focalOffset.y) ||
+            !approxZero(this._focalOffset.z);
+        if (affectOffset) {
+            this._camera.updateMatrix();
+            _xColumn.setFromMatrixColumn(this._camera.matrix, 0);
+            _yColumn.setFromMatrixColumn(this._camera.matrix, 1);
+            _zColumn.setFromMatrixColumn(this._camera.matrix, 2);
+            _xColumn.multiplyScalar(this._focalOffset.x);
+            _yColumn.multiplyScalar(-this._focalOffset.y);
+            _zColumn.multiplyScalar(this._focalOffset.z); // notice: z-offset will not affect in Orthographic.
+            _v3A.copy(_xColumn).add(_yColumn).add(_zColumn);
+            this._camera.position.add(_v3A);
+        }
+        if (this._boundaryEnclosesCamera) {
+            this._encloseToBoundary(this._camera.position.copy(this._target), _v3A.setFromSpherical(this._spherical).applyQuaternion(this._yAxisUpSpaceInverse), 1.0);
+        }
+        // zoom
+        const deltaZoom = this._zoomEnd - this._zoom;
+        this._zoom += deltaZoom * lerpRatio;
+        if (this._camera.zoom !== this._zoom) {
+            if (approxZero(deltaZoom))
+                this._zoom = this._zoomEnd;
+            this._camera.zoom = this._zoom;
+            this._camera.updateProjectionMatrix();
+            this._updateNearPlaneCorners();
+            this._needsUpdate = true;
+        }
+        const updated = this._needsUpdate;
+        if (updated && !this._updatedLastTime) {
+            this._hasRested = false;
+            this.dispatchEvent({ type: 'wake' });
+            this.dispatchEvent({ type: 'update' });
+        }
+        else if (updated) {
+            this.dispatchEvent({ type: 'update' });
+            if (approxZero(deltaTheta, this.restThreshold) &&
+                approxZero(deltaPhi, this.restThreshold) &&
+                approxZero(deltaRadius, this.restThreshold) &&
+                approxZero(deltaTarget.x, this.restThreshold) &&
+                approxZero(deltaTarget.y, this.restThreshold) &&
+                approxZero(deltaTarget.z, this.restThreshold) &&
+                approxZero(deltaOffset.x, this.restThreshold) &&
+                approxZero(deltaOffset.y, this.restThreshold) &&
+                approxZero(deltaOffset.z, this.restThreshold) &&
+                approxZero(deltaZoom, this.restThreshold) &&
+                !this._hasRested) {
+                this._hasRested = true;
+                this.dispatchEvent({ type: 'rest' });
+            }
+        }
+        else if (!updated && this._updatedLastTime) {
+            this.dispatchEvent({ type: 'sleep' });
+        }
+        this._updatedLastTime = updated;
+        this._needsUpdate = false;
+        return updated;
+    }
+    /**
+     * Get all state in JSON string
+     * @category Methods
+     */
+    toJSON() {
+        return JSON.stringify({
+            enabled: this._enabled,
+            minDistance: this.minDistance,
+            maxDistance: infinityToMaxNumber(this.maxDistance),
+            minZoom: this.minZoom,
+            maxZoom: infinityToMaxNumber(this.maxZoom),
+            minPolarAngle: this.minPolarAngle,
+            maxPolarAngle: infinityToMaxNumber(this.maxPolarAngle),
+            minAzimuthAngle: infinityToMaxNumber(this.minAzimuthAngle),
+            maxAzimuthAngle: infinityToMaxNumber(this.maxAzimuthAngle),
+            dampingFactor: this.dampingFactor,
+            draggingDampingFactor: this.draggingDampingFactor,
+            dollySpeed: this.dollySpeed,
+            truckSpeed: this.truckSpeed,
+            dollyToCursor: this.dollyToCursor,
+            verticalDragToForward: this.verticalDragToForward,
+            target: this._targetEnd.toArray(),
+            position: _v3A.setFromSpherical(this._sphericalEnd).add(this._targetEnd).toArray(),
+            zoom: this._zoomEnd,
+            focalOffset: this._focalOffsetEnd.toArray(),
+            target0: this._target0.toArray(),
+            position0: this._position0.toArray(),
+            zoom0: this._zoom0,
+            focalOffset0: this._focalOffset0.toArray(),
+        });
+    }
+    /**
+     * Reproduce the control state with JSON. enableTransition is where anim or not in a boolean.
+     * @param json
+     * @param enableTransition
+     * @category Methods
+     */
+    fromJSON(json, enableTransition = false) {
+        const obj = JSON.parse(json);
+        const position = _v3A.fromArray(obj.position);
+        this.enabled = obj.enabled;
+        this.minDistance = obj.minDistance;
+        this.maxDistance = maxNumberToInfinity(obj.maxDistance);
+        this.minZoom = obj.minZoom;
+        this.maxZoom = maxNumberToInfinity(obj.maxZoom);
+        this.minPolarAngle = obj.minPolarAngle;
+        this.maxPolarAngle = maxNumberToInfinity(obj.maxPolarAngle);
+        this.minAzimuthAngle = maxNumberToInfinity(obj.minAzimuthAngle);
+        this.maxAzimuthAngle = maxNumberToInfinity(obj.maxAzimuthAngle);
+        this.dampingFactor = obj.dampingFactor;
+        this.draggingDampingFactor = obj.draggingDampingFactor;
+        this.dollySpeed = obj.dollySpeed;
+        this.truckSpeed = obj.truckSpeed;
+        this.dollyToCursor = obj.dollyToCursor;
+        this.verticalDragToForward = obj.verticalDragToForward;
+        this._target0.fromArray(obj.target0);
+        this._position0.fromArray(obj.position0);
+        this._zoom0 = obj.zoom0;
+        this._focalOffset0.fromArray(obj.focalOffset0);
+        this.moveTo(obj.target[0], obj.target[1], obj.target[2], enableTransition);
+        _sphericalA.setFromVector3(position.sub(this._targetEnd).applyQuaternion(this._yAxisUpSpace));
+        this.rotateTo(_sphericalA.theta, _sphericalA.phi, enableTransition);
+        this.zoomTo(obj.zoom, enableTransition);
+        this.setFocalOffset(obj.focalOffset[0], obj.focalOffset[1], obj.focalOffset[2], enableTransition);
+        this._needsUpdate = true;
+    }
+    /**
+     * Dispose the cameraControls instance itself, remove all eventListeners.
+     * @category Methods
+     */
+    dispose() {
+        this._removeAllEventListeners();
+    }
+    _findPointerById(pointerId) {
+        // to support IE11 use some instead of Array#find (will be removed when IE11 is deprecated)
+        let pointer = null;
+        this._activePointers.some((activePointer) => {
+            if (activePointer.pointerId === pointerId) {
+                pointer = activePointer;
+                return true;
+            }
+            return false;
+        });
+        return pointer;
+    }
+    _encloseToBoundary(position, offset, friction) {
+        const offsetLength2 = offset.lengthSq();
+        if (offsetLength2 === 0.0) { // sanity check
+            return position;
+        }
+        // See: https://twitter.com/FMS_Cat/status/1106508958640988161
+        const newTarget = _v3B.copy(offset).add(position); // target
+        const clampedTarget = this._boundary.clampPoint(newTarget, _v3C); // clamped target
+        const deltaClampedTarget = clampedTarget.sub(newTarget); // newTarget -> clampedTarget
+        const deltaClampedTargetLength2 = deltaClampedTarget.lengthSq(); // squared length of deltaClampedTarget
+        if (deltaClampedTargetLength2 === 0.0) { // when the position doesn't have to be clamped
+            return position.add(offset);
+        }
+        else if (deltaClampedTargetLength2 === offsetLength2) { // when the position is completely stuck
+            return position;
+        }
+        else if (friction === 0.0) {
+            return position.add(offset).add(deltaClampedTarget);
+        }
+        else {
+            const offsetFactor = 1.0 + friction * deltaClampedTargetLength2 / offset.dot(deltaClampedTarget);
+            return position
+                .add(_v3B.copy(offset).multiplyScalar(offsetFactor))
+                .add(deltaClampedTarget.multiplyScalar(1.0 - friction));
+        }
+    }
+    _updateNearPlaneCorners() {
+        if (isPerspectiveCamera(this._camera)) {
+            const camera = this._camera;
+            const near = camera.near;
+            const fov = camera.getEffectiveFOV() * THREE.MathUtils.DEG2RAD;
+            const heightHalf = Math.tan(fov * 0.5) * near; // near plain half height
+            const widthHalf = heightHalf * camera.aspect; // near plain half width
+            this._nearPlaneCorners[0].set(-widthHalf, -heightHalf, 0);
+            this._nearPlaneCorners[1].set(widthHalf, -heightHalf, 0);
+            this._nearPlaneCorners[2].set(widthHalf, heightHalf, 0);
+            this._nearPlaneCorners[3].set(-widthHalf, heightHalf, 0);
+        }
+        else if (isOrthographicCamera(this._camera)) {
+            const camera = this._camera;
+            const zoomInv = 1 / camera.zoom;
+            const left = camera.left * zoomInv;
+            const right = camera.right * zoomInv;
+            const top = camera.top * zoomInv;
+            const bottom = camera.bottom * zoomInv;
+            this._nearPlaneCorners[0].set(left, top, 0);
+            this._nearPlaneCorners[1].set(right, top, 0);
+            this._nearPlaneCorners[2].set(right, bottom, 0);
+            this._nearPlaneCorners[3].set(left, bottom, 0);
+        }
+    }
+    // lateUpdate
+    _collisionTest() {
+        let distance = Infinity;
+        const hasCollider = this.colliderMeshes.length >= 1;
+        if (!hasCollider)
+            return distance;
+        if (notSupportedInOrthographicCamera(this._camera, '_collisionTest'))
+            return distance;
+        // divide by distance to normalize, lighter than `Vector3.prototype.normalize()`
+        const direction = _v3A.setFromSpherical(this._spherical).divideScalar(this._spherical.radius);
+        _rotationMatrix.lookAt(_ORIGIN, direction, this._camera.up);
+        for (let i = 0; i < 4; i++) {
+            const nearPlaneCorner = _v3B.copy(this._nearPlaneCorners[i]);
+            nearPlaneCorner.applyMatrix4(_rotationMatrix);
+            const origin = _v3C.addVectors(this._target, nearPlaneCorner);
+            _raycaster.set(origin, direction);
+            _raycaster.far = this._spherical.radius + 1;
+            const intersects = _raycaster.intersectObjects(this.colliderMeshes);
+            if (intersects.length !== 0 && intersects[0].distance < distance) {
+                distance = intersects[0].distance;
+            }
+        }
+        return distance;
+    }
+    /**
+     * Get its client rect and package into given `DOMRect` .
+     */
+    _getClientRect(target) {
+        const rect = this._domElement.getBoundingClientRect();
+        target.x = rect.left;
+        target.y = rect.top;
+        if (this._viewport) {
+            target.x += this._viewport.x;
+            target.y += rect.height - this._viewport.w - this._viewport.y;
+            target.width = this._viewport.z;
+            target.height = this._viewport.w;
+        }
+        else {
+            target.width = rect.width;
+            target.height = rect.height;
+        }
+        return target;
+    }
+    _createOnRestPromise(resolveImmediately) {
+        if (resolveImmediately)
+            return Promise.resolve();
+        this._hasRested = false;
+        this.dispatchEvent({ type: 'transitionstart' });
+        return new Promise((resolve) => {
+            const onResolve = () => {
+                this.removeEventListener('rest', onResolve);
+                resolve();
+            };
+            this.addEventListener('rest', onResolve);
+        });
+    }
+    _removeAllEventListeners() { }
+}
+function createBoundingSphere(object3d, out) {
+    const boundingSphere = out;
+    const center = boundingSphere.center;
+    _box3A.makeEmpty();
+    // find the center
+    object3d.traverseVisible((object) => {
+        if (!object.isMesh)
+            return;
+        _box3A.expandByObject(object);
+    });
+    _box3A.getCenter(center);
+    // find the radius
+    let maxRadiusSq = 0;
+    object3d.traverseVisible((object) => {
+        if (!object.isMesh)
+            return;
+        const mesh = object;
+        const geometry = mesh.geometry.clone();
+        geometry.applyMatrix4(mesh.matrixWorld);
+        if (geometry.isBufferGeometry) {
+            const bufferGeometry = geometry;
+            const position = bufferGeometry.attributes.position;
+            for (let i = 0, l = position.count; i < l; i++) {
+                _v3A.fromBufferAttribute(position, i);
+                maxRadiusSq = Math.max(maxRadiusSq, center.distanceToSquared(_v3A));
+            }
+        }
+        else {
+            // for old three.js, which supports both BufferGeometry and Geometry
+            // this condition block will be removed in the near future.
+            const position = geometry.attributes.position;
+            const vector = new THREE.Vector3();
+            for (let i = 0, l = position.count; i < l; i++) {
+                vector.fromBufferAttribute(position, i);
+                maxRadiusSq = Math.max(maxRadiusSq, center.distanceToSquared(vector));
+            }
+        }
+    });
+    boundingSphere.radius = Math.sqrt(maxRadiusSq);
+    return boundingSphere;
+}
+
 var __defProp = Object.defineProperty;
 var __getOwnPropSymbols = Object.getOwnPropertySymbols;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
@@ -91084,19915 +94409,6 @@ var IfcAPI2 = class {
   }
 };
 
-const data9 = {
-  1: {
-    expressID: 1,
-    type: "IFCORGANIZATION",
-    Identification: null,
-    Name: "Autodesk Revit 2020 (DEU)",
-    Description: null,
-    Roles: null,
-    Addresses: null,
-  },
-  5: {
-    expressID: 5,
-    type: "IFCAPPLICATION",
-    ApplicationDeveloper: 1,
-    Version: "2020",
-    ApplicationFullName: "Autodesk Revit 2020 (DEU)",
-    ApplicationIdentifier: "Revit",
-  },
-  36: {
-    expressID: 36,
-    type: "IFCPERSON",
-    Identification: null,
-    FamilyName: "",
-    GivenName: "Lill",
-    MiddleNames: null,
-    PrefixTitles: null,
-    SuffixTitles: null,
-    Roles: null,
-    Addresses: null,
-  },
-  38: {
-    expressID: 38,
-    type: "IFCORGANIZATION",
-    Identification: null,
-    Name: "",
-    Description: "",
-    Roles: null,
-    Addresses: null,
-  },
-  39: {
-    expressID: 39,
-    type: "IFCPERSONANDORGANIZATION",
-    ThePerson: 36,
-    TheOrganization: 38,
-    Roles: null,
-  },
-  42: {
-    expressID: 42,
-    type: "IFCOWNERHISTORY",
-    OwningUser: 39,
-    OwningApplication: 5,
-    State: null,
-    ChangeAction: "NOCHANGE",
-    LastModifiedDate: null,
-    LastModifyingUser: null,
-    LastModifyingApplication: null,
-    CreationDate: 1661521104,
-  },
-  43: {
-    expressID: 43,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "LENGTHUNIT",
-    Prefix: "MILLI",
-    Name: "METRE",
-  },
-  44: {
-    expressID: 44,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "LENGTHUNIT",
-    Prefix: null,
-    Name: "METRE",
-  },
-  45: {
-    expressID: 45,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "AREAUNIT",
-    Prefix: null,
-    Name: "SQUARE_METRE",
-  },
-  46: {
-    expressID: 46,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "VOLUMEUNIT",
-    Prefix: null,
-    Name: "CUBIC_METRE",
-  },
-  47: {
-    expressID: 47,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "PLANEANGLEUNIT",
-    Prefix: null,
-    Name: "RADIAN",
-  },
-  48: {
-    expressID: 48,
-    type: "IFCDIMENSIONALEXPONENTS",
-    LengthExponent: 0,
-    MassExponent: 0,
-    TimeExponent: 0,
-    ElectricCurrentExponent: 0,
-    ThermodynamicTemperatureExponent: 0,
-    AmountOfSubstanceExponent: 0,
-    LuminousIntensityExponent: 0,
-  },
-  49: {
-    expressID: 49,
-    type: "IFCMEASUREWITHUNIT",
-    ValueComponent: 0.017453292519943302,
-    UnitComponent: 47,
-  },
-  50: {
-    expressID: 50,
-    type: "IFCCONVERSIONBASEDUNIT",
-    Dimensions: 48,
-    UnitType: "PLANEANGLEUNIT",
-    Name: "DEGREE",
-    ConversionFactor: 49,
-  },
-  51: {
-    expressID: 51,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "MASSUNIT",
-    Prefix: "KILO",
-    Name: "GRAM",
-  },
-  52: {
-    expressID: 52,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 51,
-    Exponent: 1,
-  },
-  53: {
-    expressID: 53,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: -3,
-  },
-  54: {
-    expressID: 54,
-    type: "IFCDERIVEDUNIT",
-    Elements: [52, 53],
-    UnitType: "MASSDENSITYUNIT",
-    UserDefinedType: null,
-  },
-  56: {
-    expressID: 56,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: 4,
-  },
-  57: {
-    expressID: 57,
-    type: "IFCDERIVEDUNIT",
-    Elements: [56],
-    UnitType: "MOMENTOFINERTIAUNIT",
-    UserDefinedType: null,
-  },
-  59: {
-    expressID: 59,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "TIMEUNIT",
-    Prefix: null,
-    Name: "SECOND",
-  },
-  60: {
-    expressID: 60,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "FREQUENCYUNIT",
-    Prefix: null,
-    Name: "HERTZ",
-  },
-  61: {
-    expressID: 61,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "THERMODYNAMICTEMPERATUREUNIT",
-    Prefix: null,
-    Name: "KELVIN",
-  },
-  62: {
-    expressID: 62,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "THERMODYNAMICTEMPERATUREUNIT",
-    Prefix: null,
-    Name: "DEGREE_CELSIUS",
-  },
-  63: {
-    expressID: 63,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 51,
-    Exponent: 1,
-  },
-  64: {
-    expressID: 64,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 61,
-    Exponent: -1,
-  },
-  65: {
-    expressID: 65,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 59,
-    Exponent: -3,
-  },
-  66: {
-    expressID: 66,
-    type: "IFCDERIVEDUNIT",
-    Elements: [63, 64, 65],
-    UnitType: "THERMALTRANSMITTANCEUNIT",
-    UserDefinedType: null,
-  },
-  68: {
-    expressID: 68,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "LENGTHUNIT",
-    Prefix: "DECI",
-    Name: "METRE",
-  },
-  69: {
-    expressID: 69,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: 3,
-  },
-  70: {
-    expressID: 70,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 59,
-    Exponent: -1,
-  },
-  71: {
-    expressID: 71,
-    type: "IFCDERIVEDUNIT",
-    Elements: [69, 70],
-    UnitType: "VOLUMETRICFLOWRATEUNIT",
-    UserDefinedType: null,
-  },
-  73: {
-    expressID: 73,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "ELECTRICCURRENTUNIT",
-    Prefix: null,
-    Name: "AMPERE",
-  },
-  74: {
-    expressID: 74,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "ELECTRICVOLTAGEUNIT",
-    Prefix: null,
-    Name: "VOLT",
-  },
-  75: {
-    expressID: 75,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "POWERUNIT",
-    Prefix: null,
-    Name: "WATT",
-  },
-  76: {
-    expressID: 76,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "FORCEUNIT",
-    Prefix: "KILO",
-    Name: "NEWTON",
-  },
-  77: {
-    expressID: 77,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "ILLUMINANCEUNIT",
-    Prefix: null,
-    Name: "LUX",
-  },
-  78: {
-    expressID: 78,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "LUMINOUSFLUXUNIT",
-    Prefix: null,
-    Name: "LUMEN",
-  },
-  79: {
-    expressID: 79,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "LUMINOUSINTENSITYUNIT",
-    Prefix: null,
-    Name: "CANDELA",
-  },
-  80: {
-    expressID: 80,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 51,
-    Exponent: -1,
-  },
-  81: {
-    expressID: 81,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: -2,
-  },
-  82: {
-    expressID: 82,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 59,
-    Exponent: 3,
-  },
-  83: {
-    expressID: 83,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 78,
-    Exponent: 1,
-  },
-  84: {
-    expressID: 84,
-    type: "IFCDERIVEDUNIT",
-    Elements: [80, 81, 82, 83],
-    UnitType: "USERDEFINED",
-    UserDefinedType: "Luminous Efficacy",
-  },
-  86: {
-    expressID: 86,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: 1,
-  },
-  87: {
-    expressID: 87,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 59,
-    Exponent: -1,
-  },
-  88: {
-    expressID: 88,
-    type: "IFCDERIVEDUNIT",
-    Elements: [86, 87],
-    UnitType: "LINEARVELOCITYUNIT",
-    UserDefinedType: null,
-  },
-  90: {
-    expressID: 90,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "PRESSUREUNIT",
-    Prefix: null,
-    Name: "PASCAL",
-  },
-  91: {
-    expressID: 91,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: -2,
-  },
-  92: {
-    expressID: 92,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 51,
-    Exponent: 1,
-  },
-  93: {
-    expressID: 93,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 59,
-    Exponent: -2,
-  },
-  94: {
-    expressID: 94,
-    type: "IFCDERIVEDUNIT",
-    Elements: [91, 92, 93],
-    UnitType: "USERDEFINED",
-    UserDefinedType: "Friction Loss",
-  },
-  96: {
-    expressID: 96,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 51,
-    Exponent: 1,
-  },
-  97: {
-    expressID: 97,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: 1,
-  },
-  98: {
-    expressID: 98,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 59,
-    Exponent: -2,
-  },
-  99: {
-    expressID: 99,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: -1,
-  },
-  100: {
-    expressID: 100,
-    type: "IFCDERIVEDUNIT",
-    Elements: [96, 97, 98, 99],
-    UnitType: "LINEARFORCEUNIT",
-    UserDefinedType: null,
-  },
-  102: {
-    expressID: 102,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 51,
-    Exponent: 1,
-  },
-  103: {
-    expressID: 103,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: 1,
-  },
-  104: {
-    expressID: 104,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 59,
-    Exponent: -2,
-  },
-  105: {
-    expressID: 105,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: -2,
-  },
-  106: {
-    expressID: 106,
-    type: "IFCDERIVEDUNIT",
-    Elements: [102, 103, 104, 105],
-    UnitType: "PLANARFORCEUNIT",
-    UserDefinedType: null,
-  },
-  108: {
-    expressID: 108,
-    type: "IFCUNITASSIGNMENT",
-    Units: [
-      43, 45, 46, 50, 51, 54, 57, 59, 60, 62, 66, 71, 73, 74, 75, 76, 77, 78,
-      79, 84, 88, 90, 94, 100, 106,
-    ],
-  },
-  121: {
-    expressID: 121,
-    type: "IFCPROJECT",
-    GlobalId: "3HIGkz_k1DruesNNzlKaLt",
-    OwnerHistory: 42,
-    Name: "Project  Number",
-    Description: null,
-    ObjectType: null,
-    LongName: "Project Name",
-    Phase: "Project  Status",
-    RepresentationContexts: [113],
-    UnitsInContext: 108,
-  },
-  128: {
-    expressID: 128,
-    type: "IFCPOSTALADDRESS",
-    Purpose: null,
-    Description: null,
-    UserDefinedPurpose: null,
-    InternalLocation: null,
-    AddressLines: ["## Street\\X\\0D\\X\\0ACity, State  Zip"],
-    PostalBox: null,
-    Town: "",
-    Region: "Boston",
-    PostalCode: "",
-    Country: "MA",
-  },
-  132: {
-    expressID: 132,
-    type: "IFCBUILDING",
-    GlobalId: "3HIGkz_k1DruesNNzlKaLs",
-    OwnerHistory: 42,
-    Name: "",
-    Description: null,
-    ObjectType: null,
-    ObjectPlacement: 33,
-    Representation: null,
-    LongName: "",
-    CompositionType: "ELEMENT",
-    ElevationOfRefHeight: null,
-    ElevationOfTerrain: null,
-    BuildingAddress: 128,
-  },
-  141: {
-    expressID: 141,
-    type: "IFCBUILDINGSTOREY",
-    GlobalId: "3HIGkz_k1DruesNN_GhOc8",
-    OwnerHistory: 42,
-    Name: "Level 1",
-    Description: null,
-    ObjectType: "Ebene:8mm Head",
-    ObjectPlacement: 139,
-    Representation: null,
-    LongName: "Level 1",
-    CompositionType: "ELEMENT",
-    Elevation: 0,
-  },
-  147: {
-    expressID: 147,
-    type: "IFCBUILDINGSTOREY",
-    GlobalId: "3HIGkz_k1DruesNN_GhOIk",
-    OwnerHistory: 42,
-    Name: "Level 2",
-    Description: null,
-    ObjectType: "Ebene:8mm Head",
-    ObjectPlacement: 146,
-    Representation: null,
-    LongName: "Level 2",
-    CompositionType: "ELEMENT",
-    Elevation: 4000,
-  },
-  151: {
-    expressID: 151,
-    type: "IFCSITE",
-    GlobalId: "3HIGkz_k1DruesNNzlKaLr",
-    OwnerHistory: 42,
-    Name: "Default",
-    Description: null,
-    ObjectType: null,
-    ObjectPlacement: 150,
-    Representation: null,
-    LongName: null,
-    CompositionType: "ELEMENT",
-    RefLatitude: [42, 21, 31, 181945],
-    RefLongitude: [-71, -3, -24, -263305],
-    RefElevation: 0,
-    LandTitleNumber: null,
-    SiteAddress: null,
-  },
-  198: {
-    expressID: 198,
-    type: "IFCSLAB",
-    GlobalId: "24bKYviez4sfXQ1fRhnyUf",
-    OwnerHistory: 42,
-    Name: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete:203642",
-    Description: null,
-    ObjectType: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete",
-    ObjectPlacement: 156,
-    Representation: 193,
-    Tag: "203642",
-    PredefinedType: "FLOOR",
-  },
-  213: {
-    expressID: 213,
-    type: "IFCSLABTYPE",
-    GlobalId: "1_QzDWv_CHr9BT0026FqIR",
-    OwnerHistory: 42,
-    Name: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete",
-    Description: null,
-    ApplicableOccurrence: null,
-    HasPropertySets: [329],
-    RepresentationMaps: null,
-    Tag: "25398",
-    ElementType: null,
-    PredefinedType: "FLOOR",
-  },
-  215: {
-    expressID: 215,
-    type: "IFCMATERIAL",
-    Name: "Vinyl Composition Tile",
-  },
-  229: {
-    expressID: 229,
-    type: "IFCMATERIALDEFINITIONREPRESENTATION",
-    Name: null,
-    Description: null,
-    Representations: [226],
-    RepresentedMaterial: 215,
-  },
-  233: {
-    expressID: 233,
-    type: "IFCMATERIAL",
-    Name: "Concrete, Lightweight",
-  },
-  244: {
-    expressID: 244,
-    type: "IFCMATERIALDEFINITIONREPRESENTATION",
-    Name: null,
-    Description: null,
-    Representations: [242],
-    RepresentedMaterial: 233,
-  },
-  248: { expressID: 248, type: "IFCMATERIAL", Name: "Metal Deck" },
-  259: {
-    expressID: 259,
-    type: "IFCMATERIALDEFINITIONREPRESENTATION",
-    Name: null,
-    Description: null,
-    Representations: [257],
-    RepresentedMaterial: 248,
-  },
-  263: {
-    expressID: 263,
-    type: "IFCMATERIAL",
-    Name: "Structure, Steel Bar Joist Layer",
-  },
-  270: {
-    expressID: 270,
-    type: "IFCMATERIALDEFINITIONREPRESENTATION",
-    Name: null,
-    Description: null,
-    Representations: [268],
-    RepresentedMaterial: 263,
-  },
-  274: {
-    expressID: 274,
-    type: "IFCMATERIALLAYER",
-    Material: 215,
-    LayerThickness: 5,
-    IsVentilated: null,
-  },
-  276: {
-    expressID: 276,
-    type: "IFCMATERIALLAYER",
-    Material: 233,
-    LayerThickness: 100,
-    IsVentilated: null,
-  },
-  277: {
-    expressID: 277,
-    type: "IFCMATERIALLAYER",
-    Material: 248,
-    LayerThickness: 5,
-    IsVentilated: null,
-  },
-  278: {
-    expressID: 278,
-    type: "IFCMATERIALLAYER",
-    Material: 263,
-    LayerThickness: 400,
-    IsVentilated: null,
-  },
-  279: {
-    expressID: 279,
-    type: "IFCMATERIALLAYERSET",
-    MaterialLayers: [274, 276, 277, 278],
-    LayerSetName: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete ",
-  },
-  285: {
-    expressID: 285,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 279,
-    LayerSetDirection: "AXIS3",
-    DirectionSense: "POSITIVE",
-    OffsetFromReferenceLine: 0,
-  },
-  286: {
-    expressID: 286,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Steel Bar Joist - VCT on LW Concrete",
-    Unit: null,
-  },
-  290: {
-    expressID: 290,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1Czcpp1615ax9QdSiSO88K",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [286],
-  },
-  295: {
-    expressID: 295,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Steel Bar Joist - VCT on LW Concrete",
-    Unit: null,
-  },
-  296: {
-    expressID: 296,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1HH6FRksL36QjBtYjcbJ8_",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfSlab",
-    Description: null,
-    HasProperties: [295],
-  },
-  298: {
-    expressID: 298,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 0.06065895389245601,
-    Unit: null,
-  },
-  299: {
-    expressID: 299,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "IsExternal",
-    Description: null,
-    NominalValue: "F",
-    Unit: null,
-  },
-  300: {
-    expressID: 300,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "LoadBearing",
-    Description: null,
-    NominalValue: "F",
-    Unit: null,
-  },
-  301: {
-    expressID: 301,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "PitchAngle",
-    Description: null,
-    NominalValue: 0,
-    Unit: null,
-  },
-  302: {
-    expressID: 302,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3MthnyUf",
-    OwnerHistory: 42,
-    Name: "Pset_SlabCommon",
-    Description: null,
-    HasProperties: [286, 298, 299, 300, 301],
-  },
-  304: {
-    expressID: 304,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1BuuKon2DE6xIvoQ1ILS6m",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [198],
-    RelatingPropertyDefinition: 290,
-  },
-  308: {
-    expressID: 308,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3tYG0FGx54Uuc0UoYp8dn2",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [198],
-    RelatingPropertyDefinition: 296,
-  },
-  311: {
-    expressID: 311,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0vk3QwLxbByPaoKLzsOcxZ",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [198],
-    RelatingPropertyDefinition: 302,
-  },
-  314: {
-    expressID: 314,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossArea",
-    Description: "",
-    Unit: null,
-    AreaValue: 99.2809009059069,
-  },
-  316: {
-    expressID: 316,
-    type: "IFCQUANTITYAREA",
-    Name: "NetArea",
-    Description: "",
-    Unit: null,
-    AreaValue: 99.2809009059069,
-  },
-  317: {
-    expressID: 317,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 50.633259462012504,
-  },
-  318: {
-    expressID: 318,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 50.633259462012504,
-  },
-  319: {
-    expressID: 319,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Perimeter",
-    Description: "",
-    Unit: null,
-    LengthValue: 45833.0297137046,
-  },
-  320: {
-    expressID: 320,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: "",
-    Unit: null,
-    LengthValue: 510,
-  },
-  321: {
-    expressID: 321,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "0o3mpnT_DF0eABOkLfvagE",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [314, 316, 317, 318, 319, 320],
-  },
-  323: {
-    expressID: 323,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1Zb6GLye15GuEwaodHYiMw",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [198],
-    RelatingPropertyDefinition: 321,
-  },
-  326: {
-    expressID: 326,
-    type: "IFCCLASSIFICATION",
-    Source: "https://www.csiresources.org/standards/uniformat",
-    Edition: "1998",
-    EditionDate: null,
-    Name: "Uniformat",
-  },
-  328: {
-    expressID: 328,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 0.06065895389245601,
-    Unit: null,
-  },
-  329: {
-    expressID: 329,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1_QzDWv_CHr9BT2$k6FqIR",
-    OwnerHistory: 42,
-    Name: "Pset_SlabCommon",
-    Description: null,
-    HasProperties: [299, 328],
-  },
-  405: {
-    expressID: 405,
-    type: "IFCWALLSTANDARDCASE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyTy",
-    OwnerHistory: 42,
-    Name: "Basiswand:Retaining - 300mm Concrete:203695",
-    Description: null,
-    ObjectType: "Basiswand:Retaining - 300mm Concrete",
-    ObjectPlacement: 336,
-    Representation: 401,
-    Tag: "203695",
-  },
-  408: {
-    expressID: 408,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Height",
-    Description: null,
-    Unit: null,
-    LengthValue: 6494.29911472819,
-  },
-  409: {
-    expressID: 409,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Length",
-    Description: null,
-    Unit: null,
-    LengthValue: 8640.50559196662,
-  },
-  410: {
-    expressID: 410,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: null,
-    Unit: null,
-    LengthValue: 300,
-  },
-  411: {
-    expressID: 411,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossFootprintArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 2.59215167758999,
-  },
-  412: {
-    expressID: 412,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 13.6014075276869,
-  },
-  413: {
-    expressID: 413,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 45.3380250922896,
-  },
-  414: {
-    expressID: 414,
-    type: "IFCQUANTITYAREA",
-    Name: "NetSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 45.3380250922897,
-  },
-  415: {
-    expressID: 415,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 13.6014075276868,
-  },
-  416: {
-    expressID: 416,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1h88qcPS15Iej8Up68hqrw",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [408, 409, 410, 411, 412, 413, 414, 415],
-  },
-  418: {
-    expressID: 418,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2EcdnO5NT3Cwm1ce4AzPN6",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [405],
-    RelatingPropertyDefinition: 416,
-  },
-  422: {
-    expressID: 422,
-    type: "IFCMATERIAL",
-    Name: "Concrete, Cast-in-Place gray",
-  },
-  429: {
-    expressID: 429,
-    type: "IFCMATERIALDEFINITIONREPRESENTATION",
-    Name: null,
-    Description: null,
-    Representations: [427],
-    RepresentedMaterial: 422,
-  },
-  433: {
-    expressID: 433,
-    type: "IFCMATERIALLAYER",
-    Material: 422,
-    LayerThickness: 300,
-    IsVentilated: null,
-  },
-  434: {
-    expressID: 434,
-    type: "IFCMATERIALLAYERSET",
-    MaterialLayers: [433],
-    LayerSetName: "Basiswand:Retaining - 300mm Concrete",
-  },
-  437: {
-    expressID: 437,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 434,
-    LayerSetDirection: "AXIS2",
-    DirectionSense: "NEGATIVE",
-    OffsetFromReferenceLine: 150,
-  },
-  438: {
-    expressID: 438,
-    type: "IFCWALLTYPE",
-    GlobalId: "1HBVb1NdfA6PUA6LzWtJ1Q",
-    OwnerHistory: 42,
-    Name: "Basiswand:Retaining - 300mm Concrete",
-    Description: null,
-    ApplicableOccurrence: null,
-    HasPropertySets: [441],
-    RepresentationMaps: null,
-    Tag: "31001",
-    ElementType: null,
-    PredefinedType: "STANDARD",
-  },
-  439: {
-    expressID: 439,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 3.48666666666667,
-    Unit: null,
-  },
-  440: {
-    expressID: 440,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "IsExternal",
-    Description: null,
-    NominalValue: "T",
-    Unit: null,
-  },
-  441: {
-    expressID: 441,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1HBVb1NdfA6PUA4g9WtJ1Q",
-    OwnerHistory: 42,
-    Name: "Pset_WallCommon",
-    Description: null,
-    HasProperties: [439, 440],
-  },
-  445: {
-    expressID: 445,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Retaining - 300mm Concrete",
-    Unit: null,
-  },
-  446: {
-    expressID: 446,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1oOm_fhbH5YuKbLh3e0d8$",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [445],
-  },
-  448: {
-    expressID: 448,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Retaining - 300mm Concrete",
-    Unit: null,
-  },
-  449: {
-    expressID: 449,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2aCbVAP4PEL8_D2ziotHGL",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfWall",
-    Description: null,
-    HasProperties: [448],
-  },
-  451: {
-    expressID: 451,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 3.48666666666667,
-    Unit: null,
-  },
-  452: {
-    expressID: 452,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ExtendToStructure",
-    Description: null,
-    NominalValue: "T",
-    Unit: null,
-  },
-  453: {
-    expressID: 453,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3MlhnyTy",
-    OwnerHistory: 42,
-    Name: "Pset_WallCommon",
-    Description: null,
-    HasProperties: [300, 440, 445, 451, 452],
-  },
-  455: {
-    expressID: 455,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1mreLCPOL6x8OsoDEc$eyK",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [405],
-    RelatingPropertyDefinition: 446,
-  },
-  458: {
-    expressID: 458,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3tWYHDZBX1C8bvkn7X7qpy",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [405],
-    RelatingPropertyDefinition: 449,
-  },
-  461: {
-    expressID: 461,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3MoBBqYSv2ffW1piV9SYbj",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [405],
-    RelatingPropertyDefinition: 453,
-  },
-  514: {
-    expressID: 514,
-    type: "IFCWALLSTANDARDCASE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyTd",
-    OwnerHistory: 42,
-    Name: "Basiswand:Retaining - 300mm Concrete:203700",
-    Description: null,
-    ObjectType: "Basiswand:Retaining - 300mm Concrete",
-    ObjectPlacement: 467,
-    Representation: 510,
-    Tag: "203700",
-  },
-  517: {
-    expressID: 517,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Height",
-    Description: null,
-    Unit: null,
-    LengthValue: 4173.20508075689,
-  },
-  518: {
-    expressID: 518,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Length",
-    Description: null,
-    Unit: null,
-    LengthValue: 13976.0092648857,
-  },
-  519: {
-    expressID: 519,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: null,
-    Unit: null,
-    LengthValue: 300,
-  },
-  520: {
-    expressID: 520,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossFootprintArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 4.19280277946571,
-  },
-  521: {
-    expressID: 521,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 17.4974258618779,
-  },
-  522: {
-    expressID: 522,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 58.3247528729262,
-  },
-  523: {
-    expressID: 523,
-    type: "IFCQUANTITYAREA",
-    Name: "NetSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 58.3247528729262,
-  },
-  524: {
-    expressID: 524,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 17.1343184898703,
-  },
-  525: {
-    expressID: 525,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1uF4vTpnn4IvZelj_USmWQ",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [517, 518, 519, 520, 521, 522, 523, 524],
-  },
-  527: {
-    expressID: 527,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "06Fn48j1n3SPh$R2pBvhUB",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [514],
-    RelatingPropertyDefinition: 525,
-  },
-  531: {
-    expressID: 531,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 434,
-    LayerSetDirection: "AXIS2",
-    DirectionSense: "NEGATIVE",
-    OffsetFromReferenceLine: 150,
-  },
-  532: {
-    expressID: 532,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1N1otqZSD7aAcKvoMZ5ipv",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [445],
-  },
-  534: {
-    expressID: 534,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Retaining - 300mm Concrete",
-    Unit: null,
-  },
-  535: {
-    expressID: 535,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2dqSyEnm190vIA0aCpRxzt",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfWall",
-    Description: null,
-    HasProperties: [534],
-  },
-  537: {
-    expressID: 537,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 3.48666666666667,
-    Unit: null,
-  },
-  538: {
-    expressID: 538,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3MlhnyTd",
-    OwnerHistory: 42,
-    Name: "Pset_WallCommon",
-    Description: null,
-    HasProperties: [300, 440, 445, 452, 537],
-  },
-  540: {
-    expressID: 540,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3UscqVgrzE$u1iKJHVplgL",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [514],
-    RelatingPropertyDefinition: 532,
-  },
-  543: {
-    expressID: 543,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "04kkMnYtn7UB2qlYrH6vvW",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [514],
-    RelatingPropertyDefinition: 535,
-  },
-  546: {
-    expressID: 546,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1tZPQsvVD4_BLK0uup$zCA",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [514],
-    RelatingPropertyDefinition: 538,
-  },
-  612: {
-    expressID: 612,
-    type: "IFCWALLSTANDARDCASE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyTg",
-    OwnerHistory: 42,
-    Name: "Basiswand:Retaining - 300mm Concrete:203705",
-    Description: null,
-    ObjectType: "Basiswand:Retaining - 300mm Concrete",
-    ObjectPlacement: 552,
-    Representation: 608,
-    Tag: "203705",
-  },
-  615: {
-    expressID: 615,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Height",
-    Description: null,
-    Unit: null,
-    LengthValue: 5462.51190614474,
-  },
-  616: {
-    expressID: 616,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Length",
-    Description: null,
-    Unit: null,
-    LengthValue: 4766.28985623419,
-  },
-  617: {
-    expressID: 617,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: null,
-    Unit: null,
-    LengthValue: 300,
-  },
-  618: {
-    expressID: 618,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossFootprintArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 1.4298869568702601,
-  },
-  619: {
-    expressID: 619,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 6.82317998405539,
-  },
-  620: {
-    expressID: 620,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 22.7439332801846,
-  },
-  621: {
-    expressID: 621,
-    type: "IFCQUANTITYAREA",
-    Name: "NetSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 22.7439332801846,
-  },
-  622: {
-    expressID: 622,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 6.82317998405539,
-  },
-  623: {
-    expressID: 623,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "0rBMoJm0fECuuabKzyElwQ",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [615, 616, 617, 618, 619, 620, 621, 622],
-  },
-  625: {
-    expressID: 625,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3HbqghVVn4JOn8XylI1Oh4",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [612],
-    RelatingPropertyDefinition: 623,
-  },
-  629: {
-    expressID: 629,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 434,
-    LayerSetDirection: "AXIS2",
-    DirectionSense: "NEGATIVE",
-    OffsetFromReferenceLine: 150,
-  },
-  630: {
-    expressID: 630,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2sFSZptK19thdNgIKD9rdb",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [445],
-  },
-  632: {
-    expressID: 632,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Retaining - 300mm Concrete",
-    Unit: null,
-  },
-  633: {
-    expressID: 633,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2n4vZEokL7c8bjYAHVGYhc",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfWall",
-    Description: null,
-    HasProperties: [632],
-  },
-  635: {
-    expressID: 635,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 3.48666666666667,
-    Unit: null,
-  },
-  636: {
-    expressID: 636,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3MlhnyTg",
-    OwnerHistory: 42,
-    Name: "Pset_WallCommon",
-    Description: null,
-    HasProperties: [300, 440, 445, 452, 635],
-  },
-  638: {
-    expressID: 638,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "30ggdr7_b6sQa9YMA9Jb_8",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [612],
-    RelatingPropertyDefinition: 630,
-  },
-  641: {
-    expressID: 641,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2pTsPNClDBgPwyr1q$YWCO",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [612],
-    RelatingPropertyDefinition: 633,
-  },
-  644: {
-    expressID: 644,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0zsYS8SLz17QIt8ZIZl09U",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [612],
-    RelatingPropertyDefinition: 636,
-  },
-  649: {
-    expressID: 649,
-    type: "IFCCURTAINWALL",
-    GlobalId: "24bKYviez4sfXQ1fRhnyTj",
-    OwnerHistory: 42,
-    Name: "Fassade:Exterior Glazing:203710",
-    Description: null,
-    ObjectType: "Fassade:Exterior Glazing",
-    ObjectPlacement: 648,
-    Representation: null,
-    Tag: "203710",
-  },
-  676: {
-    expressID: 676,
-    type: "IFCPLATETYPE",
-    GlobalId: "2ku9q2Oo8Hr98b0026Ft$U",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed",
-    Description: null,
-    ApplicableOccurrence: null,
-    HasPropertySets: [709],
-    RepresentationMaps: [673],
-    Tag: "203711",
-    ElementType: null,
-    PredefinedType: "CURTAIN_PANEL",
-  },
-  678: { expressID: 678, type: "IFCMATERIAL", Name: "Glass" },
-  685: {
-    expressID: 685,
-    type: "IFCMATERIALDEFINITIONREPRESENTATION",
-    Name: null,
-    Description: null,
-    Representations: [683],
-    RepresentedMaterial: 678,
-  },
-  706: {
-    expressID: 706,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyTi",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:203711",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 704,
-    Representation: 694,
-    Tag: "203711",
-  },
-  709: {
-    expressID: 709,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2ku9q2Oo8Hr98b2$U6Ft$U",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [299],
-  },
-  727: {
-    expressID: 727,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnySH",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:203714",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 726,
-    Representation: 716,
-    Tag: "203714",
-  },
-  744: {
-    expressID: 744,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnySN",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:203716",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 743,
-    Representation: 733,
-    Tag: "203716",
-  },
-  761: {
-    expressID: 761,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnySL",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:203718",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 760,
-    Representation: 750,
-    Tag: "203718",
-  },
-  782: {
-    expressID: 782,
-    type: "IFCPLATETYPE",
-    GlobalId: "1tQBjRb790TQzlXSo4tY0I",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed",
-    Description: null,
-    ApplicableOccurrence: null,
-    HasPropertySets: [802],
-    RepresentationMaps: [780],
-    Tag: "203720",
-    ElementType: null,
-    PredefinedType: "CURTAIN_PANEL",
-  },
-  799: {
-    expressID: 799,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnySR",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:203720",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 798,
-    Representation: 788,
-    Tag: "203720",
-  },
-  802: {
-    expressID: 802,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0BgHe6KMv2uxKb8$Kshu_X",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [299],
-  },
-  806: {
-    expressID: 806,
-    type: "IFCRELAGGREGATES",
-    GlobalId: "24bKYviez4sfXQ0fRhnyTj",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatingObject: 649,
-    RelatedObjects: [706, 727, 744, 761, 799],
-  },
-  814: {
-    expressID: 814,
-    type: "IFCCURTAINWALLTYPE",
-    GlobalId: "0YSInexC1FtxsxafOcKSZ0",
-    OwnerHistory: 42,
-    Name: "Fassade:Exterior Glazing",
-    Description: null,
-    ApplicableOccurrence: null,
-    HasPropertySets: [913],
-    RepresentationMaps: null,
-    Tag: "50935",
-    ElementType: null,
-    PredefinedType: "NOTDEFINED",
-  },
-  815: {
-    expressID: 815,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Exterior Glazing",
-    Unit: null,
-  },
-  816: {
-    expressID: 816,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3NdhnyTj",
-    OwnerHistory: 42,
-    Name: "Pset_CurtainWallCommon",
-    Description: null,
-    HasProperties: [440, 815],
-  },
-  818: {
-    expressID: 818,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3ZloNG9sL2tvHZeyqkaSV8",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [815],
-  },
-  820: {
-    expressID: 820,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Glazed",
-    Unit: null,
-  },
-  821: {
-    expressID: 821,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnyTi",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [299, 820],
-  },
-  823: {
-    expressID: 823,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0qAmQx2PP7SwIOQJDqnS9F",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [820],
-  },
-  825: {
-    expressID: 825,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnySH",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [299, 820],
-  },
-  827: {
-    expressID: 827,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0Ar3Tqs$nEau1S5fy1L5U7",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [820],
-  },
-  829: {
-    expressID: 829,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnySN",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [299, 820],
-  },
-  831: {
-    expressID: 831,
-    type: "IFCPROPERTYSET",
-    GlobalId: "39k4RSMIv6Qx3rCtrV93Rb",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [820],
-  },
-  833: {
-    expressID: 833,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnySL",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [299, 820],
-  },
-  835: {
-    expressID: 835,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2EVkPMk0LB$gGnDfspxn64",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [820],
-  },
-  837: {
-    expressID: 837,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnySR",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [299, 820],
-  },
-  839: {
-    expressID: 839,
-    type: "IFCPROPERTYSET",
-    GlobalId: "14WkTZpzzEivpMBUOi6nsS",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [820],
-  },
-  841: {
-    expressID: 841,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0mHrDRVEP1MeTjCRTo202A",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [649],
-    RelatingPropertyDefinition: 816,
-  },
-  845: {
-    expressID: 845,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0DKlSWr7PBVR9aTE55s$3g",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [649],
-    RelatingPropertyDefinition: 818,
-  },
-  848: {
-    expressID: 848,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1ZSgUrborCXAi2r$jAepeS",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [706],
-    RelatingPropertyDefinition: 821,
-  },
-  852: {
-    expressID: 852,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2GkTI0akT3$f6$HHnqmE0B",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [706],
-    RelatingPropertyDefinition: 823,
-  },
-  855: {
-    expressID: 855,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0W_XrciGX53RswVFyQtSGS",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [727],
-    RelatingPropertyDefinition: 825,
-  },
-  859: {
-    expressID: 859,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3Hl5a2qtrBvxPru2iYr1Dg",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [727],
-    RelatingPropertyDefinition: 827,
-  },
-  862: {
-    expressID: 862,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "18AoVii7D4$udoM7971TBF",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [744],
-    RelatingPropertyDefinition: 829,
-  },
-  866: {
-    expressID: 866,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2CqdIcKTX9KO3SDKdlGg6M",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [744],
-    RelatingPropertyDefinition: 831,
-  },
-  869: {
-    expressID: 869,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1tFn4ygL52BuEhYiVSze1M",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [761],
-    RelatingPropertyDefinition: 833,
-  },
-  873: {
-    expressID: 873,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2t9JFTy1zBF8COKEMq$Upm",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [761],
-    RelatingPropertyDefinition: 835,
-  },
-  876: {
-    expressID: 876,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1M10YDlTX98RhnIFtfwSkJ",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [799],
-    RelatingPropertyDefinition: 837,
-  },
-  880: {
-    expressID: 880,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3cPyqvyXr2HRZH499samR3",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [799],
-    RelatingPropertyDefinition: 839,
-  },
-  883: {
-    expressID: 883,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003048103,
-  },
-  884: {
-    expressID: 884,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "0ALT6iUbPDWRVJgZcq9yDV",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [883],
-  },
-  886: {
-    expressID: 886,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3X1j5uQqn2QBopTOe7Sg9X",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [706],
-    RelatingPropertyDefinition: 884,
-  },
-  889: {
-    expressID: 889,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003048103,
-  },
-  890: {
-    expressID: 890,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3wiF9_sET9_O81atXyyqdF",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [889],
-  },
-  892: {
-    expressID: 892,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3HySRC$YH5Hhm6wLURNViF",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [727],
-    RelatingPropertyDefinition: 890,
-  },
-  895: {
-    expressID: 895,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003048103,
-  },
-  896: {
-    expressID: 896,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3Og1aTUJbDF9oGoy46P3cP",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [895],
-  },
-  898: {
-    expressID: 898,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2exZDc4OPEbvVJN4MqyQVc",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [744],
-    RelatingPropertyDefinition: 896,
-  },
-  901: {
-    expressID: 901,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003048103,
-  },
-  902: {
-    expressID: 902,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1IoOGoA6rAhOR5QRgVbAjy",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [901],
-  },
-  904: {
-    expressID: 904,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0G5m3inL51wvm6wJvykHBc",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [761],
-    RelatingPropertyDefinition: 902,
-  },
-  907: {
-    expressID: 907,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.0071374659942970205,
-  },
-  908: {
-    expressID: 908,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "11DvOTxUL3egi6i3ogNL9r",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [907],
-  },
-  910: {
-    expressID: 910,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2hqb2jYDz5pQNrWr6cPzJD",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [799],
-    RelatingPropertyDefinition: 908,
-  },
-  913: {
-    expressID: 913,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0YSInexC1FtxsxcNacKSZ0",
-    OwnerHistory: 42,
-    Name: "Pset_CurtainWallCommon",
-    Description: null,
-    HasProperties: [440],
-  },
-  942: {
-    expressID: 942,
-    type: "IFCWALLSTANDARDCASE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyS3",
-    OwnerHistory: 42,
-    Name: "Basiswand:Retaining - 300mm Concrete:203728",
-    Description: null,
-    ObjectType: "Basiswand:Retaining - 300mm Concrete",
-    ObjectPlacement: 920,
-    Representation: 938,
-    Tag: "203728",
-  },
-  945: {
-    expressID: 945,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Height",
-    Description: null,
-    Unit: null,
-    LengthValue: 4000,
-  },
-  946: {
-    expressID: 946,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Length",
-    Description: null,
-    Unit: null,
-    LengthValue: 3574.21573573243,
-  },
-  947: {
-    expressID: 947,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: null,
-    Unit: null,
-    LengthValue: 300,
-  },
-  948: {
-    expressID: 948,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossFootprintArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 1.07226472071972,
-  },
-  949: {
-    expressID: 949,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 4.28905888287891,
-  },
-  950: {
-    expressID: 950,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 14.2968629429297,
-  },
-  951: {
-    expressID: 951,
-    type: "IFCQUANTITYAREA",
-    Name: "NetSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 14.2968629429297,
-  },
-  952: {
-    expressID: 952,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 4.28905888287891,
-  },
-  953: {
-    expressID: 953,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3nKG2rbeb8mBj4eXln4wzk",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [945, 946, 947, 948, 949, 950, 951, 952],
-  },
-  955: {
-    expressID: 955,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2EnrbWb853ZPIbZ15vEV8p",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [942],
-    RelatingPropertyDefinition: 953,
-  },
-  959: {
-    expressID: 959,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 434,
-    LayerSetDirection: "AXIS2",
-    DirectionSense: "NEGATIVE",
-    OffsetFromReferenceLine: 150,
-  },
-  960: {
-    expressID: 960,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3yTUCYIbD5lxG2eK447OYB",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [445],
-  },
-  962: {
-    expressID: 962,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Retaining - 300mm Concrete",
-    Unit: null,
-  },
-  963: {
-    expressID: 963,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2RNxe8VtTD4PSt6GYch7yV",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfWall",
-    Description: null,
-    HasProperties: [962],
-  },
-  965: {
-    expressID: 965,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 3.48666666666667,
-    Unit: null,
-  },
-  966: {
-    expressID: 966,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ExtendToStructure",
-    Description: null,
-    NominalValue: "F",
-    Unit: null,
-  },
-  967: {
-    expressID: 967,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3MlhnyS3",
-    OwnerHistory: 42,
-    Name: "Pset_WallCommon",
-    Description: null,
-    HasProperties: [300, 440, 445, 965, 966],
-  },
-  969: {
-    expressID: 969,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0qiZFaQT53OBoYP0d56x9v",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [942],
-    RelatingPropertyDefinition: 960,
-  },
-  972: {
-    expressID: 972,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1tij_Bm3vBBgNmxhTU3s5p",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [942],
-    RelatingPropertyDefinition: 963,
-  },
-  975: {
-    expressID: 975,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0wPP0mCQPEBPEiSWUYWk0G",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [942],
-    RelatingPropertyDefinition: 967,
-  },
-  980: {
-    expressID: 980,
-    type: "IFCCURTAINWALL",
-    GlobalId: "24bKYviez4sfXQ1fRhnyS8",
-    OwnerHistory: 42,
-    Name: "Fassade:Exterior Glazing:203739",
-    Description: null,
-    ObjectType: "Fassade:Exterior Glazing",
-    ObjectPlacement: 979,
-    Representation: null,
-    Tag: "203739",
-  },
-  997: {
-    expressID: 997,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnySF",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:203740",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 995,
-    Representation: 985,
-    Tag: "203740",
-  },
-  1014: {
-    expressID: 1014,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnySC",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:203743",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1013,
-    Representation: 1003,
-    Tag: "203743",
-  },
-  1031: {
-    expressID: 1031,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnySo",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:203745",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1030,
-    Representation: 1020,
-    Tag: "203745",
-  },
-  1052: {
-    expressID: 1052,
-    type: "IFCPLATETYPE",
-    GlobalId: "0Igc3jHSn3w9YuURdn28bv",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed",
-    Description: null,
-    ApplicableOccurrence: null,
-    HasPropertySets: [1072],
-    RepresentationMaps: [1050],
-    Tag: "203747",
-    ElementType: null,
-    PredefinedType: "CURTAIN_PANEL",
-  },
-  1069: {
-    expressID: 1069,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnySm",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:203747",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1068,
-    Representation: 1058,
-    Tag: "203747",
-  },
-  1072: {
-    expressID: 1072,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1kGCb44Ev4MRGXK4y525W2",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [299],
-  },
-  1076: {
-    expressID: 1076,
-    type: "IFCRELAGGREGATES",
-    GlobalId: "24bKYviez4sfXQ0fRhnyS8",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatingObject: 980,
-    RelatedObjects: [997, 1014, 1031, 1069],
-  },
-  1083: {
-    expressID: 1083,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3NdhnyS8",
-    OwnerHistory: 42,
-    Name: "Pset_CurtainWallCommon",
-    Description: null,
-    HasProperties: [440, 815],
-  },
-  1085: {
-    expressID: 1085,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2xn9GPooj4KwDFSl2tA5xl",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [815],
-  },
-  1087: {
-    expressID: 1087,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnySF",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [299, 820],
-  },
-  1089: {
-    expressID: 1089,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1Y7kaG6JHAUvxV2fYsaTz5",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [820],
-  },
-  1091: {
-    expressID: 1091,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnySC",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [299, 820],
-  },
-  1093: {
-    expressID: 1093,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0jqXRSjbzCI9F_$HSSsz02",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [820],
-  },
-  1095: {
-    expressID: 1095,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnySo",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [299, 820],
-  },
-  1097: {
-    expressID: 1097,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0dpigPTenETxeqSbj9_nbD",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [820],
-  },
-  1099: {
-    expressID: 1099,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnySm",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [299, 820],
-  },
-  1101: {
-    expressID: 1101,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1QogrTtz5FgAyEMtOlkVlv",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [820],
-  },
-  1103: {
-    expressID: 1103,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "250TyaBOb6RQ5L1K$Oonq1",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [980],
-    RelatingPropertyDefinition: 1083,
-  },
-  1107: {
-    expressID: 1107,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3FHuTwBz5AnwGoEH74DEHw",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [980],
-    RelatingPropertyDefinition: 1085,
-  },
-  1110: {
-    expressID: 1110,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2BzFlNwqLFSvdX37DeJ8yw",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [997],
-    RelatingPropertyDefinition: 1087,
-  },
-  1114: {
-    expressID: 1114,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1KwTpDhWjFWheAAZu6CTA2",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [997],
-    RelatingPropertyDefinition: 1089,
-  },
-  1117: {
-    expressID: 1117,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1$pcT3VOrCCwWnSswLRoPX",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1014],
-    RelatingPropertyDefinition: 1091,
-  },
-  1121: {
-    expressID: 1121,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2ewA8ocHb2WgCoU7zkfsuW",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1014],
-    RelatingPropertyDefinition: 1093,
-  },
-  1124: {
-    expressID: 1124,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2DPoxcw_5B88nlzjE97jOC",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1031],
-    RelatingPropertyDefinition: 1095,
-  },
-  1128: {
-    expressID: 1128,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1d$I8oX351NBqCLoy5RCYG",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1031],
-    RelatingPropertyDefinition: 1097,
-  },
-  1131: {
-    expressID: 1131,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "37xvxz1cL8nwivsZNsvb7n",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1069],
-    RelatingPropertyDefinition: 1099,
-  },
-  1135: {
-    expressID: 1135,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3kiJaPYWT1bgztwmtnyLIp",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1069],
-    RelatingPropertyDefinition: 1101,
-  },
-  1138: {
-    expressID: 1138,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  1139: {
-    expressID: 1139,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3PLS_D$z525RB0tg_tsKJ$",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1138],
-  },
-  1141: {
-    expressID: 1141,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "297_iTW6fDLOG6UboG6k_j",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [997],
-    RelatingPropertyDefinition: 1139,
-  },
-  1144: {
-    expressID: 1144,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  1145: {
-    expressID: 1145,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3MoOSGNLfDXvendnidh_EJ",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1144],
-  },
-  1147: {
-    expressID: 1147,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2zuFKDcZT7ywnbHflQEzST",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1014],
-    RelatingPropertyDefinition: 1145,
-  },
-  1150: {
-    expressID: 1150,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  1151: {
-    expressID: 1151,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "2TAEDMQFvEIv5Rx2KrREWp",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1150],
-  },
-  1153: {
-    expressID: 1153,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1PpWKEYTr8MR_jfssyg2pt",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1031],
-    RelatingPropertyDefinition: 1151,
-  },
-  1156: {
-    expressID: 1156,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.13946346043330904,
-  },
-  1157: {
-    expressID: 1157,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "2kH$h24cz7PQxNpG$JyPgQ",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1156],
-  },
-  1159: {
-    expressID: 1159,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0oK7LnAx5Clw2l8wUB0DB6",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1069],
-    RelatingPropertyDefinition: 1157,
-  },
-  1167: {
-    expressID: 1167,
-    type: "IFCROOF",
-    GlobalId: "24bKYviez4sfXQ1fRhnySa",
-    OwnerHistory: 42,
-    Name: "Basisdach:Wood Rafter 184mm - Asphalt Shingles:203767",
-    Description: null,
-    ObjectType: "Basisdach:Wood Rafter 184mm - Asphalt Shingles",
-    ObjectPlacement: 1163,
-    Representation: null,
-    Tag: "203767",
-    PredefinedType: "NOTDEFINED",
-  },
-  1215: {
-    expressID: 1215,
-    type: "IFCSLAB",
-    GlobalId: "24bKYviez4sfXQ1fJhnySa",
-    OwnerHistory: 42,
-    Name: "Basisdach:Wood Rafter 184mm - Asphalt Shingles:203767",
-    Description: null,
-    ObjectType: "Basisdach:Wood Rafter 184mm - Asphalt Shingles",
-    ObjectPlacement: 1213,
-    Representation: 1172,
-    Tag: "203767",
-    PredefinedType: "ROOF",
-  },
-  1218: {
-    expressID: 1218,
-    type: "IFCSLABTYPE",
-    GlobalId: "3y2Kv1wrWHr9BX0026FqFP",
-    OwnerHistory: 42,
-    Name: "Basisdach:Wood Rafter 184mm - Asphalt Shingles",
-    Description: null,
-    ApplicableOccurrence: null,
-    HasPropertySets: [1437],
-    RepresentationMaps: null,
-    Tag: "25716",
-    ElementType: null,
-    PredefinedType: "ROOF",
-  },
-  1219: {
-    expressID: 1219,
-    type: "IFCMATERIAL",
-    Name: "Asphalt Shingle",
-  },
-  1226: {
-    expressID: 1226,
-    type: "IFCMATERIALDEFINITIONREPRESENTATION",
-    Name: null,
-    Description: null,
-    Representations: [1224],
-    RepresentedMaterial: 1219,
-  },
-  1230: {
-    expressID: 1230,
-    type: "IFCMATERIAL",
-    Name: "Plywood, Sheathing",
-  },
-  1241: {
-    expressID: 1241,
-    type: "IFCMATERIALDEFINITIONREPRESENTATION",
-    Name: null,
-    Description: null,
-    Representations: [1239],
-    RepresentedMaterial: 1230,
-  },
-  1245: {
-    expressID: 1245,
-    type: "IFCMATERIAL",
-    Name: "Structure, Wood Joist/Rafter Layer, Batt Insulation",
-  },
-  1256: {
-    expressID: 1256,
-    type: "IFCMATERIALDEFINITIONREPRESENTATION",
-    Name: null,
-    Description: null,
-    Representations: [1254],
-    RepresentedMaterial: 1245,
-  },
-  1260: {
-    expressID: 1260,
-    type: "IFCMATERIALLAYER",
-    Material: 1219,
-    LayerThickness: 10,
-    IsVentilated: null,
-  },
-  1261: {
-    expressID: 1261,
-    type: "IFCMATERIALLAYER",
-    Material: 1230,
-    LayerThickness: 15,
-    IsVentilated: null,
-  },
-  1262: {
-    expressID: 1262,
-    type: "IFCMATERIALLAYER",
-    Material: 1245,
-    LayerThickness: 184,
-    IsVentilated: null,
-  },
-  1263: {
-    expressID: 1263,
-    type: "IFCMATERIALLAYERSET",
-    MaterialLayers: [1260, 1261, 1262],
-    LayerSetName: "Basisdach:Wood Rafter 184mm - Asphalt Shingles",
-  },
-  1294: {
-    expressID: 1294,
-    type: "IFCSLAB",
-    GlobalId: "24bKYviez4sfXQ1fNhnySa",
-    OwnerHistory: 42,
-    Name: "Basisdach:Wood Rafter 184mm - Asphalt Shingles:203767",
-    Description: null,
-    ObjectType: "Basisdach:Wood Rafter 184mm - Asphalt Shingles",
-    ObjectPlacement: 1292,
-    Representation: 1270,
-    Tag: "203767",
-    PredefinedType: "ROOF",
-  },
-  1297: {
-    expressID: 1297,
-    type: "IFCSLABTYPE",
-    GlobalId: "17cP3gShb1wh6SZdi1empy",
-    OwnerHistory: 42,
-    Name: "Basisdach:Wood Rafter 184mm - Asphalt Shingles",
-    Description: null,
-    ApplicableOccurrence: null,
-    HasPropertySets: [1442],
-    RepresentationMaps: null,
-    Tag: "25716",
-    ElementType: null,
-    PredefinedType: "ROOF",
-  },
-  1324: {
-    expressID: 1324,
-    type: "IFCSLAB",
-    GlobalId: "24bKYviez4sfXQ1fBhnySa",
-    OwnerHistory: 42,
-    Name: "Basisdach:Wood Rafter 184mm - Asphalt Shingles:203767",
-    Description: null,
-    ObjectType: "Basisdach:Wood Rafter 184mm - Asphalt Shingles",
-    ObjectPlacement: 1322,
-    Representation: 1300,
-    Tag: "203767",
-    PredefinedType: "ROOF",
-  },
-  1327: {
-    expressID: 1327,
-    type: "IFCSLABTYPE",
-    GlobalId: "0eLIH1vk5Cswe3UiwqUwDS",
-    OwnerHistory: 42,
-    Name: "Basisdach:Wood Rafter 184mm - Asphalt Shingles",
-    Description: null,
-    ApplicableOccurrence: null,
-    HasPropertySets: [1447],
-    RepresentationMaps: null,
-    Tag: "25716",
-    ElementType: null,
-    PredefinedType: "ROOF",
-  },
-  1328: {
-    expressID: 1328,
-    type: "IFCRELAGGREGATES",
-    GlobalId: "0965PvbJD0WBbgKWSfPNxh",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatingObject: 1167,
-    RelatedObjects: [1215, 1294, 1324],
-  },
-  1334: {
-    expressID: 1334,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Wood Rafter 184mm - Asphalt Shingles",
-    Unit: null,
-  },
-  1335: {
-    expressID: 1335,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3VmdzrZlb6SvSLaiC6baiv",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [1334],
-  },
-  1337: {
-    expressID: 1337,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ProjectedArea",
-    Description: null,
-    NominalValue: 99.2809009059069,
-    Unit: null,
-  },
-  1338: {
-    expressID: 1338,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "TotalArea",
-    Description: null,
-    NominalValue: 114.639709726828,
-    Unit: null,
-  },
-  1339: {
-    expressID: 1339,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M$hnySa",
-    OwnerHistory: 42,
-    Name: "Pset_RoofCommon",
-    Description: null,
-    HasProperties: [440, 1334, 1337, 1338],
-  },
-  1341: {
-    expressID: 1341,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3$Fj4IjVTAZeMxlPmzChyY",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [1334],
-  },
-  1343: {
-    expressID: 1343,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Wood Rafter 184mm - Asphalt Shingles",
-    Unit: null,
-  },
-  1344: {
-    expressID: 1344,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2VFS9tW1n1DhMajO61zpS6",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfSlab",
-    Description: null,
-    HasProperties: [1343],
-  },
-  1346: {
-    expressID: 1346,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 0.10156697570461502,
-    Unit: null,
-  },
-  1347: {
-    expressID: 1347,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "PitchAngle",
-    Description: null,
-    NominalValue: 30,
-    Unit: null,
-  },
-  1348: {
-    expressID: 1348,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3MthnySa",
-    OwnerHistory: 42,
-    Name: "Pset_SlabCommon",
-    Description: null,
-    HasProperties: [440, 1334, 1346, 1347],
-  },
-  1350: {
-    expressID: 1350,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2aKpy8ysD3tQvBT6QH7FSA",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [1334],
-  },
-  1352: {
-    expressID: 1352,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Wood Rafter 184mm - Asphalt Shingles",
-    Unit: null,
-  },
-  1353: {
-    expressID: 1353,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1icmCOlKvCJe9CAieqKSp2",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfSlab",
-    Description: null,
-    HasProperties: [1352],
-  },
-  1355: {
-    expressID: 1355,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 0.10156697570461502,
-    Unit: null,
-  },
-  1356: {
-    expressID: 1356,
-    type: "IFCPROPERTYSET",
-    GlobalId: "25$ONCQZL49fhbGfxcAAc1",
-    OwnerHistory: 42,
-    Name: "Pset_SlabCommon",
-    Description: null,
-    HasProperties: [440, 1334, 1347, 1355],
-  },
-  1358: {
-    expressID: 1358,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3bVIX3S_bAku5viuCZfRZs",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [1334],
-  },
-  1360: {
-    expressID: 1360,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Wood Rafter 184mm - Asphalt Shingles",
-    Unit: null,
-  },
-  1361: {
-    expressID: 1361,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2QKlFkY8T3FuyEuAjpsUhQ",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfSlab",
-    Description: null,
-    HasProperties: [1360],
-  },
-  1363: {
-    expressID: 1363,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 0.10156697570461502,
-    Unit: null,
-  },
-  1364: {
-    expressID: 1364,
-    type: "IFCPROPERTYSET",
-    GlobalId: "00PIzhZOXFyRKQbi7eQ5Za",
-    OwnerHistory: 42,
-    Name: "Pset_SlabCommon",
-    Description: null,
-    HasProperties: [440, 1334, 1347, 1363],
-  },
-  1366: {
-    expressID: 1366,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2cD3oUrIXB4fz8QzdsFd_1",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1167],
-    RelatingPropertyDefinition: 1335,
-  },
-  1370: {
-    expressID: 1370,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1_rhSRZBvAmgGBZGXoVGV$",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1167],
-    RelatingPropertyDefinition: 1339,
-  },
-  1373: {
-    expressID: 1373,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2IDR56Zl90su9GYpa42dEq",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1215],
-    RelatingPropertyDefinition: 1341,
-  },
-  1377: {
-    expressID: 1377,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "09USeqT75CzxQgqC$9AnQG",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1215],
-    RelatingPropertyDefinition: 1344,
-  },
-  1380: {
-    expressID: 1380,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "39K7JS0OXD0PLHP53SzGO3",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1215],
-    RelatingPropertyDefinition: 1348,
-  },
-  1383: {
-    expressID: 1383,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2CBaWRionDMRHd0IxLxcUj",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1294],
-    RelatingPropertyDefinition: 1350,
-  },
-  1387: {
-    expressID: 1387,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0UNynjt_X5swaAhGedUYLm",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1294],
-    RelatingPropertyDefinition: 1353,
-  },
-  1390: {
-    expressID: 1390,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3GizD50mPBqQPVn0ydQXL5",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1294],
-    RelatingPropertyDefinition: 1356,
-  },
-  1393: {
-    expressID: 1393,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1BREdleJjD1vz3QnzkZBX4",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1324],
-    RelatingPropertyDefinition: 1358,
-  },
-  1397: {
-    expressID: 1397,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2m02asWTz0geYsaa3hFxiM",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1324],
-    RelatingPropertyDefinition: 1361,
-  },
-  1400: {
-    expressID: 1400,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3gzni2JG1Fe9S7H6_gmJI3",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1324],
-    RelatingPropertyDefinition: 1364,
-  },
-  1403: {
-    expressID: 1403,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossArea",
-    Description: "",
-    Unit: null,
-    AreaValue: 5.32518876916994,
-  },
-  1404: {
-    expressID: 1404,
-    type: "IFCQUANTITYAREA",
-    Name: "NetArea",
-    Description: "",
-    Unit: null,
-    AreaValue: 114.639709726828,
-  },
-  1405: {
-    expressID: 1405,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 1.1129644527565201,
-  },
-  1406: {
-    expressID: 1406,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 23.959699332907,
-  },
-  1407: {
-    expressID: 1407,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Perimeter",
-    Description: "",
-    Unit: null,
-    LengthValue: 38529.2149886841,
-  },
-  1408: {
-    expressID: 1408,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: "",
-    Unit: null,
-    LengthValue: 209,
-  },
-  1409: {
-    expressID: 1409,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "0608kGuWH9PwR2OCJ5by7O",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1403, 1404, 1405, 1406, 1407, 1408],
-  },
-  1411: {
-    expressID: 1411,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0Fex30B_bBxf2Yk7gHXyeB",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1215],
-    RelatingPropertyDefinition: 1409,
-  },
-  1414: {
-    expressID: 1414,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossArea",
-    Description: "",
-    Unit: null,
-    AreaValue: 1.8300938806638702,
-  },
-  1415: {
-    expressID: 1415,
-    type: "IFCQUANTITYAREA",
-    Name: "NetArea",
-    Description: "",
-    Unit: null,
-    AreaValue: 114.639709726828,
-  },
-  1416: {
-    expressID: 1416,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.3824896210587501,
-  },
-  1417: {
-    expressID: 1417,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 23.959699332907,
-  },
-  1418: {
-    expressID: 1418,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Perimeter",
-    Description: "",
-    Unit: null,
-    LengthValue: 19319.3168338547,
-  },
-  1419: {
-    expressID: 1419,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: "",
-    Unit: null,
-    LengthValue: 209,
-  },
-  1420: {
-    expressID: 1420,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "119rxQNNXFHxzGOqb3A7dV",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1414, 1415, 1416, 1417, 1418, 1419],
-  },
-  1422: {
-    expressID: 1422,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3X0OSitKTFKupDu2G_cnnA",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1294],
-    RelatingPropertyDefinition: 1420,
-  },
-  1425: {
-    expressID: 1425,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossArea",
-    Description: "",
-    Unit: null,
-    AreaValue: 3.49509488850606,
-  },
-  1426: {
-    expressID: 1426,
-    type: "IFCQUANTITYAREA",
-    Name: "NetArea",
-    Description: "",
-    Unit: null,
-    AreaValue: 114.639709726828,
-  },
-  1427: {
-    expressID: 1427,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.7304748316977681,
-  },
-  1428: {
-    expressID: 1428,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 23.959699332907,
-  },
-  1429: {
-    expressID: 1429,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Perimeter",
-    Description: "",
-    Unit: null,
-    LengthValue: 25059.9457794083,
-  },
-  1430: {
-    expressID: 1430,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: "",
-    Unit: null,
-    LengthValue: 209,
-  },
-  1431: {
-    expressID: 1431,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "2hcWSxN5523QjDtB4d_6t2",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1425, 1426, 1427, 1428, 1429, 1430],
-  },
-  1433: {
-    expressID: 1433,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3nFYFwG7rFyOYF6VTczHc4",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1324],
-    RelatingPropertyDefinition: 1431,
-  },
-  1436: {
-    expressID: 1436,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 0.10156697570461502,
-    Unit: null,
-  },
-  1437: {
-    expressID: 1437,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3y2Kv1wrWHr9BX2$k6FqFP",
-    OwnerHistory: 42,
-    Name: "Pset_SlabCommon",
-    Description: null,
-    HasProperties: [440, 1436],
-  },
-  1441: {
-    expressID: 1441,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 0.10156697570461502,
-    Unit: null,
-  },
-  1442: {
-    expressID: 1442,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0RDGsWnhr7GecK6neh1mGx",
-    OwnerHistory: 42,
-    Name: "Pset_SlabCommon",
-    Description: null,
-    HasProperties: [440, 1441],
-  },
-  1446: {
-    expressID: 1446,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 0.10156697570461502,
-    Unit: null,
-  },
-  1447: {
-    expressID: 1447,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0JPn3HirvCLgR07XwQEVwU",
-    OwnerHistory: 42,
-    Name: "Pset_SlabCommon",
-    Description: null,
-    HasProperties: [440, 1446],
-  },
-  1520: {
-    expressID: 1520,
-    type: "IFCWALLSTANDARDCASE",
-    GlobalId: "24bKYviez4sfXQ1fRhny1q",
-    OwnerHistory: 42,
-    Name: "Basiswand:Retaining - 300mm Concrete:203943",
-    Description: null,
-    ObjectType: "Basiswand:Retaining - 300mm Concrete",
-    ObjectPlacement: 1454,
-    Representation: 1516,
-    Tag: "203943",
-  },
-  1523: {
-    expressID: 1523,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Height",
-    Description: null,
-    Unit: null,
-    LengthValue: 2494.29911472819,
-  },
-  1524: {
-    expressID: 1524,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Length",
-    Description: null,
-    Unit: null,
-    LengthValue: 8340.50559196662,
-  },
-  1525: {
-    expressID: 1525,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: null,
-    Unit: null,
-    LengthValue: 300,
-  },
-  1526: {
-    expressID: 1526,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossFootprintArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 2.50215167758998,
-  },
-  1527: {
-    expressID: 1527,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 3.22500658869289,
-  },
-  1528: {
-    expressID: 1528,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 10.7500219623096,
-  },
-  1529: {
-    expressID: 1529,
-    type: "IFCQUANTITYAREA",
-    Name: "NetSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 10.7500219623096,
-  },
-  1530: {
-    expressID: 1530,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 3.22500658869289,
-  },
-  1531: {
-    expressID: 1531,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "2Xnh12WYbD4hNjH$hQBnpl",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1523, 1524, 1525, 1526, 1527, 1528, 1529, 1530],
-  },
-  1533: {
-    expressID: 1533,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3ZjNDXQEDFCvocGIYEUtpM",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1520],
-    RelatingPropertyDefinition: 1531,
-  },
-  1537: {
-    expressID: 1537,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 434,
-    LayerSetDirection: "AXIS2",
-    DirectionSense: "NEGATIVE",
-    OffsetFromReferenceLine: 150,
-  },
-  1538: {
-    expressID: 1538,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1w6971jqf6YQpCJY_KzYkj",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [445],
-  },
-  1540: {
-    expressID: 1540,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Retaining - 300mm Concrete",
-    Unit: null,
-  },
-  1541: {
-    expressID: 1541,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2AifL59rL64OfhEIs24IXS",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfWall",
-    Description: null,
-    HasProperties: [1540],
-  },
-  1543: {
-    expressID: 1543,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 3.48666666666667,
-    Unit: null,
-  },
-  1544: {
-    expressID: 1544,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3Mlhny1q",
-    OwnerHistory: 42,
-    Name: "Pset_WallCommon",
-    Description: null,
-    HasProperties: [300, 440, 445, 452, 1543],
-  },
-  1546: {
-    expressID: 1546,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2bGWLnP$jD9RINrw2diUMl",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1520],
-    RelatingPropertyDefinition: 1538,
-  },
-  1549: {
-    expressID: 1549,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1bNSFXP4j3tuh$JWJRFjDb",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1520],
-    RelatingPropertyDefinition: 1541,
-  },
-  1552: {
-    expressID: 1552,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2jmXoprFHEYwySVAy2ybKE",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1520],
-    RelatingPropertyDefinition: 1544,
-  },
-  1556: {
-    expressID: 1556,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Name",
-    Description: null,
-    NominalValue: "Level 1",
-    Unit: null,
-  },
-  1557: {
-    expressID: 1557,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2YAGmLHSP71ulDvpIfnK9$",
-    OwnerHistory: 42,
-    Name: "Pset_AirSideSystemInformation",
-    Description: null,
-    HasProperties: [1556],
-  },
-  1559: {
-    expressID: 1559,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "AboveGround",
-    Description: null,
-    NominalValue: "U",
-    Unit: null,
-  },
-  1560: {
-    expressID: 1560,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1vK3KfqgSHqv5Y2_o6FnIY",
-    OwnerHistory: 42,
-    Name: "Pset_BuildingStoreyCommon",
-    Description: null,
-    HasProperties: [1559],
-  },
-  1562: {
-    expressID: 1562,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Name",
-    Description: null,
-    NominalValue: "Level 1",
-    Unit: null,
-  },
-  1563: {
-    expressID: 1563,
-    type: "IFCPROPERTYSET",
-    GlobalId: "28DKr2nsD9ehsMgzk3XLQl",
-    OwnerHistory: 42,
-    Name: "Pset_ProductRequirements",
-    Description: null,
-    HasProperties: [1562],
-  },
-  1565: {
-    expressID: 1565,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0xMZ0WuaXDJBERID9PA2eX",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [141],
-    RelatingPropertyDefinition: 1557,
-  },
-  1569: {
-    expressID: 1569,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3$aYA$$NH3kvjaaz5SI5kX",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [141],
-    RelatingPropertyDefinition: 1560,
-  },
-  1572: {
-    expressID: 1572,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1L3vTDSv99G8Gja2zLXCBA",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [141],
-    RelatingPropertyDefinition: 1563,
-  },
-  1575: {
-    expressID: 1575,
-    type: "IFCRELCONTAINEDINSPATIALSTRUCTURE",
-    GlobalId: "1vK3KfqgSHqv5Y0066FnIY",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedElements: [198, 405, 514, 612, 649, 942, 980],
-    RelatingStructure: 141,
-  },
-  1585: {
-    expressID: 1585,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Name",
-    Description: null,
-    NominalValue: "Level 2",
-    Unit: null,
-  },
-  1586: {
-    expressID: 1586,
-    type: "IFCPROPERTYSET",
-    GlobalId: "33lCE$mH1BPe2e3XIKE79P",
-    OwnerHistory: 42,
-    Name: "Pset_AirSideSystemInformation",
-    Description: null,
-    HasProperties: [1585],
-  },
-  1588: {
-    expressID: 1588,
-    type: "IFCPROPERTYSET",
-    GlobalId: "14lOI8vZuHqv6B2_o6Fnc4",
-    OwnerHistory: 42,
-    Name: "Pset_BuildingStoreyCommon",
-    Description: null,
-    HasProperties: [1559],
-  },
-  1590: {
-    expressID: 1590,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Name",
-    Description: null,
-    NominalValue: "Level 2",
-    Unit: null,
-  },
-  1591: {
-    expressID: 1591,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2WMuP4Kf5FdBanYLKcS5ni",
-    OwnerHistory: 42,
-    Name: "Pset_ProductRequirements",
-    Description: null,
-    HasProperties: [1590],
-  },
-  1593: {
-    expressID: 1593,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3_67MpJxT79B7RZNCvj1B_",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [147],
-    RelatingPropertyDefinition: 1586,
-  },
-  1597: {
-    expressID: 1597,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3w4Zp$gDX77B5$RQdNojbI",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [147],
-    RelatingPropertyDefinition: 1588,
-  },
-  1600: {
-    expressID: 1600,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3OnHjmVJf4uePZ7lR8t9VI",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [147],
-    RelatingPropertyDefinition: 1591,
-  },
-  1603: {
-    expressID: 1603,
-    type: "IFCRELCONTAINEDINSPATIALSTRUCTURE",
-    GlobalId: "14lOI8vZuHqv6B0066Fnc4",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedElements: [1167, 1520],
-    RelatingStructure: 147,
-  },
-  1608: {
-    expressID: 1608,
-    type: "IFCRELAGGREGATES",
-    GlobalId: "0hJxBWY050YfZdcJB4LFTA",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatingObject: 121,
-    RelatedObjects: [151],
-  },
-  1612: {
-    expressID: 1612,
-    type: "IFCRELAGGREGATES",
-    GlobalId: "11vj2Pr_v74wBlT2uCEcGX",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatingObject: 151,
-    RelatedObjects: [132],
-  },
-  1616: {
-    expressID: 1616,
-    type: "IFCRELAGGREGATES",
-    GlobalId: "3ioAY2VOL1QOEtMGyzl4Rh",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatingObject: 132,
-    RelatedObjects: [141, 147],
-  },
-  1621: {
-    expressID: 1621,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "NumberOfStoreys",
-    Description: null,
-    NominalValue: 2,
-    Unit: null,
-  },
-  1622: {
-    expressID: 1622,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "IsLandmarked",
-    Description: null,
-    NominalValue: "U",
-    Unit: null,
-  },
-  1623: {
-    expressID: 1623,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3ioAY2VOL1QOEtKkSzl4Rh",
-    OwnerHistory: 42,
-    Name: "Pset_BuildingCommon",
-    Description: null,
-    HasProperties: [1621, 1622],
-  },
-  1625: {
-    expressID: 1625,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3lpgeYpPb0pwanoVUdHqOS",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [132],
-    RelatingPropertyDefinition: 1623,
-  },
-  1629: {
-    expressID: 1629,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "3$w5E_oCL50BfTB_hCdXlL",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [198],
-    RelatingMaterial: 285,
-  },
-  1632: {
-    expressID: 1632,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "0SSC6cgujERPCLRcKPd_EI",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [405],
-    RelatingMaterial: 437,
-  },
-  1635: {
-    expressID: 1635,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "0j80uREUj0lRWqfJxvChxd",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [438],
-    RelatingMaterial: 434,
-  },
-  1638: {
-    expressID: 1638,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "1jlN$0W6b12PC_q7gWI9OT",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [514],
-    RelatingMaterial: 531,
-  },
-  1641: {
-    expressID: 1641,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "2z5TEmIJL5YebwUot9xR0_",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [612],
-    RelatingMaterial: 629,
-  },
-  1644: {
-    expressID: 1644,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "0ulxjAjOHBwhtcq2u_tjIk",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [942],
-    RelatingMaterial: 959,
-  },
-  1647: {
-    expressID: 1647,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "2pMdK3zz9828F4ZfyuF6Hc",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1520],
-    RelatingMaterial: 1537,
-  },
-  1650: {
-    expressID: 1650,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "14Cl0ygHH08uJ0f1cZLb6L",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [213],
-    RelatingMaterial: 279,
-  },
-  1653: {
-    expressID: 1653,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "2HeB5_wiv8Uv4VRV959G_x",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [
-      676, 706, 727, 744, 761, 782, 799, 997, 1014, 1031, 1052, 1069,
-    ],
-    RelatingMaterial: 678,
-  },
-  1667: {
-    expressID: 1667,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "2ZrE_goqP1ZASiX8FG3tJ_",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1215, 1294, 1324],
-    RelatingMaterial: 1263,
-  },
-  1672: {
-    expressID: 1672,
-    type: "IFCRELDEFINESBYTYPE",
-    GlobalId: "1b1hJbLqvDCuKPKHcm58Yt",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [198],
-    RelatingType: 213,
-  },
-  1675: {
-    expressID: 1675,
-    type: "IFCRELDEFINESBYTYPE",
-    GlobalId: "1O1WhYYOLBF82LraSIuiX$",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [405, 514, 612, 942, 1520],
-    RelatingType: 438,
-  },
-  1678: {
-    expressID: 1678,
-    type: "IFCRELDEFINESBYTYPE",
-    GlobalId: "2o4xZuT4v5ceoKlIqzP3Bx",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [706, 727, 744, 761, 997, 1014, 1031],
-    RelatingType: 676,
-  },
-  1681: {
-    expressID: 1681,
-    type: "IFCRELDEFINESBYTYPE",
-    GlobalId: "1JmYXdLpPD9BJ1KLGd5GWT",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [799],
-    RelatingType: 782,
-  },
-  1684: {
-    expressID: 1684,
-    type: "IFCRELDEFINESBYTYPE",
-    GlobalId: "2Ee57G7bH5q9u9hFKG8x$Q",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [649, 980],
-    RelatingType: 814,
-  },
-  1687: {
-    expressID: 1687,
-    type: "IFCRELDEFINESBYTYPE",
-    GlobalId: "0FD4Y_9Kb1guP6yTJ8qZho",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1069],
-    RelatingType: 1052,
-  },
-  1690: {
-    expressID: 1690,
-    type: "IFCRELDEFINESBYTYPE",
-    GlobalId: "29bC6i3gz0aBfwEL9tmAeu",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1215],
-    RelatingType: 1218,
-  },
-  1693: {
-    expressID: 1693,
-    type: "IFCRELDEFINESBYTYPE",
-    GlobalId: "11d1z6Y0D1ue$I$lAJUZDI",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1294],
-    RelatingType: 1297,
-  },
-  1696: {
-    expressID: 1696,
-    type: "IFCRELDEFINESBYTYPE",
-    GlobalId: "1D_8KzGwPFmRKCblnbqNnE",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1324],
-    RelatingType: 1327,
-  },
-  1699: {
-    expressID: 1699,
-    type: "IFCRELCONNECTSPATHELEMENTS",
-    GlobalId: "2nFA2d6HfDAuLR0qkXiG2V",
-    OwnerHistory: 42,
-    Name: "24bKYviez4sfXQ1fRhnyTy|24bKYviez4sfXQ1fRhnyTd",
-    Description: "Structural",
-    ConnectionGeometry: null,
-    RelatingElement: 405,
-    RelatedElement: 514,
-    RelatingPriorities: [],
-    RelatedPriorities: [],
-    RelatedConnectionType: "ATSTART",
-    RelatingConnectionType: "ATEND",
-  },
-  1704: {
-    expressID: 1704,
-    type: "IFCRELCONNECTSPATHELEMENTS",
-    GlobalId: "15eMKzQOv2DxoAUcVSrFkT",
-    OwnerHistory: 42,
-    Name: "24bKYviez4sfXQ1fRhnyTd|24bKYviez4sfXQ1fRhnyTg",
-    Description: "Structural",
-    ConnectionGeometry: null,
-    RelatingElement: 514,
-    RelatedElement: 612,
-    RelatingPriorities: [],
-    RelatedPriorities: [],
-    RelatedConnectionType: "ATSTART",
-    RelatingConnectionType: "ATEND",
-  },
-  1709: {
-    expressID: 1709,
-    type: "IFCRELCONNECTSPATHELEMENTS",
-    GlobalId: "0s_f7DdxT4avYo4vOnBu94",
-    OwnerHistory: 42,
-    Name: "24bKYviez4sfXQ1fRhnyTj|24bKYviez4sfXQ1fRhnyS3",
-    Description: "Structural",
-    ConnectionGeometry: null,
-    RelatingElement: 649,
-    RelatedElement: 942,
-    RelatingPriorities: [],
-    RelatedPriorities: [],
-    RelatedConnectionType: "ATSTART",
-    RelatingConnectionType: "ATEND",
-  },
-  1714: {
-    expressID: 1714,
-    type: "IFCRELCONNECTSPATHELEMENTS",
-    GlobalId: "3xiIC4b6v52B51UPGuiiA7",
-    OwnerHistory: 42,
-    Name: "24bKYviez4sfXQ1fRhnyS3|24bKYviez4sfXQ1fRhnyS8",
-    Description: "Structural",
-    ConnectionGeometry: null,
-    RelatingElement: 942,
-    RelatedElement: 980,
-    RelatingPriorities: [],
-    RelatedPriorities: [],
-    RelatedConnectionType: "ATSTART",
-    RelatingConnectionType: "ATEND",
-  },
-  1719: {
-    expressID: 1719,
-    type: "IFCRELCONNECTSPATHELEMENTS",
-    GlobalId: "1bbTD_Vw56NOT5pVi83EID",
-    OwnerHistory: 42,
-    Name: "24bKYviez4sfXQ1fRhnyTd|24bKYviez4sfXQ1fRhny1q",
-    Description: "Structural",
-    ConnectionGeometry: null,
-    RelatingElement: 514,
-    RelatedElement: 1520,
-    RelatingPriorities: [],
-    RelatedPriorities: [],
-    RelatedConnectionType: "ATSTART",
-    RelatingConnectionType: "ATPATH",
-  },
-  1728: {
-    expressID: 1728,
-    type: "IFCPRESENTATIONLAYERASSIGNMENT",
-    Name: "A-FLOR-____-OTLN",
-    Description: null,
-    AssignedItems: [186],
-    Identifier: null,
-  },
-  1731: {
-    expressID: 1731,
-    type: "IFCPRESENTATIONLAYERASSIGNMENT",
-    Name: "A-GLAZ-CURT-OTLN",
-    Description: null,
-    AssignedItems: [
-      670, 692, 714, 731, 748, 777, 786, 983, 1001, 1018, 1047, 1056,
-    ],
-    Identifier: null,
-  },
-  1745: {
-    expressID: 1745,
-    type: "IFCPRESENTATIONLAYERASSIGNMENT",
-    Name: "A-ROOF-____-OTLN",
-    Description: null,
-    AssignedItems: [1208, 1287, 1317],
-    Identifier: null,
-  },
-  1750: {
-    expressID: 1750,
-    type: "IFCPRESENTATIONLAYERASSIGNMENT",
-    Name: "L-SITE-WALL-OTLN",
-    Description: null,
-    AssignedItems: [341, 399, 472, 508, 557, 606, 925, 936, 1459, 1514],
-    Identifier: null,
-  },
-  coordinationMatrix: [
-    1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 12.593590731267701, -4,
-    3.39903863886626, 1,
-  ],
-  globalHeight: 0,
-};
-
-const data10 = {
-  1: {
-    expressID: 1,
-    type: "IFCORGANIZATION",
-    Identification: null,
-    Name: "Autodesk Revit 2020 (DEU)",
-    Description: null,
-    Roles: null,
-    Addresses: null,
-  },
-  5: {
-    expressID: 5,
-    type: "IFCAPPLICATION",
-    ApplicationDeveloper: 1,
-    Version: "2020",
-    ApplicationFullName: "Autodesk Revit 2020 (DEU)",
-    ApplicationIdentifier: "Revit",
-  },
-  36: {
-    expressID: 36,
-    type: "IFCPERSON",
-    Identification: null,
-    FamilyName: "",
-    GivenName: "Lill",
-    MiddleNames: null,
-    PrefixTitles: null,
-    SuffixTitles: null,
-    Roles: null,
-    Addresses: null,
-  },
-  38: {
-    expressID: 38,
-    type: "IFCORGANIZATION",
-    Identification: null,
-    Name: "",
-    Description: "",
-    Roles: null,
-    Addresses: null,
-  },
-  39: {
-    expressID: 39,
-    type: "IFCPERSONANDORGANIZATION",
-    ThePerson: 36,
-    TheOrganization: 38,
-    Roles: null,
-  },
-  42: {
-    expressID: 42,
-    type: "IFCOWNERHISTORY",
-    OwningUser: 39,
-    OwningApplication: 5,
-    State: null,
-    ChangeAction: "NOCHANGE",
-    LastModifiedDate: null,
-    LastModifyingUser: null,
-    LastModifyingApplication: null,
-    CreationDate: 1661521287,
-  },
-  43: {
-    expressID: 43,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "LENGTHUNIT",
-    Prefix: "MILLI",
-    Name: "METRE",
-  },
-  44: {
-    expressID: 44,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "LENGTHUNIT",
-    Prefix: null,
-    Name: "METRE",
-  },
-  45: {
-    expressID: 45,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "AREAUNIT",
-    Prefix: null,
-    Name: "SQUARE_METRE",
-  },
-  46: {
-    expressID: 46,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "VOLUMEUNIT",
-    Prefix: null,
-    Name: "CUBIC_METRE",
-  },
-  47: {
-    expressID: 47,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "PLANEANGLEUNIT",
-    Prefix: null,
-    Name: "RADIAN",
-  },
-  48: {
-    expressID: 48,
-    type: "IFCDIMENSIONALEXPONENTS",
-    LengthExponent: 0,
-    MassExponent: 0,
-    TimeExponent: 0,
-    ElectricCurrentExponent: 0,
-    ThermodynamicTemperatureExponent: 0,
-    AmountOfSubstanceExponent: 0,
-    LuminousIntensityExponent: 0,
-  },
-  49: {
-    expressID: 49,
-    type: "IFCMEASUREWITHUNIT",
-    ValueComponent: 0.017453292519943302,
-    UnitComponent: 47,
-  },
-  50: {
-    expressID: 50,
-    type: "IFCCONVERSIONBASEDUNIT",
-    Dimensions: 48,
-    UnitType: "PLANEANGLEUNIT",
-    Name: "DEGREE",
-    ConversionFactor: 49,
-  },
-  51: {
-    expressID: 51,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "MASSUNIT",
-    Prefix: "KILO",
-    Name: "GRAM",
-  },
-  52: {
-    expressID: 52,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 51,
-    Exponent: 1,
-  },
-  53: {
-    expressID: 53,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: -3,
-  },
-  54: {
-    expressID: 54,
-    type: "IFCDERIVEDUNIT",
-    Elements: [52, 53],
-    UnitType: "MASSDENSITYUNIT",
-    UserDefinedType: null,
-  },
-  56: {
-    expressID: 56,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: 4,
-  },
-  57: {
-    expressID: 57,
-    type: "IFCDERIVEDUNIT",
-    Elements: [56],
-    UnitType: "MOMENTOFINERTIAUNIT",
-    UserDefinedType: null,
-  },
-  59: {
-    expressID: 59,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "TIMEUNIT",
-    Prefix: null,
-    Name: "SECOND",
-  },
-  60: {
-    expressID: 60,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "FREQUENCYUNIT",
-    Prefix: null,
-    Name: "HERTZ",
-  },
-  61: {
-    expressID: 61,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "THERMODYNAMICTEMPERATUREUNIT",
-    Prefix: null,
-    Name: "KELVIN",
-  },
-  62: {
-    expressID: 62,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "THERMODYNAMICTEMPERATUREUNIT",
-    Prefix: null,
-    Name: "DEGREE_CELSIUS",
-  },
-  63: {
-    expressID: 63,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 51,
-    Exponent: 1,
-  },
-  64: {
-    expressID: 64,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 61,
-    Exponent: -1,
-  },
-  65: {
-    expressID: 65,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 59,
-    Exponent: -3,
-  },
-  66: {
-    expressID: 66,
-    type: "IFCDERIVEDUNIT",
-    Elements: [63, 64, 65],
-    UnitType: "THERMALTRANSMITTANCEUNIT",
-    UserDefinedType: null,
-  },
-  68: {
-    expressID: 68,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "LENGTHUNIT",
-    Prefix: "DECI",
-    Name: "METRE",
-  },
-  69: {
-    expressID: 69,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: 3,
-  },
-  70: {
-    expressID: 70,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 59,
-    Exponent: -1,
-  },
-  71: {
-    expressID: 71,
-    type: "IFCDERIVEDUNIT",
-    Elements: [69, 70],
-    UnitType: "VOLUMETRICFLOWRATEUNIT",
-    UserDefinedType: null,
-  },
-  73: {
-    expressID: 73,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "ELECTRICCURRENTUNIT",
-    Prefix: null,
-    Name: "AMPERE",
-  },
-  74: {
-    expressID: 74,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "ELECTRICVOLTAGEUNIT",
-    Prefix: null,
-    Name: "VOLT",
-  },
-  75: {
-    expressID: 75,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "POWERUNIT",
-    Prefix: null,
-    Name: "WATT",
-  },
-  76: {
-    expressID: 76,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "FORCEUNIT",
-    Prefix: "KILO",
-    Name: "NEWTON",
-  },
-  77: {
-    expressID: 77,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "ILLUMINANCEUNIT",
-    Prefix: null,
-    Name: "LUX",
-  },
-  78: {
-    expressID: 78,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "LUMINOUSFLUXUNIT",
-    Prefix: null,
-    Name: "LUMEN",
-  },
-  79: {
-    expressID: 79,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "LUMINOUSINTENSITYUNIT",
-    Prefix: null,
-    Name: "CANDELA",
-  },
-  80: {
-    expressID: 80,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 51,
-    Exponent: -1,
-  },
-  81: {
-    expressID: 81,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: -2,
-  },
-  82: {
-    expressID: 82,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 59,
-    Exponent: 3,
-  },
-  83: {
-    expressID: 83,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 78,
-    Exponent: 1,
-  },
-  84: {
-    expressID: 84,
-    type: "IFCDERIVEDUNIT",
-    Elements: [80, 81, 82, 83],
-    UnitType: "USERDEFINED",
-    UserDefinedType: "Luminous Efficacy",
-  },
-  86: {
-    expressID: 86,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: 1,
-  },
-  87: {
-    expressID: 87,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 59,
-    Exponent: -1,
-  },
-  88: {
-    expressID: 88,
-    type: "IFCDERIVEDUNIT",
-    Elements: [86, 87],
-    UnitType: "LINEARVELOCITYUNIT",
-    UserDefinedType: null,
-  },
-  90: {
-    expressID: 90,
-    type: "IFCSIUNIT",
-    Dimensions: { type: 0 },
-    UnitType: "PRESSUREUNIT",
-    Prefix: null,
-    Name: "PASCAL",
-  },
-  91: {
-    expressID: 91,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: -2,
-  },
-  92: {
-    expressID: 92,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 51,
-    Exponent: 1,
-  },
-  93: {
-    expressID: 93,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 59,
-    Exponent: -2,
-  },
-  94: {
-    expressID: 94,
-    type: "IFCDERIVEDUNIT",
-    Elements: [91, 92, 93],
-    UnitType: "USERDEFINED",
-    UserDefinedType: "Friction Loss",
-  },
-  96: {
-    expressID: 96,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 51,
-    Exponent: 1,
-  },
-  97: {
-    expressID: 97,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: 1,
-  },
-  98: {
-    expressID: 98,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 59,
-    Exponent: -2,
-  },
-  99: {
-    expressID: 99,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: -1,
-  },
-  100: {
-    expressID: 100,
-    type: "IFCDERIVEDUNIT",
-    Elements: [96, 97, 98, 99],
-    UnitType: "LINEARFORCEUNIT",
-    UserDefinedType: null,
-  },
-  102: {
-    expressID: 102,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 51,
-    Exponent: 1,
-  },
-  103: {
-    expressID: 103,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: 1,
-  },
-  104: {
-    expressID: 104,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 59,
-    Exponent: -2,
-  },
-  105: {
-    expressID: 105,
-    type: "IFCDERIVEDUNITELEMENT",
-    Unit: 44,
-    Exponent: -2,
-  },
-  106: {
-    expressID: 106,
-    type: "IFCDERIVEDUNIT",
-    Elements: [102, 103, 104, 105],
-    UnitType: "PLANARFORCEUNIT",
-    UserDefinedType: null,
-  },
-  108: {
-    expressID: 108,
-    type: "IFCUNITASSIGNMENT",
-    Units: [
-      43, 45, 46, 50, 51, 54, 57, 59, 60, 62, 66, 71, 73, 74, 75, 76, 77, 78,
-      79, 84, 88, 90, 94, 100, 106,
-    ],
-  },
-  121: {
-    expressID: 121,
-    type: "IFCPROJECT",
-    GlobalId: "3HIGkz_k1DruesNNzlKaLt",
-    OwnerHistory: 42,
-    Name: "Project  Number",
-    Description: null,
-    ObjectType: null,
-    LongName: "Project Name",
-    Phase: "Project  Status",
-    RepresentationContexts: [113],
-    UnitsInContext: 108,
-  },
-  128: {
-    expressID: 128,
-    type: "IFCPOSTALADDRESS",
-    Purpose: null,
-    Description: null,
-    UserDefinedPurpose: null,
-    InternalLocation: null,
-    AddressLines: ["## Street\\X\\0D\\X\\0ACity, State  Zip"],
-    PostalBox: null,
-    Town: "",
-    Region: "Boston",
-    PostalCode: "",
-    Country: "MA",
-  },
-  132: {
-    expressID: 132,
-    type: "IFCBUILDING",
-    GlobalId: "3HIGkz_k1DruesNNzlKaLs",
-    OwnerHistory: 42,
-    Name: "",
-    Description: null,
-    ObjectType: null,
-    ObjectPlacement: 33,
-    Representation: null,
-    LongName: "",
-    CompositionType: "ELEMENT",
-    ElevationOfRefHeight: null,
-    ElevationOfTerrain: null,
-    BuildingAddress: 128,
-  },
-  141: {
-    expressID: 141,
-    type: "IFCBUILDINGSTOREY",
-    GlobalId: "3HIGkz_k1DruesNN_GhOc8",
-    OwnerHistory: 42,
-    Name: "Level 1",
-    Description: null,
-    ObjectType: "Ebene:8mm Head",
-    ObjectPlacement: 139,
-    Representation: null,
-    LongName: "Level 1",
-    CompositionType: "ELEMENT",
-    Elevation: 0,
-  },
-  147: {
-    expressID: 147,
-    type: "IFCBUILDINGSTOREY",
-    GlobalId: "3HIGkz_k1DruesNN_GhOIk",
-    OwnerHistory: 42,
-    Name: "Level 2",
-    Description: null,
-    ObjectType: "Ebene:8mm Head",
-    ObjectPlacement: 146,
-    Representation: null,
-    LongName: "Level 2",
-    CompositionType: "ELEMENT",
-    Elevation: 4000,
-  },
-  153: {
-    expressID: 153,
-    type: "IFCBUILDINGSTOREY",
-    GlobalId: "3HIGkz_k1DruesNN_GhgUj",
-    OwnerHistory: 42,
-    Name: "Level 3",
-    Description: null,
-    ObjectType: "Ebene:8mm Head",
-    ObjectPlacement: 152,
-    Representation: null,
-    LongName: "Level 3",
-    CompositionType: "ELEMENT",
-    Elevation: 8000.00000000018,
-  },
-  159: {
-    expressID: 159,
-    type: "IFCBUILDINGSTOREY",
-    GlobalId: "3HIGkz_k1DruesNN_GhgJo",
-    OwnerHistory: 42,
-    Name: "Level 4",
-    Description: null,
-    ObjectType: "Ebene:8mm Head",
-    ObjectPlacement: 158,
-    Representation: null,
-    LongName: "Level 4",
-    CompositionType: "ELEMENT",
-    Elevation: 12000,
-  },
-  163: {
-    expressID: 163,
-    type: "IFCSITE",
-    GlobalId: "3HIGkz_k1DruesNNzlKaLr",
-    OwnerHistory: 42,
-    Name: "Default",
-    Description: null,
-    ObjectType: null,
-    ObjectPlacement: 162,
-    Representation: null,
-    LongName: null,
-    CompositionType: "ELEMENT",
-    RefLatitude: [42, 21, 31, 181945],
-    RefLongitude: [-71, -3, -24, -263305],
-    RefElevation: 0,
-    LandTitleNumber: null,
-    SiteAddress: null,
-  },
-  199: {
-    expressID: 199,
-    type: "IFCSLAB",
-    GlobalId: "24bKYviez4sfXQ1fRhnyUf",
-    OwnerHistory: 42,
-    Name: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete:203642",
-    Description: null,
-    ObjectType: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete",
-    ObjectPlacement: 168,
-    Representation: 194,
-    Tag: "203642",
-    PredefinedType: "FLOOR",
-  },
-  214: {
-    expressID: 214,
-    type: "IFCSLABTYPE",
-    GlobalId: "1_QzDWv_CHr9BT0026FqIR",
-    OwnerHistory: 42,
-    Name: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete",
-    Description: null,
-    ApplicableOccurrence: null,
-    HasPropertySets: [330],
-    RepresentationMaps: null,
-    Tag: "25398",
-    ElementType: null,
-    PredefinedType: "FLOOR",
-  },
-  216: {
-    expressID: 216,
-    type: "IFCMATERIAL",
-    Name: "Vinyl Composition Tile",
-  },
-  230: {
-    expressID: 230,
-    type: "IFCMATERIALDEFINITIONREPRESENTATION",
-    Name: null,
-    Description: null,
-    Representations: [227],
-    RepresentedMaterial: 216,
-  },
-  234: {
-    expressID: 234,
-    type: "IFCMATERIAL",
-    Name: "Concrete, Lightweight",
-  },
-  245: {
-    expressID: 245,
-    type: "IFCMATERIALDEFINITIONREPRESENTATION",
-    Name: null,
-    Description: null,
-    Representations: [243],
-    RepresentedMaterial: 234,
-  },
-  249: { expressID: 249, type: "IFCMATERIAL", Name: "Metal Deck" },
-  260: {
-    expressID: 260,
-    type: "IFCMATERIALDEFINITIONREPRESENTATION",
-    Name: null,
-    Description: null,
-    Representations: [258],
-    RepresentedMaterial: 249,
-  },
-  264: {
-    expressID: 264,
-    type: "IFCMATERIAL",
-    Name: "Structure, Steel Bar Joist Layer",
-  },
-  271: {
-    expressID: 271,
-    type: "IFCMATERIALDEFINITIONREPRESENTATION",
-    Name: null,
-    Description: null,
-    Representations: [269],
-    RepresentedMaterial: 264,
-  },
-  275: {
-    expressID: 275,
-    type: "IFCMATERIALLAYER",
-    Material: 216,
-    LayerThickness: 5,
-    IsVentilated: null,
-  },
-  277: {
-    expressID: 277,
-    type: "IFCMATERIALLAYER",
-    Material: 234,
-    LayerThickness: 100,
-    IsVentilated: null,
-  },
-  278: {
-    expressID: 278,
-    type: "IFCMATERIALLAYER",
-    Material: 249,
-    LayerThickness: 5,
-    IsVentilated: null,
-  },
-  279: {
-    expressID: 279,
-    type: "IFCMATERIALLAYER",
-    Material: 264,
-    LayerThickness: 400,
-    IsVentilated: null,
-  },
-  280: {
-    expressID: 280,
-    type: "IFCMATERIALLAYERSET",
-    MaterialLayers: [275, 277, 278, 279],
-    LayerSetName: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete ",
-  },
-  286: {
-    expressID: 286,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 280,
-    LayerSetDirection: "AXIS3",
-    DirectionSense: "POSITIVE",
-    OffsetFromReferenceLine: 0,
-  },
-  287: {
-    expressID: 287,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Steel Bar Joist - VCT on LW Concrete",
-    Unit: null,
-  },
-  291: {
-    expressID: 291,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0ywtQpnGD7XPu8qfMlm5Vc",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [287],
-  },
-  296: {
-    expressID: 296,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Steel Bar Joist - VCT on LW Concrete",
-    Unit: null,
-  },
-  297: {
-    expressID: 297,
-    type: "IFCPROPERTYSET",
-    GlobalId: "38VN3qrPHFY9m8Znq6ivEF",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfSlab",
-    Description: null,
-    HasProperties: [296],
-  },
-  299: {
-    expressID: 299,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 0.06065895389245601,
-    Unit: null,
-  },
-  300: {
-    expressID: 300,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "IsExternal",
-    Description: null,
-    NominalValue: "F",
-    Unit: null,
-  },
-  301: {
-    expressID: 301,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "LoadBearing",
-    Description: null,
-    NominalValue: "F",
-    Unit: null,
-  },
-  302: {
-    expressID: 302,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "PitchAngle",
-    Description: null,
-    NominalValue: 0,
-    Unit: null,
-  },
-  303: {
-    expressID: 303,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3MthnyUf",
-    OwnerHistory: 42,
-    Name: "Pset_SlabCommon",
-    Description: null,
-    HasProperties: [287, 299, 300, 301, 302],
-  },
-  305: {
-    expressID: 305,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "205LBwEBbByAaCFGE_GPGE",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [199],
-    RelatingPropertyDefinition: 291,
-  },
-  309: {
-    expressID: 309,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0Hr01Z6S9EzgJqNF7lNaST",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [199],
-    RelatingPropertyDefinition: 297,
-  },
-  312: {
-    expressID: 312,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1X698s4of5XxheBHfc5YNs",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [199],
-    RelatingPropertyDefinition: 303,
-  },
-  315: {
-    expressID: 315,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossArea",
-    Description: "",
-    Unit: null,
-    AreaValue: 145.231722652721,
-  },
-  317: {
-    expressID: 317,
-    type: "IFCQUANTITYAREA",
-    Name: "NetArea",
-    Description: "",
-    Unit: null,
-    AreaValue: 145.231722652721,
-  },
-  318: {
-    expressID: 318,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 74.0681785528878,
-  },
-  319: {
-    expressID: 319,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 74.0681785528877,
-  },
-  320: {
-    expressID: 320,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Perimeter",
-    Description: "",
-    Unit: null,
-    LengthValue: 67465.1551370703,
-  },
-  321: {
-    expressID: 321,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: "",
-    Unit: null,
-    LengthValue: 510,
-  },
-  322: {
-    expressID: 322,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "2pVouh5MXFbfrZ6Dv6fS88",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [315, 317, 318, 319, 320, 321],
-  },
-  324: {
-    expressID: 324,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "39l1wpOVLDnuJuBJux7ULT",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [199],
-    RelatingPropertyDefinition: 322,
-  },
-  327: {
-    expressID: 327,
-    type: "IFCCLASSIFICATION",
-    Source: "https://www.csiresources.org/standards/uniformat",
-    Edition: "1998",
-    EditionDate: null,
-    Name: "Uniformat",
-  },
-  329: {
-    expressID: 329,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 0.06065895389245601,
-    Unit: null,
-  },
-  330: {
-    expressID: 330,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1_QzDWv_CHr9BT2$k6FqIR",
-    OwnerHistory: 42,
-    Name: "Pset_SlabCommon",
-    Description: null,
-    HasProperties: [300, 329],
-  },
-  385: {
-    expressID: 385,
-    type: "IFCWALLSTANDARDCASE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyTy",
-    OwnerHistory: 42,
-    Name: "Basiswand:Retaining - 300mm Concrete:203695",
-    Description: null,
-    ObjectType: "Basiswand:Retaining - 300mm Concrete",
-    ObjectPlacement: 337,
-    Representation: 381,
-    Tag: "203695",
-  },
-  388: {
-    expressID: 388,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Height",
-    Description: null,
-    Unit: null,
-    LengthValue: 3490,
-  },
-  389: {
-    expressID: 389,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Length",
-    Description: null,
-    Unit: null,
-    LengthValue: 5066.28985623419,
-  },
-  390: {
-    expressID: 390,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: null,
-    Unit: null,
-    LengthValue: 300,
-  },
-  391: {
-    expressID: 391,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossFootprintArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 1.51988695687026,
-  },
-  392: {
-    expressID: 392,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 5.3044054794772,
-  },
-  393: {
-    expressID: 393,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 17.6813515982573,
-  },
-  394: {
-    expressID: 394,
-    type: "IFCQUANTITYAREA",
-    Name: "NetSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 17.6813515982573,
-  },
-  395: {
-    expressID: 395,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 5.30440547947718,
-  },
-  396: {
-    expressID: 396,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1dWYON86587AveYCQF3dR5",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [388, 389, 390, 391, 392, 393, 394, 395],
-  },
-  398: {
-    expressID: 398,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2yid38t6zBgv_WZ5uZ31Y$",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [385],
-    RelatingPropertyDefinition: 396,
-  },
-  402: {
-    expressID: 402,
-    type: "IFCMATERIAL",
-    Name: "Concrete, Cast-in-Place gray",
-  },
-  409: {
-    expressID: 409,
-    type: "IFCMATERIALDEFINITIONREPRESENTATION",
-    Name: null,
-    Description: null,
-    Representations: [407],
-    RepresentedMaterial: 402,
-  },
-  413: {
-    expressID: 413,
-    type: "IFCMATERIALLAYER",
-    Material: 402,
-    LayerThickness: 300,
-    IsVentilated: null,
-  },
-  414: {
-    expressID: 414,
-    type: "IFCMATERIALLAYERSET",
-    MaterialLayers: [413],
-    LayerSetName: "Basiswand:Retaining - 300mm Concrete",
-  },
-  417: {
-    expressID: 417,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 414,
-    LayerSetDirection: "AXIS2",
-    DirectionSense: "NEGATIVE",
-    OffsetFromReferenceLine: 150,
-  },
-  418: {
-    expressID: 418,
-    type: "IFCWALLTYPE",
-    GlobalId: "1HBVb1NdfA6PUA6LzWtJ1Q",
-    OwnerHistory: 42,
-    Name: "Basiswand:Retaining - 300mm Concrete",
-    Description: null,
-    ApplicableOccurrence: null,
-    HasPropertySets: [421],
-    RepresentationMaps: null,
-    Tag: "31001",
-    ElementType: null,
-    PredefinedType: "STANDARD",
-  },
-  419: {
-    expressID: 419,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 3.48666666666667,
-    Unit: null,
-  },
-  420: {
-    expressID: 420,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "IsExternal",
-    Description: null,
-    NominalValue: "T",
-    Unit: null,
-  },
-  421: {
-    expressID: 421,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1HBVb1NdfA6PUA4g9WtJ1Q",
-    OwnerHistory: 42,
-    Name: "Pset_WallCommon",
-    Description: null,
-    HasProperties: [419, 420],
-  },
-  425: {
-    expressID: 425,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Retaining - 300mm Concrete",
-    Unit: null,
-  },
-  426: {
-    expressID: 426,
-    type: "IFCPROPERTYSET",
-    GlobalId: "09VCg6YpT1tO15R852tALX",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [425],
-  },
-  428: {
-    expressID: 428,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Retaining - 300mm Concrete",
-    Unit: null,
-  },
-  429: {
-    expressID: 429,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1GNH6n46D3L8SVoJnMB1fc",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfWall",
-    Description: null,
-    HasProperties: [428],
-  },
-  431: {
-    expressID: 431,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 3.48666666666667,
-    Unit: null,
-  },
-  432: {
-    expressID: 432,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ExtendToStructure",
-    Description: null,
-    NominalValue: "T",
-    Unit: null,
-  },
-  433: {
-    expressID: 433,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3MlhnyTy",
-    OwnerHistory: 42,
-    Name: "Pset_WallCommon",
-    Description: null,
-    HasProperties: [301, 420, 425, 431, 432],
-  },
-  435: {
-    expressID: 435,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3hgDNuY4bFRuCQljwIn$CY",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [385],
-    RelatingPropertyDefinition: 426,
-  },
-  438: {
-    expressID: 438,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1Kv0K8MLvDd8$e38lQOrB8",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [385],
-    RelatingPropertyDefinition: 429,
-  },
-  441: {
-    expressID: 441,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1swAYQX5vD_8PAFygvqMYD",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [385],
-    RelatingPropertyDefinition: 433,
-  },
-  488: {
-    expressID: 488,
-    type: "IFCWALLSTANDARDCASE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyTd",
-    OwnerHistory: 42,
-    Name: "Basiswand:Retaining - 300mm Concrete:203700",
-    Description: null,
-    ObjectType: "Basiswand:Retaining - 300mm Concrete",
-    ObjectPlacement: 447,
-    Representation: 484,
-    Tag: "203700",
-  },
-  491: {
-    expressID: 491,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Height",
-    Description: null,
-    Unit: null,
-    LengthValue: 3490,
-  },
-  492: {
-    expressID: 492,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Length",
-    Description: null,
-    Unit: null,
-    LengthValue: 28366.2877123009,
-  },
-  493: {
-    expressID: 493,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: null,
-    Unit: null,
-    LengthValue: 300,
-  },
-  494: {
-    expressID: 494,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossFootprintArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 8.50988631369031,
-  },
-  495: {
-    expressID: 495,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 29.6995032347791,
-  },
-  496: {
-    expressID: 496,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 98.9983441159303,
-  },
-  497: {
-    expressID: 497,
-    type: "IFCQUANTITYAREA",
-    Name: "NetSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 98.9983441159303,
-  },
-  498: {
-    expressID: 498,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 29.699503234779,
-  },
-  499: {
-    expressID: 499,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1i8Bg_oHX56u9BqppNWR7z",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [491, 492, 493, 494, 495, 496, 497, 498],
-  },
-  501: {
-    expressID: 501,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3ZBQrUKE97SuR7wDDp5dHL",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [488],
-    RelatingPropertyDefinition: 499,
-  },
-  505: {
-    expressID: 505,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 414,
-    LayerSetDirection: "AXIS2",
-    DirectionSense: "NEGATIVE",
-    OffsetFromReferenceLine: 150,
-  },
-  506: {
-    expressID: 506,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2hoPe3Ac55Jf3FfDRE7I2u",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [425],
-  },
-  508: {
-    expressID: 508,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Retaining - 300mm Concrete",
-    Unit: null,
-  },
-  509: {
-    expressID: 509,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1i1Jg2_6nCj9F393k6vYhz",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfWall",
-    Description: null,
-    HasProperties: [508],
-  },
-  511: {
-    expressID: 511,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 3.48666666666667,
-    Unit: null,
-  },
-  512: {
-    expressID: 512,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3MlhnyTd",
-    OwnerHistory: 42,
-    Name: "Pset_WallCommon",
-    Description: null,
-    HasProperties: [301, 420, 425, 432, 511],
-  },
-  514: {
-    expressID: 514,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "374y85DFHDgglcx8ggfH91",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [488],
-    RelatingPropertyDefinition: 506,
-  },
-  517: {
-    expressID: 517,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3t485j0AH9xw07optMtwI6",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [488],
-    RelatingPropertyDefinition: 509,
-  },
-  520: {
-    expressID: 520,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3powV_iVDCnw8DDZhTccfP",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [488],
-    RelatingPropertyDefinition: 512,
-  },
-  565: {
-    expressID: 565,
-    type: "IFCWALLSTANDARDCASE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyTg",
-    OwnerHistory: 42,
-    Name: "Basiswand:Retaining - 300mm Concrete:203705",
-    Description: null,
-    ObjectType: "Basiswand:Retaining - 300mm Concrete",
-    ObjectPlacement: 526,
-    Representation: 561,
-    Tag: "203705",
-  },
-  568: {
-    expressID: 568,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Height",
-    Description: null,
-    Unit: null,
-    LengthValue: 3490,
-  },
-  569: {
-    expressID: 569,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Length",
-    Description: null,
-    Unit: null,
-    LengthValue: 4766.28985623419,
-  },
-  570: {
-    expressID: 570,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: null,
-    Unit: null,
-    LengthValue: 300,
-  },
-  571: {
-    expressID: 571,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossFootprintArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 1.4298869568702601,
-  },
-  572: {
-    expressID: 572,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 4.9903054794772,
-  },
-  573: {
-    expressID: 573,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 16.6343515982573,
-  },
-  574: {
-    expressID: 574,
-    type: "IFCQUANTITYAREA",
-    Name: "NetSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 16.6343515982573,
-  },
-  575: {
-    expressID: 575,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 4.99030547947718,
-  },
-  576: {
-    expressID: 576,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "2Rm6jeIPT6HRE8AqicOG_x",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [568, 569, 570, 571, 572, 573, 574, 575],
-  },
-  578: {
-    expressID: 578,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3DHkyu5i54dOk_At6zvZ4j",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [565],
-    RelatingPropertyDefinition: 576,
-  },
-  582: {
-    expressID: 582,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 414,
-    LayerSetDirection: "AXIS2",
-    DirectionSense: "NEGATIVE",
-    OffsetFromReferenceLine: 150,
-  },
-  583: {
-    expressID: 583,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1oavypr4zAOR1PduSs65Ms",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [425],
-  },
-  585: {
-    expressID: 585,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Retaining - 300mm Concrete",
-    Unit: null,
-  },
-  586: {
-    expressID: 586,
-    type: "IFCPROPERTYSET",
-    GlobalId: "036cgsOd9DOgMUvySw9NUn",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfWall",
-    Description: null,
-    HasProperties: [585],
-  },
-  588: {
-    expressID: 588,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 3.48666666666667,
-    Unit: null,
-  },
-  589: {
-    expressID: 589,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3MlhnyTg",
-    OwnerHistory: 42,
-    Name: "Pset_WallCommon",
-    Description: null,
-    HasProperties: [301, 420, 425, 432, 588],
-  },
-  591: {
-    expressID: 591,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2uW901ziv9pgHMgDias5DK",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [565],
-    RelatingPropertyDefinition: 583,
-  },
-  594: {
-    expressID: 594,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "34LnxGBR98owBzdoi7sUW5",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [565],
-    RelatingPropertyDefinition: 586,
-  },
-  597: {
-    expressID: 597,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2vUjpzfRX0ZQTzm78vABj3",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [565],
-    RelatingPropertyDefinition: 589,
-  },
-  602: {
-    expressID: 602,
-    type: "IFCCURTAINWALL",
-    GlobalId: "24bKYviez4sfXQ1fRhnyS8",
-    OwnerHistory: 42,
-    Name: "Fassade:Exterior Glazing:203739",
-    Description: null,
-    ObjectType: "Fassade:Exterior Glazing",
-    ObjectPlacement: 601,
-    Representation: null,
-    Tag: "203739",
-  },
-  629: {
-    expressID: 629,
-    type: "IFCPLATETYPE",
-    GlobalId: "2ku9q2Oo8Hr98b0026Ft$U",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed",
-    Description: null,
-    ApplicableOccurrence: null,
-    HasPropertySets: [662],
-    RepresentationMaps: [626],
-    Tag: "203740",
-    ElementType: null,
-    PredefinedType: "CURTAIN_PANEL",
-  },
-  631: { expressID: 631, type: "IFCMATERIAL", Name: "Glass" },
-  638: {
-    expressID: 638,
-    type: "IFCMATERIALDEFINITIONREPRESENTATION",
-    Name: null,
-    Description: null,
-    Representations: [636],
-    RepresentedMaterial: 631,
-  },
-  659: {
-    expressID: 659,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnySF",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:203740",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 657,
-    Representation: 647,
-    Tag: "203740",
-  },
-  662: {
-    expressID: 662,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2ku9q2Oo8Hr98b2$U6Ft$U",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300],
-  },
-  680: {
-    expressID: 680,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnySC",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:203743",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 679,
-    Representation: 669,
-    Tag: "203743",
-  },
-  697: {
-    expressID: 697,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnySo",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:203745",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 696,
-    Representation: 686,
-    Tag: "203745",
-  },
-  714: {
-    expressID: 714,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnySm",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:203747",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 713,
-    Representation: 703,
-    Tag: "203747",
-  },
-  731: {
-    expressID: 731,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny5t",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204196",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 730,
-    Representation: 720,
-    Tag: "204196",
-  },
-  748: {
-    expressID: 748,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny5r",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204198",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 747,
-    Representation: 737,
-    Tag: "204198",
-  },
-  765: {
-    expressID: 765,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny5x",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204200",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 764,
-    Representation: 754,
-    Tag: "204200",
-  },
-  782: {
-    expressID: 782,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny5v",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204202",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 781,
-    Representation: 771,
-    Tag: "204202",
-  },
-  799: {
-    expressID: 799,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny5$",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204204",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 798,
-    Representation: 788,
-    Tag: "204204",
-  },
-  816: {
-    expressID: 816,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny5z",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204206",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 815,
-    Representation: 805,
-    Tag: "204206",
-  },
-  833: {
-    expressID: 833,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny5Z",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204208",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 832,
-    Representation: 822,
-    Tag: "204208",
-  },
-  850: {
-    expressID: 850,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny5X",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204210",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 849,
-    Representation: 839,
-    Tag: "204210",
-  },
-  867: {
-    expressID: 867,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny5b",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204214",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 866,
-    Representation: 856,
-    Tag: "204214",
-  },
-  884: {
-    expressID: 884,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny5h",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204216",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 883,
-    Representation: 873,
-    Tag: "204216",
-  },
-  901: {
-    expressID: 901,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny5f",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204218",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 900,
-    Representation: 890,
-    Tag: "204218",
-  },
-  922: {
-    expressID: 922,
-    type: "IFCPLATETYPE",
-    GlobalId: "2$vsCfVNz1quoUtypE$bkU",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed",
-    Description: null,
-    ApplicableOccurrence: null,
-    HasPropertySets: [942],
-    RepresentationMaps: [920],
-    Tag: "204220",
-    ElementType: null,
-    PredefinedType: "CURTAIN_PANEL",
-  },
-  939: {
-    expressID: 939,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny5l",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204220",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 938,
-    Representation: 928,
-    Tag: "204220",
-  },
-  942: {
-    expressID: 942,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2E9pyOSKX8Qhbm8gOQmtGv",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300],
-  },
-  946: {
-    expressID: 946,
-    type: "IFCRELAGGREGATES",
-    GlobalId: "24bKYviez4sfXQ0fRhnyS8",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatingObject: 602,
-    RelatedObjects: [
-      659, 680, 697, 714, 731, 748, 765, 782, 799, 816, 833, 850, 867, 884, 901,
-      939,
-    ],
-  },
-  965: {
-    expressID: 965,
-    type: "IFCCURTAINWALLTYPE",
-    GlobalId: "0YSInexC1FtxsxafOcKSZ0",
-    OwnerHistory: 42,
-    Name: "Fassade:Exterior Glazing",
-    Description: null,
-    ApplicableOccurrence: null,
-    HasPropertySets: [1251],
-    RepresentationMaps: null,
-    Tag: "50935",
-    ElementType: null,
-    PredefinedType: "NOTDEFINED",
-  },
-  966: {
-    expressID: 966,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Exterior Glazing",
-    Unit: null,
-  },
-  967: {
-    expressID: 967,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3NdhnyS8",
-    OwnerHistory: 42,
-    Name: "Pset_CurtainWallCommon",
-    Description: null,
-    HasProperties: [420, 966],
-  },
-  969: {
-    expressID: 969,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2j7PLMER9FYRv4djmFQZnm",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [966],
-  },
-  971: {
-    expressID: 971,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Glazed",
-    Unit: null,
-  },
-  972: {
-    expressID: 972,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnySF",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  974: {
-    expressID: 974,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0JyvcKozn5pw4Dxnaigr1m",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  976: {
-    expressID: 976,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnySC",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  978: {
-    expressID: 978,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1$gM0hrFr70O8OYEfT54gc",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  980: {
-    expressID: 980,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnySo",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  982: {
-    expressID: 982,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1M873oNPz2L9tPF8cIFPZR",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  984: {
-    expressID: 984,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnySm",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  986: {
-    expressID: 986,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3hkO5Tb85Dfvly4qHbauwj",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  988: {
-    expressID: 988,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny5t",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  990: {
-    expressID: 990,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2WO$1N$ef8uBoPGzV_uy3I",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  992: {
-    expressID: 992,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny5r",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  994: {
-    expressID: 994,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3gJyOk_3r1v8AzSZcWLPVv",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  996: {
-    expressID: 996,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny5x",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  998: {
-    expressID: 998,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0ZP2XLN2b9UeQjpR9Ufms0",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1000: {
-    expressID: 1000,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny5v",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1002: {
-    expressID: 1002,
-    type: "IFCPROPERTYSET",
-    GlobalId: "23_96l56XFrR0fpeOMvIc_",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1004: {
-    expressID: 1004,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny5$",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1006: {
-    expressID: 1006,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2DDZxUzXP87uslcIoQqqMY",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1008: {
-    expressID: 1008,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny5z",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1010: {
-    expressID: 1010,
-    type: "IFCPROPERTYSET",
-    GlobalId: "09993Q6hX6cvzYO4y1YCsn",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1012: {
-    expressID: 1012,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny5Z",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1014: {
-    expressID: 1014,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2CYxAWDlj23BoAZXPJ6gna",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1016: {
-    expressID: 1016,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny5X",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1018: {
-    expressID: 1018,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2Ma_FuEonB4QJH9k9kRPzQ",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1020: {
-    expressID: 1020,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny5b",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1022: {
-    expressID: 1022,
-    type: "IFCPROPERTYSET",
-    GlobalId: "25lzDHl3b1nxz2K4kAtOrv",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1024: {
-    expressID: 1024,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny5h",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1026: {
-    expressID: 1026,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1weWmR7f17rhZyjFCzoO1o",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1028: {
-    expressID: 1028,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny5f",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1030: {
-    expressID: 1030,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2tt7TnW1v5_eE$jlpOh4DF",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1032: {
-    expressID: 1032,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny5l",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1034: {
-    expressID: 1034,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1vCpqEdXv7IBINsdYOFzNJ",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1036: {
-    expressID: 1036,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2HD6Sh1$1CEgaMNi$9IMzW",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [602],
-    RelatingPropertyDefinition: 967,
-  },
-  1040: {
-    expressID: 1040,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0sTeq_1zL3$x7HtdsCMmRB",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [602],
-    RelatingPropertyDefinition: 969,
-  },
-  1043: {
-    expressID: 1043,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1OBfhU$e9CUfbXKzIxBpl9",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [659],
-    RelatingPropertyDefinition: 972,
-  },
-  1047: {
-    expressID: 1047,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2piatG$NT4he1tPW_EIn6e",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [659],
-    RelatingPropertyDefinition: 974,
-  },
-  1050: {
-    expressID: 1050,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "240GKauw91le$wRgfILQOJ",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [680],
-    RelatingPropertyDefinition: 976,
-  },
-  1054: {
-    expressID: 1054,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "33Va9HV8zDtuPoz5mD83Kv",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [680],
-    RelatingPropertyDefinition: 978,
-  },
-  1057: {
-    expressID: 1057,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1r1u263Nz18R5R64W_0O00",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [697],
-    RelatingPropertyDefinition: 980,
-  },
-  1061: {
-    expressID: 1061,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0GK32kL0L4YRZ8OQ8FQjT1",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [697],
-    RelatingPropertyDefinition: 982,
-  },
-  1064: {
-    expressID: 1064,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3er47aIpPDkRN5husExy7B",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [714],
-    RelatingPropertyDefinition: 984,
-  },
-  1068: {
-    expressID: 1068,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "33ejIkqZv8HhY1c8IJNEl9",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [714],
-    RelatingPropertyDefinition: 986,
-  },
-  1071: {
-    expressID: 1071,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3oqxxU9Qj8Ne9TzbX1bfWP",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [731],
-    RelatingPropertyDefinition: 988,
-  },
-  1075: {
-    expressID: 1075,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0YvSqtoFL3fucWEwniGN4b",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [731],
-    RelatingPropertyDefinition: 990,
-  },
-  1078: {
-    expressID: 1078,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "20c3oTuOPC_xp7LMJng2IR",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [748],
-    RelatingPropertyDefinition: 992,
-  },
-  1082: {
-    expressID: 1082,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3pD_9djsH5aOnG4kyCxlKg",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [748],
-    RelatingPropertyDefinition: 994,
-  },
-  1085: {
-    expressID: 1085,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1PtzE9GwDF0v7OvUXCKMy7",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [765],
-    RelatingPropertyDefinition: 996,
-  },
-  1089: {
-    expressID: 1089,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0O6kNZGFr5JQ$nIFzw2NCA",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [765],
-    RelatingPropertyDefinition: 998,
-  },
-  1092: {
-    expressID: 1092,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "018tFyH2vCLQ9QoF60Kg7S",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [782],
-    RelatingPropertyDefinition: 1000,
-  },
-  1096: {
-    expressID: 1096,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2F_ancRvz1du_47PFxt0p5",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [782],
-    RelatingPropertyDefinition: 1002,
-  },
-  1099: {
-    expressID: 1099,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1DfE5EiQb5hfOCOftvZg65",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [799],
-    RelatingPropertyDefinition: 1004,
-  },
-  1103: {
-    expressID: 1103,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2mrBQPoA1DyhenPrmjAnF8",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [799],
-    RelatingPropertyDefinition: 1006,
-  },
-  1106: {
-    expressID: 1106,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1Bcb_UF6n5f87ACVxEJFx3",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [816],
-    RelatingPropertyDefinition: 1008,
-  },
-  1110: {
-    expressID: 1110,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1_7j7GTHb5z8amZKPJyEBt",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [816],
-    RelatingPropertyDefinition: 1010,
-  },
-  1113: {
-    expressID: 1113,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0k8sdK6oD49vDGO36qmW$j",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [833],
-    RelatingPropertyDefinition: 1012,
-  },
-  1117: {
-    expressID: 1117,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3f4dbwXpT0uP2ksFfKIONB",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [833],
-    RelatingPropertyDefinition: 1014,
-  },
-  1120: {
-    expressID: 1120,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0Oc4LtiWTAgPDU$4Mcgfou",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [850],
-    RelatingPropertyDefinition: 1016,
-  },
-  1124: {
-    expressID: 1124,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0ukREAMG12JAXRSJEn6LL5",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [850],
-    RelatingPropertyDefinition: 1018,
-  },
-  1127: {
-    expressID: 1127,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2G0k7WPVb5D9Nr8NBGye0O",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [867],
-    RelatingPropertyDefinition: 1020,
-  },
-  1131: {
-    expressID: 1131,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1o4x0EeJf1MRun8upse6IS",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [867],
-    RelatingPropertyDefinition: 1022,
-  },
-  1134: {
-    expressID: 1134,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "02GHCK1Cz1zgxe3$ygg7C$",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [884],
-    RelatingPropertyDefinition: 1024,
-  },
-  1138: {
-    expressID: 1138,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0tHJSkRrn59O2sK5s4JQVu",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [884],
-    RelatingPropertyDefinition: 1026,
-  },
-  1141: {
-    expressID: 1141,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2o5sj1$An8nPi3pufkZL1Y",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [901],
-    RelatingPropertyDefinition: 1028,
-  },
-  1145: {
-    expressID: 1145,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3mQfIve2n2kuLG4ijHZWry",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [901],
-    RelatingPropertyDefinition: 1030,
-  },
-  1148: {
-    expressID: 1148,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3zW5Tllxv2L8Ib8pNwMvoI",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [939],
-    RelatingPropertyDefinition: 1032,
-  },
-  1152: {
-    expressID: 1152,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2AfoVVVqD9NQodnjX9PYyj",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [939],
-    RelatingPropertyDefinition: 1034,
-  },
-  1155: {
-    expressID: 1155,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  1156: {
-    expressID: 1156,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1qpF2dQMz8ug1pPhnRsYfM",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1155],
-  },
-  1158: {
-    expressID: 1158,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0B2gIDWqH3QwvT6FLXyrvX",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [659],
-    RelatingPropertyDefinition: 1156,
-  },
-  1161: {
-    expressID: 1161,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  1162: {
-    expressID: 1162,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1jG3RtK6597u58Ehi0ntkn",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1161],
-  },
-  1164: {
-    expressID: 1164,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3DQwNy2UP0KBEi0p6T35W$",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [680],
-    RelatingPropertyDefinition: 1162,
-  },
-  1167: {
-    expressID: 1167,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  1168: {
-    expressID: 1168,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3B73SYHgP4luMPzM_sCY$S",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1167],
-  },
-  1170: {
-    expressID: 1170,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3sArdjQ9T3KACAvweexMjl",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [697],
-    RelatingPropertyDefinition: 1168,
-  },
-  1173: {
-    expressID: 1173,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  1174: {
-    expressID: 1174,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1CU6JFO1L3NOAdmb7eknvn",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1173],
-  },
-  1176: {
-    expressID: 1176,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3ZxmcTinz8N8Uk8kaeh8ft",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [714],
-    RelatingPropertyDefinition: 1174,
-  },
-  1179: {
-    expressID: 1179,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  1180: {
-    expressID: 1180,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3kTGD6PFv3cxcVI5b4aJLV",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1179],
-  },
-  1182: {
-    expressID: 1182,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2GNkNwZcjCEfErsi5cd2a$",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [731],
-    RelatingPropertyDefinition: 1180,
-  },
-  1185: {
-    expressID: 1185,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  1186: {
-    expressID: 1186,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3rxuZTUG90RPori0MltQPv",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1185],
-  },
-  1188: {
-    expressID: 1188,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2RPC7WoOb4ruJCnKy8EGmq",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [748],
-    RelatingPropertyDefinition: 1186,
-  },
-  1191: {
-    expressID: 1191,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  1192: {
-    expressID: 1192,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "022jtIFV94mv3OwZTbE0_k",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1191],
-  },
-  1194: {
-    expressID: 1194,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1aeO738eT0queEEwVnXSdh",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [765],
-    RelatingPropertyDefinition: 1192,
-  },
-  1197: {
-    expressID: 1197,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  1198: {
-    expressID: 1198,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3fwaYhvkH30v3ERIfD5bTh",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1197],
-  },
-  1200: {
-    expressID: 1200,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "35Z5yjUjDE28PxCD0v89$_",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [782],
-    RelatingPropertyDefinition: 1198,
-  },
-  1203: {
-    expressID: 1203,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  1204: {
-    expressID: 1204,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "0aCrmOXoPBjOyLFwQ47CkX",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1203],
-  },
-  1206: {
-    expressID: 1206,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "03aI9NdVnAgvOeTD2sB_uZ",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [799],
-    RelatingPropertyDefinition: 1204,
-  },
-  1209: {
-    expressID: 1209,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  1210: {
-    expressID: 1210,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "25zH_F4mD1agCyPJJnOhU2",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1209],
-  },
-  1212: {
-    expressID: 1212,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1Q_np1PiPBTwz6u1SBwuN7",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [816],
-    RelatingPropertyDefinition: 1210,
-  },
-  1215: {
-    expressID: 1215,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  1216: {
-    expressID: 1216,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "241$ooPFD0GvtCiLiVvR0E",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1215],
-  },
-  1218: {
-    expressID: 1218,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0R8Si8gi18ZAqdoFC2an30",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [833],
-    RelatingPropertyDefinition: 1216,
-  },
-  1221: {
-    expressID: 1221,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  1222: {
-    expressID: 1222,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1EHt$3oNT078yrO$St_6$i",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1221],
-  },
-  1224: {
-    expressID: 1224,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3GTYNWpbzBGgr4y51WsxhB",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [850],
-    RelatingPropertyDefinition: 1222,
-  },
-  1227: {
-    expressID: 1227,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  1228: {
-    expressID: 1228,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "2pSScM1gb4gf8kYvzyYnzU",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1227],
-  },
-  1230: {
-    expressID: 1230,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0zk4BvvgrC28NeDFESWaD_",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [867],
-    RelatingPropertyDefinition: 1228,
-  },
-  1233: {
-    expressID: 1233,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  1234: {
-    expressID: 1234,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "2k9UPjCyf75e0X0LghLSjf",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1233],
-  },
-  1236: {
-    expressID: 1236,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0SteCe6kf4AR$MyuAOb_WQ",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [884],
-    RelatingPropertyDefinition: 1234,
-  },
-  1239: {
-    expressID: 1239,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  1240: {
-    expressID: 1240,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "2vxXj39s14Je0U_XPC3CPi",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1239],
-  },
-  1242: {
-    expressID: 1242,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0hRIlXuMjFaAbyrGRq4K1j",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [901],
-    RelatingPropertyDefinition: 1240,
-  },
-  1245: {
-    expressID: 1245,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.09162877119961423,
-  },
-  1246: {
-    expressID: 1246,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3zUjRWNivDPhHBtGcnBGjt",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1245],
-  },
-  1248: {
-    expressID: 1248,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3QZcMfFu9AlescBfO1xnpQ",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [939],
-    RelatingPropertyDefinition: 1246,
-  },
-  1251: {
-    expressID: 1251,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0YSInexC1FtxsxcNacKSZ0",
-    OwnerHistory: 42,
-    Name: "Pset_CurtainWallCommon",
-    Description: null,
-    HasProperties: [420],
-  },
-  1288: {
-    expressID: 1288,
-    type: "IFCSLAB",
-    GlobalId: "24bKYviez4sfXQ1fRhny42",
-    OwnerHistory: 42,
-    Name: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete:204241",
-    Description: null,
-    ObjectType: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete",
-    ObjectPlacement: 1256,
-    Representation: 1285,
-    Tag: "204241",
-    PredefinedType: "FLOOR",
-  },
-  1291: {
-    expressID: 1291,
-    type: "IFCSLABTYPE",
-    GlobalId: "1zQuEeA$H3G8X2C6nMmh_e",
-    OwnerHistory: 42,
-    Name: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete",
-    Description: null,
-    ApplicableOccurrence: null,
-    HasPropertySets: [1367],
-    RepresentationMaps: null,
-    Tag: "25398",
-    ElementType: null,
-    PredefinedType: "FLOOR",
-  },
-  1311: {
-    expressID: 1311,
-    type: "IFCOPENINGELEMENT",
-    GlobalId: "24bKYviez4sfXQ1fRhny4t",
-    OwnerHistory: 42,
-    Name: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete :204241:2",
-    Description: null,
-    ObjectType: "Opening",
-    ObjectPlacement: 1309,
-    Representation: 1303,
-    Tag: "204241",
-  },
-  1316: {
-    expressID: 1316,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Depth",
-    Description: "",
-    Unit: null,
-    LengthValue: 510,
-  },
-  1317: {
-    expressID: 1317,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Height",
-    Description: "",
-    Unit: null,
-    LengthValue: 4605.75182015723,
-  },
-  1318: {
-    expressID: 1318,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: "",
-    Unit: null,
-    LengthValue: 1745.14896769708,
-  },
-  1319: {
-    expressID: 1319,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1$D4ybs8rCkw24hsB0jDXG",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1316, 1317, 1318],
-  },
-  1321: {
-    expressID: 1321,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0z2OmIjEX0k876YSFZ5Ieq",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1311],
-    RelatingPropertyDefinition: 1319,
-  },
-  1325: {
-    expressID: 1325,
-    type: "IFCRELVOIDSELEMENT",
-    GlobalId: "0EyG4ACXDB1PsaSfhIR33c",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatingBuildingElement: 1288,
-    RelatedOpeningElement: 1311,
-  },
-  1328: {
-    expressID: 1328,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 280,
-    LayerSetDirection: "AXIS3",
-    DirectionSense: "POSITIVE",
-    OffsetFromReferenceLine: 0,
-  },
-  1329: {
-    expressID: 1329,
-    type: "IFCPROPERTYSET",
-    GlobalId: "29a4WKa7b4IQxSjW8B8eLg",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [287],
-  },
-  1331: {
-    expressID: 1331,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Steel Bar Joist - VCT on LW Concrete",
-    Unit: null,
-  },
-  1332: {
-    expressID: 1332,
-    type: "IFCPROPERTYSET",
-    GlobalId: "05YDGw76PDX8SOKlZJ$3Vr",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfSlab",
-    Description: null,
-    HasProperties: [1331],
-  },
-  1334: {
-    expressID: 1334,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 0.06065895389245601,
-    Unit: null,
-  },
-  1335: {
-    expressID: 1335,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3Mthny42",
-    OwnerHistory: 42,
-    Name: "Pset_SlabCommon",
-    Description: null,
-    HasProperties: [287, 300, 301, 302, 1334],
-  },
-  1337: {
-    expressID: 1337,
-    type: "IFCPROPERTYSET",
-    GlobalId: "07X2egx5fFGfhRudjZkqoy",
-    OwnerHistory: 42,
-    Name: "Pset_OpeningElementCommon",
-    Description: null,
-    HasProperties: [287],
-  },
-  1339: {
-    expressID: 1339,
-    type: "IFCPROPERTYSET",
-    GlobalId: "06ZkfcZKL97xl5QPBZOMtq",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [287],
-  },
-  1341: {
-    expressID: 1341,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3J3lGYTdPE4OcIRj5P$Ivr",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1288],
-    RelatingPropertyDefinition: 1329,
-  },
-  1345: {
-    expressID: 1345,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0iPRThYo5EXP2GnNWOYnJB",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1288],
-    RelatingPropertyDefinition: 1332,
-  },
-  1348: {
-    expressID: 1348,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1_NDqXjSr2VeDKjRM8wJo8",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1288],
-    RelatingPropertyDefinition: 1335,
-  },
-  1351: {
-    expressID: 1351,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2p4I2rZA90$Rw_2F4RGcNn",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1311],
-    RelatingPropertyDefinition: 1337,
-  },
-  1354: {
-    expressID: 1354,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0JT3qoTSX17QJ_NXnaj8AH",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1311],
-    RelatingPropertyDefinition: 1339,
-  },
-  1357: {
-    expressID: 1357,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossArea",
-    Description: "",
-    Unit: null,
-    AreaValue: 145.231722652721,
-  },
-  1358: {
-    expressID: 1358,
-    type: "IFCQUANTITYAREA",
-    Name: "NetArea",
-    Description: "",
-    Unit: null,
-    AreaValue: 137.193999618305,
-  },
-  1359: {
-    expressID: 1359,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 69.9689398053354,
-  },
-  1360: {
-    expressID: 1360,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Perimeter",
-    Description: "",
-    Unit: null,
-    LengthValue: 67465.1551370703,
-  },
-  1361: {
-    expressID: 1361,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3a_lIzzk1CdfgW82h58BA1",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1357, 1358, 1359, 1360],
-  },
-  1363: {
-    expressID: 1363,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2wVn9GFkb7tBoFh2_AXMvB",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1288],
-    RelatingPropertyDefinition: 1361,
-  },
-  1366: {
-    expressID: 1366,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 0.06065895389245601,
-    Unit: null,
-  },
-  1367: {
-    expressID: 1367,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1qZ3RdQlvFehCY0_$kpTZR",
-    OwnerHistory: 42,
-    Name: "Pset_SlabCommon",
-    Description: null,
-    HasProperties: [300, 1366],
-  },
-  1415: {
-    expressID: 1415,
-    type: "IFCWALLSTANDARDCASE",
-    GlobalId: "24bKYviez4sfXQ1fRhny45",
-    OwnerHistory: 42,
-    Name: "Basiswand:Retaining - 300mm Concrete:204246",
-    Description: null,
-    ObjectType: "Basiswand:Retaining - 300mm Concrete",
-    ObjectPlacement: 1374,
-    Representation: 1411,
-    Tag: "204246",
-  },
-  1418: {
-    expressID: 1418,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Height",
-    Description: null,
-    Unit: null,
-    LengthValue: 3490.00000000018,
-  },
-  1419: {
-    expressID: 1419,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Length",
-    Description: null,
-    Unit: null,
-    LengthValue: 5066.28985623419,
-  },
-  1420: {
-    expressID: 1420,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: null,
-    Unit: null,
-    LengthValue: 300,
-  },
-  1421: {
-    expressID: 1421,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossFootprintArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 1.51988695687026,
-  },
-  1422: {
-    expressID: 1422,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 5.30440547947746,
-  },
-  1423: {
-    expressID: 1423,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 17.6813515982582,
-  },
-  1424: {
-    expressID: 1424,
-    type: "IFCQUANTITYAREA",
-    Name: "NetSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 17.6813515982582,
-  },
-  1425: {
-    expressID: 1425,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 5.30440547947743,
-  },
-  1426: {
-    expressID: 1426,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "2i7C32r0jAnQzH8VkG7ekq",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1418, 1419, 1420, 1421, 1422, 1423, 1424, 1425],
-  },
-  1428: {
-    expressID: 1428,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3TpRAqQYX9yhld1CCIiP8j",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1415],
-    RelatingPropertyDefinition: 1426,
-  },
-  1432: {
-    expressID: 1432,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 414,
-    LayerSetDirection: "AXIS2",
-    DirectionSense: "NEGATIVE",
-    OffsetFromReferenceLine: 150,
-  },
-  1433: {
-    expressID: 1433,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3h7uwv41T3ieQ6oXm2zE53",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [425],
-  },
-  1435: {
-    expressID: 1435,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Retaining - 300mm Concrete",
-    Unit: null,
-  },
-  1436: {
-    expressID: 1436,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2e5zPr4gT9bhHHdkulMTEr",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfWall",
-    Description: null,
-    HasProperties: [1435],
-  },
-  1438: {
-    expressID: 1438,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 3.48666666666667,
-    Unit: null,
-  },
-  1439: {
-    expressID: 1439,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3Mlhny45",
-    OwnerHistory: 42,
-    Name: "Pset_WallCommon",
-    Description: null,
-    HasProperties: [301, 420, 425, 432, 1438],
-  },
-  1441: {
-    expressID: 1441,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "121MxarjL3pfggV0ZLz8SA",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1415],
-    RelatingPropertyDefinition: 1433,
-  },
-  1444: {
-    expressID: 1444,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3xxh9cz656lhll2Ak24I8g",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1415],
-    RelatingPropertyDefinition: 1436,
-  },
-  1447: {
-    expressID: 1447,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "35MDAsi$r5NgwQSn5Zusx0",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1415],
-    RelatingPropertyDefinition: 1439,
-  },
-  1494: {
-    expressID: 1494,
-    type: "IFCWALLSTANDARDCASE",
-    GlobalId: "24bKYviez4sfXQ1fRhny44",
-    OwnerHistory: 42,
-    Name: "Basiswand:Retaining - 300mm Concrete:204247",
-    Description: null,
-    ObjectType: "Basiswand:Retaining - 300mm Concrete",
-    ObjectPlacement: 1453,
-    Representation: 1490,
-    Tag: "204247",
-  },
-  1497: {
-    expressID: 1497,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Height",
-    Description: null,
-    Unit: null,
-    LengthValue: 3490.00000000018,
-  },
-  1498: {
-    expressID: 1498,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Length",
-    Description: null,
-    Unit: null,
-    LengthValue: 28366.2877123009,
-  },
-  1499: {
-    expressID: 1499,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: null,
-    Unit: null,
-    LengthValue: 300,
-  },
-  1500: {
-    expressID: 1500,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossFootprintArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 8.50988631369031,
-  },
-  1501: {
-    expressID: 1501,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 29.6995032347806,
-  },
-  1502: {
-    expressID: 1502,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 98.9983441159353,
-  },
-  1503: {
-    expressID: 1503,
-    type: "IFCQUANTITYAREA",
-    Name: "NetSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 98.9983441159353,
-  },
-  1504: {
-    expressID: 1504,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 29.6995032347805,
-  },
-  1505: {
-    expressID: 1505,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1SAgxDsjfEauEpVZzZahGN",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1497, 1498, 1499, 1500, 1501, 1502, 1503, 1504],
-  },
-  1507: {
-    expressID: 1507,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3laFtQa71FhguM12JdvYpc",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1494],
-    RelatingPropertyDefinition: 1505,
-  },
-  1511: {
-    expressID: 1511,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 414,
-    LayerSetDirection: "AXIS2",
-    DirectionSense: "NEGATIVE",
-    OffsetFromReferenceLine: 150,
-  },
-  1512: {
-    expressID: 1512,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3tiPskdmXC1Abc2nZQMOig",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [425],
-  },
-  1514: {
-    expressID: 1514,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Retaining - 300mm Concrete",
-    Unit: null,
-  },
-  1515: {
-    expressID: 1515,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1A$Kay1l1DEuRNr_4tbshK",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfWall",
-    Description: null,
-    HasProperties: [1514],
-  },
-  1517: {
-    expressID: 1517,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 3.48666666666667,
-    Unit: null,
-  },
-  1518: {
-    expressID: 1518,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3Mlhny44",
-    OwnerHistory: 42,
-    Name: "Pset_WallCommon",
-    Description: null,
-    HasProperties: [301, 420, 425, 432, 1517],
-  },
-  1520: {
-    expressID: 1520,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1sIHy2YQnFC9$reOce8l0B",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1494],
-    RelatingPropertyDefinition: 1512,
-  },
-  1523: {
-    expressID: 1523,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0UeJh2AjfCoPpQ1RTe_uuy",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1494],
-    RelatingPropertyDefinition: 1515,
-  },
-  1526: {
-    expressID: 1526,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1bSupk7lLAf9vY6otkiNvK",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1494],
-    RelatingPropertyDefinition: 1518,
-  },
-  1571: {
-    expressID: 1571,
-    type: "IFCWALLSTANDARDCASE",
-    GlobalId: "24bKYviez4sfXQ1fRhny4B",
-    OwnerHistory: 42,
-    Name: "Basiswand:Retaining - 300mm Concrete:204248",
-    Description: null,
-    ObjectType: "Basiswand:Retaining - 300mm Concrete",
-    ObjectPlacement: 1532,
-    Representation: 1567,
-    Tag: "204248",
-  },
-  1574: {
-    expressID: 1574,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Height",
-    Description: null,
-    Unit: null,
-    LengthValue: 3490.00000000018,
-  },
-  1575: {
-    expressID: 1575,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Length",
-    Description: null,
-    Unit: null,
-    LengthValue: 4766.28985623419,
-  },
-  1576: {
-    expressID: 1576,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: null,
-    Unit: null,
-    LengthValue: 300,
-  },
-  1577: {
-    expressID: 1577,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossFootprintArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 1.4298869568702601,
-  },
-  1578: {
-    expressID: 1578,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 4.99030547947745,
-  },
-  1579: {
-    expressID: 1579,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 16.6343515982582,
-  },
-  1580: {
-    expressID: 1580,
-    type: "IFCQUANTITYAREA",
-    Name: "NetSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 16.6343515982582,
-  },
-  1581: {
-    expressID: 1581,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 4.9903054794774295,
-  },
-  1582: {
-    expressID: 1582,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "0S5SEk2TH8Z9WWfYvt9vWe",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [1574, 1575, 1576, 1577, 1578, 1579, 1580, 1581],
-  },
-  1584: {
-    expressID: 1584,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1ZQLpRjq14EhVokWgB2dv2",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1571],
-    RelatingPropertyDefinition: 1582,
-  },
-  1588: {
-    expressID: 1588,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 414,
-    LayerSetDirection: "AXIS2",
-    DirectionSense: "NEGATIVE",
-    OffsetFromReferenceLine: 150,
-  },
-  1589: {
-    expressID: 1589,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2bxYaGY4rEGvS5XL7u02_6",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [425],
-  },
-  1591: {
-    expressID: 1591,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Retaining - 300mm Concrete",
-    Unit: null,
-  },
-  1592: {
-    expressID: 1592,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2xCNll59zEJODyBBTH$gwZ",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfWall",
-    Description: null,
-    HasProperties: [1591],
-  },
-  1594: {
-    expressID: 1594,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 3.48666666666667,
-    Unit: null,
-  },
-  1595: {
-    expressID: 1595,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3Mlhny4B",
-    OwnerHistory: 42,
-    Name: "Pset_WallCommon",
-    Description: null,
-    HasProperties: [301, 420, 425, 432, 1594],
-  },
-  1597: {
-    expressID: 1597,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3FtP5ulML9AvbPaaFj8Nuf",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1571],
-    RelatingPropertyDefinition: 1589,
-  },
-  1600: {
-    expressID: 1600,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0JW0Ev2rn6yhCqMrD1z3ja",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1571],
-    RelatingPropertyDefinition: 1592,
-  },
-  1603: {
-    expressID: 1603,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3JyDixNqXAhee6jLQ2NL_f",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1571],
-    RelatingPropertyDefinition: 1595,
-  },
-  1610: {
-    expressID: 1610,
-    type: "IFCCURTAINWALL",
-    GlobalId: "24bKYviez4sfXQ1fRhny4A",
-    OwnerHistory: 42,
-    Name: "Fassade:Exterior Glazing:204249",
-    Description: null,
-    ObjectType: "Fassade:Exterior Glazing",
-    ObjectPlacement: 1609,
-    Representation: null,
-    Tag: "204249",
-  },
-  1627: {
-    expressID: 1627,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny49",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204250",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1625,
-    Representation: 1615,
-    Tag: "204250",
-  },
-  1644: {
-    expressID: 1644,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny4F",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204252",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1643,
-    Representation: 1633,
-    Tag: "204252",
-  },
-  1661: {
-    expressID: 1661,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny4D",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204254",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1660,
-    Representation: 1650,
-    Tag: "204254",
-  },
-  1678: {
-    expressID: 1678,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny4p",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204256",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1677,
-    Representation: 1667,
-    Tag: "204256",
-  },
-  1695: {
-    expressID: 1695,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny4q",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204263",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1694,
-    Representation: 1684,
-    Tag: "204263",
-  },
-  1712: {
-    expressID: 1712,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny4w",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204265",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1711,
-    Representation: 1701,
-    Tag: "204265",
-  },
-  1729: {
-    expressID: 1729,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny4u",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204267",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1728,
-    Representation: 1718,
-    Tag: "204267",
-  },
-  1746: {
-    expressID: 1746,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny4_",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204269",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1745,
-    Representation: 1735,
-    Tag: "204269",
-  },
-  1763: {
-    expressID: 1763,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny4y",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204271",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1762,
-    Representation: 1752,
-    Tag: "204271",
-  },
-  1780: {
-    expressID: 1780,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny4Y",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204273",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1779,
-    Representation: 1769,
-    Tag: "204273",
-  },
-  1797: {
-    expressID: 1797,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny4W",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204275",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1796,
-    Representation: 1786,
-    Tag: "204275",
-  },
-  1814: {
-    expressID: 1814,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny4c",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204277",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1813,
-    Representation: 1803,
-    Tag: "204277",
-  },
-  1831: {
-    expressID: 1831,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny4a",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204279",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1830,
-    Representation: 1820,
-    Tag: "204279",
-  },
-  1848: {
-    expressID: 1848,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny4g",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204281",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1847,
-    Representation: 1837,
-    Tag: "204281",
-  },
-  1865: {
-    expressID: 1865,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny4e",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204283",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1864,
-    Representation: 1854,
-    Tag: "204283",
-  },
-  1882: {
-    expressID: 1882,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhny4k",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204285",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 1881,
-    Representation: 1871,
-    Tag: "204285",
-  },
-  1885: {
-    expressID: 1885,
-    type: "IFCRELAGGREGATES",
-    GlobalId: "24bKYviez4sfXQ0fRhny4A",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatingObject: 1610,
-    RelatedObjects: [
-      1627, 1644, 1661, 1678, 1695, 1712, 1729, 1746, 1763, 1780, 1797, 1814,
-      1831, 1848, 1865, 1882,
-    ],
-  },
-  1904: {
-    expressID: 1904,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3Ndhny4A",
-    OwnerHistory: 42,
-    Name: "Pset_CurtainWallCommon",
-    Description: null,
-    HasProperties: [420, 966],
-  },
-  1906: {
-    expressID: 1906,
-    type: "IFCPROPERTYSET",
-    GlobalId: "05fqWKENr9dwOhPrM6eKH2",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [966],
-  },
-  1908: {
-    expressID: 1908,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny49",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1910: {
-    expressID: 1910,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3ERCiFEtX9L8bevxJV7dLr",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1912: {
-    expressID: 1912,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny4F",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1914: {
-    expressID: 1914,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1TZlIWMMz80QbgQgqV9EnZ",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1916: {
-    expressID: 1916,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny4D",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1918: {
-    expressID: 1918,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2rCy7CsGb5A9XeUPokVXMX",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1920: {
-    expressID: 1920,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny4p",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1922: {
-    expressID: 1922,
-    type: "IFCPROPERTYSET",
-    GlobalId: "278ZdFQu5A1fpvKVM62$3i",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1924: {
-    expressID: 1924,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny4q",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1926: {
-    expressID: 1926,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1aJ6I3zKD2guMFoAvxVwN_",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1928: {
-    expressID: 1928,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny4w",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1930: {
-    expressID: 1930,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1rQ6YfA2P4$9M2wQLTBYnW",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1932: {
-    expressID: 1932,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny4u",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1934: {
-    expressID: 1934,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0o40DHZK5FFuWZ3TYMp9oG",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1936: {
-    expressID: 1936,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny4_",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1938: {
-    expressID: 1938,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2SYn2FIAD4jRRQ6r$VUVlW",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1940: {
-    expressID: 1940,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny4y",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1942: {
-    expressID: 1942,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2_obYhUvv7i9cpOjvWVRFI",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1944: {
-    expressID: 1944,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny4Y",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1946: {
-    expressID: 1946,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2a8dyD2pD6Jx0Aeg1MlNMl",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1948: {
-    expressID: 1948,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny4W",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1950: {
-    expressID: 1950,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1oispGwHfBC8fIn4aZFNg5",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1952: {
-    expressID: 1952,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny4c",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1954: {
-    expressID: 1954,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3BBWOrUtrDROtTQDtjbmD9",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1956: {
-    expressID: 1956,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny4a",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1958: {
-    expressID: 1958,
-    type: "IFCPROPERTYSET",
-    GlobalId: "33zuoud21AfemLdbOvbKzl",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1960: {
-    expressID: 1960,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny4g",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1962: {
-    expressID: 1962,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2pVBj8HZH5vRaswG8aFray",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1964: {
-    expressID: 1964,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny4e",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1966: {
-    expressID: 1966,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2uOGPfhETENueNoEAB$aMD",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1968: {
-    expressID: 1968,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hny4k",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  1970: {
-    expressID: 1970,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0REmfYbbrB9Rpicw8SnJlS",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  1972: {
-    expressID: 1972,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1_Jy4UlNfE1unQ9jaRN7eM",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1610],
-    RelatingPropertyDefinition: 1904,
-  },
-  1976: {
-    expressID: 1976,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2fG$D7cln3sB9WLUFIuYrK",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1610],
-    RelatingPropertyDefinition: 1906,
-  },
-  1979: {
-    expressID: 1979,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3S0im6CN12ovD7VOQaFw1a",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1627],
-    RelatingPropertyDefinition: 1908,
-  },
-  1983: {
-    expressID: 1983,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "18UYY$NzDAG9l9cJSsHl1o",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1627],
-    RelatingPropertyDefinition: 1910,
-  },
-  1986: {
-    expressID: 1986,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "31YAt5rSv9D8o3i2K8cw5n",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1644],
-    RelatingPropertyDefinition: 1912,
-  },
-  1990: {
-    expressID: 1990,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3UFF7c5rLDVPXvDMIQI__t",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1644],
-    RelatingPropertyDefinition: 1914,
-  },
-  1993: {
-    expressID: 1993,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "11ayjVSlL9GB9DjKNJqs5a",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1661],
-    RelatingPropertyDefinition: 1916,
-  },
-  1997: {
-    expressID: 1997,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1AROB$JLjAPRbeFXCZAJVs",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1661],
-    RelatingPropertyDefinition: 1918,
-  },
-  2000: {
-    expressID: 2000,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3IJOf3pnj8Fv3t78g$$E$R",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1678],
-    RelatingPropertyDefinition: 1920,
-  },
-  2004: {
-    expressID: 2004,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "11Hl0VmT1D5RnYLffoNfFQ",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1678],
-    RelatingPropertyDefinition: 1922,
-  },
-  2007: {
-    expressID: 2007,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0npIZvs$DB$P1sziRAiwdG",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1695],
-    RelatingPropertyDefinition: 1924,
-  },
-  2011: {
-    expressID: 2011,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1hyuCh2pb0YwJ_MfFbOTB1",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1695],
-    RelatingPropertyDefinition: 1926,
-  },
-  2014: {
-    expressID: 2014,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2BCKh55hfDNfBt4AH1QaWc",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1712],
-    RelatingPropertyDefinition: 1928,
-  },
-  2018: {
-    expressID: 2018,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0nAqaSGrr9beWAJhMM3ehN",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1712],
-    RelatingPropertyDefinition: 1930,
-  },
-  2021: {
-    expressID: 2021,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2Z0rmmH$H4GODc5a_GPIfw",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1729],
-    RelatingPropertyDefinition: 1932,
-  },
-  2025: {
-    expressID: 2025,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2PhMEgxur7y8FSguiAo4Kh",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1729],
-    RelatingPropertyDefinition: 1934,
-  },
-  2028: {
-    expressID: 2028,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3eYFDUqqX6qeWDpwun62IJ",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1746],
-    RelatingPropertyDefinition: 1936,
-  },
-  2032: {
-    expressID: 2032,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3HwetME_L8_uBjiKpAnCaL",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1746],
-    RelatingPropertyDefinition: 1938,
-  },
-  2035: {
-    expressID: 2035,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "233e24irD4qw2QqP$yn_VE",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1763],
-    RelatingPropertyDefinition: 1940,
-  },
-  2039: {
-    expressID: 2039,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3ZFlSCdAP5GQAv0tqhfmoc",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1763],
-    RelatingPropertyDefinition: 1942,
-  },
-  2042: {
-    expressID: 2042,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2XXEier65EKPcM8rilR$5O",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1780],
-    RelatingPropertyDefinition: 1944,
-  },
-  2046: {
-    expressID: 2046,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1yKvYoEVjEoh8qVCSaqmAe",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1780],
-    RelatingPropertyDefinition: 1946,
-  },
-  2049: {
-    expressID: 2049,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0l8Xl7$gfAYwSASy9ct2VA",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1797],
-    RelatingPropertyDefinition: 1948,
-  },
-  2053: {
-    expressID: 2053,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3zWxLZyLT4svKYocTANzoA",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1797],
-    RelatingPropertyDefinition: 1950,
-  },
-  2056: {
-    expressID: 2056,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1gUHWyzxz5c8weJrVDhpiL",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1814],
-    RelatingPropertyDefinition: 1952,
-  },
-  2060: {
-    expressID: 2060,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "16lifuqnX2g9UBIA13CXMi",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1814],
-    RelatingPropertyDefinition: 1954,
-  },
-  2063: {
-    expressID: 2063,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "26AVAlrL15Iw5JToKg2$jL",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1831],
-    RelatingPropertyDefinition: 1956,
-  },
-  2067: {
-    expressID: 2067,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3Uqmvk96n4vAEnCSy8J7ZC",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1831],
-    RelatingPropertyDefinition: 1958,
-  },
-  2070: {
-    expressID: 2070,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2aAPkUip16auo_mDvyu64p",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1848],
-    RelatingPropertyDefinition: 1960,
-  },
-  2074: {
-    expressID: 2074,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0rmyJSgvLBLQjNn4kAJcbo",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1848],
-    RelatingPropertyDefinition: 1962,
-  },
-  2077: {
-    expressID: 2077,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0YX_bLnELD9xWkPV78CYz$",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1865],
-    RelatingPropertyDefinition: 1964,
-  },
-  2081: {
-    expressID: 2081,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "07sL4xOSL1twJAcfDuwJkY",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1865],
-    RelatingPropertyDefinition: 1966,
-  },
-  2084: {
-    expressID: 2084,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0gqw4W$HvD4xc5_0PrpOq0",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1882],
-    RelatingPropertyDefinition: 1968,
-  },
-  2088: {
-    expressID: 2088,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3XBikunKbF4gUWgICKPmri",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1882],
-    RelatingPropertyDefinition: 1970,
-  },
-  2091: {
-    expressID: 2091,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  2092: {
-    expressID: 2092,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3y1OqRLzTCQO1s8oSPLJ0b",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2091],
-  },
-  2094: {
-    expressID: 2094,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0uiAkhOEPEnwgrdEctB_V3",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1627],
-    RelatingPropertyDefinition: 2092,
-  },
-  2097: {
-    expressID: 2097,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  2098: {
-    expressID: 2098,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "37x8A6zNP2nv68u7zOHj$$",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2097],
-  },
-  2100: {
-    expressID: 2100,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3tjGxLNOr2WxwvGMGaPg98",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1644],
-    RelatingPropertyDefinition: 2098,
-  },
-  2103: {
-    expressID: 2103,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  2104: {
-    expressID: 2104,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1zRJusH$j7wAvznTCpx5Dt",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2103],
-  },
-  2106: {
-    expressID: 2106,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "05pPUqLAzB7PcWG20jtGWH",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1661],
-    RelatingPropertyDefinition: 2104,
-  },
-  2109: {
-    expressID: 2109,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  2110: {
-    expressID: 2110,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1YgchsFbv10RjaSmb85QlL",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2109],
-  },
-  2112: {
-    expressID: 2112,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1rzAQpRWT5UxuZiFCwp3tV",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1678],
-    RelatingPropertyDefinition: 2110,
-  },
-  2115: {
-    expressID: 2115,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  2116: {
-    expressID: 2116,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "10D$oPgfz69hA9$RO9oPja",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2115],
-  },
-  2118: {
-    expressID: 2118,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3bw$vbXyn439zkrde2JEF5",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1695],
-    RelatingPropertyDefinition: 2116,
-  },
-  2121: {
-    expressID: 2121,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  2122: {
-    expressID: 2122,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "21NeVLa7v0M8C4lI7d5Rg2",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2121],
-  },
-  2124: {
-    expressID: 2124,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3VOaIYbMXFfOCP4a0Je8Im",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1712],
-    RelatingPropertyDefinition: 2122,
-  },
-  2127: {
-    expressID: 2127,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  2128: {
-    expressID: 2128,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "2gUDh_yJXBPwdmYZfW$f7$",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2127],
-  },
-  2130: {
-    expressID: 2130,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0Z_4SRCC55te8Lcg3MDAnn",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1729],
-    RelatingPropertyDefinition: 2128,
-  },
-  2133: {
-    expressID: 2133,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  2134: {
-    expressID: 2134,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "0kugU7ozvDMOzP0RhoiN9Y",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2133],
-  },
-  2136: {
-    expressID: 2136,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0wrPsPEbH8xf2i$mJ6v2DU",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1746],
-    RelatingPropertyDefinition: 2134,
-  },
-  2139: {
-    expressID: 2139,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  2140: {
-    expressID: 2140,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "0jzNAYcSDDxA_Q0NMi7M03",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2139],
-  },
-  2142: {
-    expressID: 2142,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "02$IsEDYnEghXO_xwEIoHv",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1763],
-    RelatingPropertyDefinition: 2140,
-  },
-  2145: {
-    expressID: 2145,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  2146: {
-    expressID: 2146,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1YpHTSB1T35BHD770zRPQe",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2145],
-  },
-  2148: {
-    expressID: 2148,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3LXKOUBhrFvQz2KORZcEu9",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1780],
-    RelatingPropertyDefinition: 2146,
-  },
-  2151: {
-    expressID: 2151,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  2152: {
-    expressID: 2152,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "10U8mg$GvCyuPNfCe7eoID",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2151],
-  },
-  2154: {
-    expressID: 2154,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1AYSLkzPD2$geHFWWxLB_r",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1797],
-    RelatingPropertyDefinition: 2152,
-  },
-  2157: {
-    expressID: 2157,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  2158: {
-    expressID: 2158,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1JuUAYubf7hgpdik1eWSi8",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2157],
-  },
-  2160: {
-    expressID: 2160,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0iGa6SHDnDQv1Uy3__sYKP",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1814],
-    RelatingPropertyDefinition: 2158,
-  },
-  2163: {
-    expressID: 2163,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  2164: {
-    expressID: 2164,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "33eK3Hn0rCHBfjrPeRrqnb",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2163],
-  },
-  2166: {
-    expressID: 2166,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2JzPrAigPBffwGIF1BBM1g",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1831],
-    RelatingPropertyDefinition: 2164,
-  },
-  2169: {
-    expressID: 2169,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  2170: {
-    expressID: 2170,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3Sv$PbKjjF4wPqf2yR18lb",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2169],
-  },
-  2172: {
-    expressID: 2172,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0myrkCXXP5HPoewEAj86Sy",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1848],
-    RelatingPropertyDefinition: 2170,
-  },
-  2175: {
-    expressID: 2175,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  2176: {
-    expressID: 2176,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3DJy86uk5BJwpZ8uZk4T1L",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2175],
-  },
-  2178: {
-    expressID: 2178,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0ZuoAD1BX4pBS66M5pgP74",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1865],
-    RelatingPropertyDefinition: 2176,
-  },
-  2181: {
-    expressID: 2181,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.09162877119961423,
-  },
-  2182: {
-    expressID: 2182,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3zfTLO9n17UvBnMI4ZBKOK",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2181],
-  },
-  2184: {
-    expressID: 2184,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1NXHcA7_L4Bx6V_8t3q$e7",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1882],
-    RelatingPropertyDefinition: 2182,
-  },
-  2216: {
-    expressID: 2216,
-    type: "IFCSLAB",
-    GlobalId: "24bKYviez4sfXQ1fRhnyBR",
-    OwnerHistory: 42,
-    Name: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete:204296",
-    Description: null,
-    ObjectType: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete",
-    ObjectPlacement: 2188,
-    Representation: 2213,
-    Tag: "204296",
-    PredefinedType: "FLOOR",
-  },
-  2219: {
-    expressID: 2219,
-    type: "IFCSLABTYPE",
-    GlobalId: "0$aTDuA2P9Y9lfngJZg7G1",
-    OwnerHistory: 42,
-    Name: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete",
-    Description: null,
-    ApplicableOccurrence: null,
-    HasPropertySets: [2293],
-    RepresentationMaps: null,
-    Tag: "25398",
-    ElementType: null,
-    PredefinedType: "FLOOR",
-  },
-  2239: {
-    expressID: 2239,
-    type: "IFCOPENINGELEMENT",
-    GlobalId: "24bKYviez4sfXQ1fRhnyB8",
-    OwnerHistory: 42,
-    Name: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete :204296:2",
-    Description: null,
-    ObjectType: "Opening",
-    ObjectPlacement: 2237,
-    Representation: 2231,
-    Tag: "204296",
-  },
-  2242: {
-    expressID: 2242,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Depth",
-    Description: "",
-    Unit: null,
-    LengthValue: 510,
-  },
-  2243: {
-    expressID: 2243,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Height",
-    Description: "",
-    Unit: null,
-    LengthValue: 4605.75182015723,
-  },
-  2244: {
-    expressID: 2244,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: "",
-    Unit: null,
-    LengthValue: 1745.14896769708,
-  },
-  2245: {
-    expressID: 2245,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "2lBCxy$xrAYgVrde6EvQgb",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2242, 2243, 2244],
-  },
-  2247: {
-    expressID: 2247,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3iE3hFfwT7FAILQZlK_2Cf",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2239],
-    RelatingPropertyDefinition: 2245,
-  },
-  2251: {
-    expressID: 2251,
-    type: "IFCRELVOIDSELEMENT",
-    GlobalId: "1cCtl7fq1C7PbE7RCZpTVz",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatingBuildingElement: 2216,
-    RelatedOpeningElement: 2239,
-  },
-  2254: {
-    expressID: 2254,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 280,
-    LayerSetDirection: "AXIS3",
-    DirectionSense: "POSITIVE",
-    OffsetFromReferenceLine: 0,
-  },
-  2255: {
-    expressID: 2255,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3gRrQg_Mz7M90vKURNc86j",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [287],
-  },
-  2257: {
-    expressID: 2257,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Steel Bar Joist - VCT on LW Concrete",
-    Unit: null,
-  },
-  2258: {
-    expressID: 2258,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2GtuuDN6L34vLpVqpqWyYb",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfSlab",
-    Description: null,
-    HasProperties: [2257],
-  },
-  2260: {
-    expressID: 2260,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 0.06065895389245601,
-    Unit: null,
-  },
-  2261: {
-    expressID: 2261,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3MthnyBR",
-    OwnerHistory: 42,
-    Name: "Pset_SlabCommon",
-    Description: null,
-    HasProperties: [287, 300, 301, 302, 2260],
-  },
-  2263: {
-    expressID: 2263,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3ni9vRE5v7pOZMCaPcAAdA",
-    OwnerHistory: 42,
-    Name: "Pset_OpeningElementCommon",
-    Description: null,
-    HasProperties: [287],
-  },
-  2265: {
-    expressID: 2265,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0xTsMLtw95580J$wSTWsS_",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [287],
-  },
-  2267: {
-    expressID: 2267,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "12yqFTD6P56u1KWfRknYJO",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2216],
-    RelatingPropertyDefinition: 2255,
-  },
-  2271: {
-    expressID: 2271,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1xNXJL3Wj8g8K5U5xSzCyf",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2216],
-    RelatingPropertyDefinition: 2258,
-  },
-  2274: {
-    expressID: 2274,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3YRAUu3Q95T8xkuhkLNTw$",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2216],
-    RelatingPropertyDefinition: 2261,
-  },
-  2277: {
-    expressID: 2277,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1yYYFo9cr6Zu3heGU1AeJl",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2239],
-    RelatingPropertyDefinition: 2263,
-  },
-  2280: {
-    expressID: 2280,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3SDkACe_f4SwQabg0eMjL4",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2239],
-    RelatingPropertyDefinition: 2265,
-  },
-  2283: {
-    expressID: 2283,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossArea",
-    Description: "",
-    Unit: null,
-    AreaValue: 145.231722652721,
-  },
-  2284: {
-    expressID: 2284,
-    type: "IFCQUANTITYAREA",
-    Name: "NetArea",
-    Description: "",
-    Unit: null,
-    AreaValue: 137.193999618305,
-  },
-  2285: {
-    expressID: 2285,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 69.9689398053354,
-  },
-  2286: {
-    expressID: 2286,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Perimeter",
-    Description: "",
-    Unit: null,
-    LengthValue: 67465.1551370703,
-  },
-  2287: {
-    expressID: 2287,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "26tv5TrxLBtvzoXUh9gEMD",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2283, 2284, 2285, 2286],
-  },
-  2289: {
-    expressID: 2289,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1FL_JlVtn61ems9s_XlUMd",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2216],
-    RelatingPropertyDefinition: 2287,
-  },
-  2292: {
-    expressID: 2292,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 0.06065895389245601,
-    Unit: null,
-  },
-  2293: {
-    expressID: 2293,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1m6MVo8FfAVRBG6x5H3Qle",
-    OwnerHistory: 42,
-    Name: "Pset_SlabCommon",
-    Description: null,
-    HasProperties: [300, 2292],
-  },
-  2341: {
-    expressID: 2341,
-    type: "IFCWALLSTANDARDCASE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyBU",
-    OwnerHistory: 42,
-    Name: "Basiswand:Retaining - 300mm Concrete:204301",
-    Description: null,
-    ObjectType: "Basiswand:Retaining - 300mm Concrete",
-    ObjectPlacement: 2300,
-    Representation: 2337,
-    Tag: "204301",
-  },
-  2344: {
-    expressID: 2344,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Height",
-    Description: null,
-    Unit: null,
-    LengthValue: 3489.99999999982,
-  },
-  2345: {
-    expressID: 2345,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Length",
-    Description: null,
-    Unit: null,
-    LengthValue: 5066.28985623419,
-  },
-  2346: {
-    expressID: 2346,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: null,
-    Unit: null,
-    LengthValue: 300,
-  },
-  2347: {
-    expressID: 2347,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossFootprintArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 1.51988695687026,
-  },
-  2348: {
-    expressID: 2348,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 5.30440547947693,
-  },
-  2349: {
-    expressID: 2349,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 17.6813515982564,
-  },
-  2350: {
-    expressID: 2350,
-    type: "IFCQUANTITYAREA",
-    Name: "NetSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 17.6813515982564,
-  },
-  2351: {
-    expressID: 2351,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 5.30440547947692,
-  },
-  2352: {
-    expressID: 2352,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1t3Rcgyun4NfKgCvM$WGgQ",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2344, 2345, 2346, 2347, 2348, 2349, 2350, 2351],
-  },
-  2354: {
-    expressID: 2354,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2jag7g4Zj329kZpI_n9vl7",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2341],
-    RelatingPropertyDefinition: 2352,
-  },
-  2358: {
-    expressID: 2358,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 414,
-    LayerSetDirection: "AXIS2",
-    DirectionSense: "NEGATIVE",
-    OffsetFromReferenceLine: 150,
-  },
-  2359: {
-    expressID: 2359,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3lT0PEuZ13$wzjgl_J5TPA",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [425],
-  },
-  2361: {
-    expressID: 2361,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Retaining - 300mm Concrete",
-    Unit: null,
-  },
-  2362: {
-    expressID: 2362,
-    type: "IFCPROPERTYSET",
-    GlobalId: "12qrVUZ4v4bhZmTmcCtQg5",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfWall",
-    Description: null,
-    HasProperties: [2361],
-  },
-  2364: {
-    expressID: 2364,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 3.48666666666667,
-    Unit: null,
-  },
-  2365: {
-    expressID: 2365,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3MlhnyBU",
-    OwnerHistory: 42,
-    Name: "Pset_WallCommon",
-    Description: null,
-    HasProperties: [301, 420, 425, 432, 2364],
-  },
-  2367: {
-    expressID: 2367,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2LKo090f5AZf9K_ZnlzC0l",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2341],
-    RelatingPropertyDefinition: 2359,
-  },
-  2370: {
-    expressID: 2370,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3sU4_TnqD2yeo$atg9mRah",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2341],
-    RelatingPropertyDefinition: 2362,
-  },
-  2373: {
-    expressID: 2373,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1WM7qoTOj9d87NrQXAkKSm",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2341],
-    RelatingPropertyDefinition: 2365,
-  },
-  2420: {
-    expressID: 2420,
-    type: "IFCWALLSTANDARDCASE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyBT",
-    OwnerHistory: 42,
-    Name: "Basiswand:Retaining - 300mm Concrete:204302",
-    Description: null,
-    ObjectType: "Basiswand:Retaining - 300mm Concrete",
-    ObjectPlacement: 2379,
-    Representation: 2416,
-    Tag: "204302",
-  },
-  2423: {
-    expressID: 2423,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Height",
-    Description: null,
-    Unit: null,
-    LengthValue: 3489.99999999982,
-  },
-  2424: {
-    expressID: 2424,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Length",
-    Description: null,
-    Unit: null,
-    LengthValue: 28366.2877123009,
-  },
-  2425: {
-    expressID: 2425,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: null,
-    Unit: null,
-    LengthValue: 300,
-  },
-  2426: {
-    expressID: 2426,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossFootprintArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 8.50988631369031,
-  },
-  2427: {
-    expressID: 2427,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 29.699503234777602,
-  },
-  2428: {
-    expressID: 2428,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 98.9983441159253,
-  },
-  2429: {
-    expressID: 2429,
-    type: "IFCQUANTITYAREA",
-    Name: "NetSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 98.9983441159253,
-  },
-  2430: {
-    expressID: 2430,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 29.6995032347775,
-  },
-  2431: {
-    expressID: 2431,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "00oHrYUY578uettD9a4yo1",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2423, 2424, 2425, 2426, 2427, 2428, 2429, 2430],
-  },
-  2433: {
-    expressID: 2433,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1w6ZKWQG50EeIzWu12eZel",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2420],
-    RelatingPropertyDefinition: 2431,
-  },
-  2437: {
-    expressID: 2437,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 414,
-    LayerSetDirection: "AXIS2",
-    DirectionSense: "NEGATIVE",
-    OffsetFromReferenceLine: 150,
-  },
-  2438: {
-    expressID: 2438,
-    type: "IFCPROPERTYSET",
-    GlobalId: "36NnzKjajEbfipSimnmFod",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [425],
-  },
-  2440: {
-    expressID: 2440,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Retaining - 300mm Concrete",
-    Unit: null,
-  },
-  2441: {
-    expressID: 2441,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3OlG3jhhf9ZBFb$b$YQtg9",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfWall",
-    Description: null,
-    HasProperties: [2440],
-  },
-  2443: {
-    expressID: 2443,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 3.48666666666667,
-    Unit: null,
-  },
-  2444: {
-    expressID: 2444,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3MlhnyBT",
-    OwnerHistory: 42,
-    Name: "Pset_WallCommon",
-    Description: null,
-    HasProperties: [301, 420, 425, 432, 2443],
-  },
-  2446: {
-    expressID: 2446,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1M5WiTB6nCdvyj0EDEonUg",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2420],
-    RelatingPropertyDefinition: 2438,
-  },
-  2449: {
-    expressID: 2449,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3pc5h87wn0V9n9fFSBA7L3",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2420],
-    RelatingPropertyDefinition: 2441,
-  },
-  2452: {
-    expressID: 2452,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1q4gfoS6DFQ9o$rInew9kg",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2420],
-    RelatingPropertyDefinition: 2444,
-  },
-  2497: {
-    expressID: 2497,
-    type: "IFCWALLSTANDARDCASE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyBS",
-    OwnerHistory: 42,
-    Name: "Basiswand:Retaining - 300mm Concrete:204303",
-    Description: null,
-    ObjectType: "Basiswand:Retaining - 300mm Concrete",
-    ObjectPlacement: 2458,
-    Representation: 2493,
-    Tag: "204303",
-  },
-  2500: {
-    expressID: 2500,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Height",
-    Description: null,
-    Unit: null,
-    LengthValue: 3489.99999999982,
-  },
-  2501: {
-    expressID: 2501,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Length",
-    Description: null,
-    Unit: null,
-    LengthValue: 4766.28985623419,
-  },
-  2502: {
-    expressID: 2502,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: null,
-    Unit: null,
-    LengthValue: 300,
-  },
-  2503: {
-    expressID: 2503,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossFootprintArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 1.4298869568702601,
-  },
-  2504: {
-    expressID: 2504,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 4.99030547947695,
-  },
-  2505: {
-    expressID: 2505,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 16.6343515982565,
-  },
-  2506: {
-    expressID: 2506,
-    type: "IFCQUANTITYAREA",
-    Name: "NetSideArea",
-    Description: null,
-    Unit: null,
-    AreaValue: 16.6343515982565,
-  },
-  2507: {
-    expressID: 2507,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: null,
-    Unit: null,
-    VolumeValue: 4.99030547947693,
-  },
-  2508: {
-    expressID: 2508,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "0orA704T51i8DQw_qk2RMQ",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [2500, 2501, 2502, 2503, 2504, 2505, 2506, 2507],
-  },
-  2510: {
-    expressID: 2510,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0ix_axUo50$RJccdaPPvhH",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2497],
-    RelatingPropertyDefinition: 2508,
-  },
-  2514: {
-    expressID: 2514,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 414,
-    LayerSetDirection: "AXIS2",
-    DirectionSense: "NEGATIVE",
-    OffsetFromReferenceLine: 150,
-  },
-  2515: {
-    expressID: 2515,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1NnWvxo9b0AesBfe_FnYiy",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [425],
-  },
-  2517: {
-    expressID: 2517,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Retaining - 300mm Concrete",
-    Unit: null,
-  },
-  2518: {
-    expressID: 2518,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3Jf3gIxVTAav0Z092zcmnq",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfWall",
-    Description: null,
-    HasProperties: [2517],
-  },
-  2520: {
-    expressID: 2520,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 3.48666666666667,
-    Unit: null,
-  },
-  2521: {
-    expressID: 2521,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3MlhnyBS",
-    OwnerHistory: 42,
-    Name: "Pset_WallCommon",
-    Description: null,
-    HasProperties: [301, 420, 425, 432, 2520],
-  },
-  2523: {
-    expressID: 2523,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2w6QgbYNvCDuEADn7h6Hld",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2497],
-    RelatingPropertyDefinition: 2515,
-  },
-  2526: {
-    expressID: 2526,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2VCJhuODr2NQ4NSV1Pbe9I",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2497],
-    RelatingPropertyDefinition: 2518,
-  },
-  2529: {
-    expressID: 2529,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0mqGNPT157xw$ZC33n1F$1",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2497],
-    RelatingPropertyDefinition: 2521,
-  },
-  2536: {
-    expressID: 2536,
-    type: "IFCCURTAINWALL",
-    GlobalId: "24bKYviez4sfXQ1fRhnyB3",
-    OwnerHistory: 42,
-    Name: "Fassade:Exterior Glazing:204304",
-    Description: null,
-    ObjectType: "Fassade:Exterior Glazing",
-    ObjectPlacement: 2535,
-    Representation: null,
-    Tag: "204304",
-  },
-  2553: {
-    expressID: 2553,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyB2",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204305",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 2551,
-    Representation: 2541,
-    Tag: "204305",
-  },
-  2570: {
-    expressID: 2570,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyB0",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204307",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 2569,
-    Representation: 2559,
-    Tag: "204307",
-  },
-  2587: {
-    expressID: 2587,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyB6",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204309",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 2586,
-    Representation: 2576,
-    Tag: "204309",
-  },
-  2604: {
-    expressID: 2604,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyB4",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204311",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 2603,
-    Representation: 2593,
-    Tag: "204311",
-  },
-  2621: {
-    expressID: 2621,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyBD",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204318",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 2620,
-    Representation: 2610,
-    Tag: "204318",
-  },
-  2638: {
-    expressID: 2638,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyBp",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204320",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 2637,
-    Representation: 2627,
-    Tag: "204320",
-  },
-  2655: {
-    expressID: 2655,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyBn",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204322",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 2654,
-    Representation: 2644,
-    Tag: "204322",
-  },
-  2672: {
-    expressID: 2672,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyBt",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204324",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 2671,
-    Representation: 2661,
-    Tag: "204324",
-  },
-  2689: {
-    expressID: 2689,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyBr",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204326",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 2688,
-    Representation: 2678,
-    Tag: "204326",
-  },
-  2706: {
-    expressID: 2706,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyBx",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204328",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 2705,
-    Representation: 2695,
-    Tag: "204328",
-  },
-  2723: {
-    expressID: 2723,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyBv",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204330",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 2722,
-    Representation: 2712,
-    Tag: "204330",
-  },
-  2740: {
-    expressID: 2740,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyB$",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204332",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 2739,
-    Representation: 2729,
-    Tag: "204332",
-  },
-  2757: {
-    expressID: 2757,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyBz",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204334",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 2756,
-    Representation: 2746,
-    Tag: "204334",
-  },
-  2774: {
-    expressID: 2774,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyBZ",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204336",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 2773,
-    Representation: 2763,
-    Tag: "204336",
-  },
-  2791: {
-    expressID: 2791,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyBX",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204338",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 2790,
-    Representation: 2780,
-    Tag: "204338",
-  },
-  2808: {
-    expressID: 2808,
-    type: "IFCPLATE",
-    GlobalId: "24bKYviez4sfXQ1fRhnyBd",
-    OwnerHistory: 42,
-    Name: "System Panel:Glazed:204340",
-    Description: null,
-    ObjectType: "System Panel:Glazed",
-    ObjectPlacement: 2807,
-    Representation: 2797,
-    Tag: "204340",
-  },
-  2811: {
-    expressID: 2811,
-    type: "IFCRELAGGREGATES",
-    GlobalId: "24bKYviez4sfXQ0fRhnyB3",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatingObject: 2536,
-    RelatedObjects: [
-      2553, 2570, 2587, 2604, 2621, 2638, 2655, 2672, 2689, 2706, 2723, 2740,
-      2757, 2774, 2791, 2808,
-    ],
-  },
-  2830: {
-    expressID: 2830,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3NdhnyB3",
-    OwnerHistory: 42,
-    Name: "Pset_CurtainWallCommon",
-    Description: null,
-    HasProperties: [420, 966],
-  },
-  2832: {
-    expressID: 2832,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0FInBlReH9QxhywAlGftrk",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [966],
-  },
-  2834: {
-    expressID: 2834,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnyB2",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  2836: {
-    expressID: 2836,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0MPWMPs15Ezuy7b4kfKeUm",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  2838: {
-    expressID: 2838,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnyB0",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  2840: {
-    expressID: 2840,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0FWlA27tn2Awdd_27cGmn3",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  2842: {
-    expressID: 2842,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnyB6",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  2844: {
-    expressID: 2844,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1uyE_rd6TF5uwvslgmGI7C",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  2846: {
-    expressID: 2846,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnyB4",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  2848: {
-    expressID: 2848,
-    type: "IFCPROPERTYSET",
-    GlobalId: "25dfWcFevAhP9vEu2whQ9V",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  2850: {
-    expressID: 2850,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnyBD",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  2852: {
-    expressID: 2852,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1yC7RKXZL6Wf3Rcn$cY5EJ",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  2854: {
-    expressID: 2854,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnyBp",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  2856: {
-    expressID: 2856,
-    type: "IFCPROPERTYSET",
-    GlobalId: "34_A7EBCv07BL1MINsLTTg",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  2858: {
-    expressID: 2858,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnyBn",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  2860: {
-    expressID: 2860,
-    type: "IFCPROPERTYSET",
-    GlobalId: "34c6m1GZD5yhhLkC7dGXPh",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  2862: {
-    expressID: 2862,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnyBt",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  2864: {
-    expressID: 2864,
-    type: "IFCPROPERTYSET",
-    GlobalId: "049lJiNRTBUea4degZlcKK",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  2866: {
-    expressID: 2866,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnyBr",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  2868: {
-    expressID: 2868,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3PKrYfKp10ov2fAKtUavUJ",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  2870: {
-    expressID: 2870,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnyBx",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  2872: {
-    expressID: 2872,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3Q_$WpUTTDt9PoPY1qIwpQ",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  2874: {
-    expressID: 2874,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnyBv",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  2876: {
-    expressID: 2876,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3iqhkkysv3hQPQtVSWIsOg",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  2878: {
-    expressID: 2878,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnyB$",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  2880: {
-    expressID: 2880,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2mOexPwTL8i8lsv$yPqRav",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  2882: {
-    expressID: 2882,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnyBz",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  2884: {
-    expressID: 2884,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3tO61y8JvAnfz2JdeGn0jq",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  2886: {
-    expressID: 2886,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnyBZ",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  2888: {
-    expressID: 2888,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0RxykSyEj68P7GNt$1A5b4",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  2890: {
-    expressID: 2890,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnyBX",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  2892: {
-    expressID: 2892,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1p6t3B77b0qfCNQ_iMosln",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  2894: {
-    expressID: 2894,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3M7hnyBd",
-    OwnerHistory: 42,
-    Name: "Pset_PlateCommon",
-    Description: null,
-    HasProperties: [300, 971],
-  },
-  2896: {
-    expressID: 2896,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0_dI2UjRX9k9r9OT2ilT0e",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [971],
-  },
-  2898: {
-    expressID: 2898,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0BIA5njln8ZRR3jwB2fNW3",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2536],
-    RelatingPropertyDefinition: 2830,
-  },
-  2902: {
-    expressID: 2902,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "05tcxvdlX98vks47uTXyWU",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2536],
-    RelatingPropertyDefinition: 2832,
-  },
-  2905: {
-    expressID: 2905,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "34GGFkk0jFmu6nvGOsKl3A",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2553],
-    RelatingPropertyDefinition: 2834,
-  },
-  2909: {
-    expressID: 2909,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2YJJqNmpv8Ih$Mu1WnAP1d",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2553],
-    RelatingPropertyDefinition: 2836,
-  },
-  2912: {
-    expressID: 2912,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1YvZGzxoL0mvFGnzfHCGTI",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2570],
-    RelatingPropertyDefinition: 2838,
-  },
-  2916: {
-    expressID: 2916,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0rvrXM8WH2DxFtR7ltCeud",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2570],
-    RelatingPropertyDefinition: 2840,
-  },
-  2919: {
-    expressID: 2919,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "109fRM0lXBEgO1SAJEv7QD",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2587],
-    RelatingPropertyDefinition: 2842,
-  },
-  2923: {
-    expressID: 2923,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "08YHg65u11W9hi_RWSt8u0",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2587],
-    RelatingPropertyDefinition: 2844,
-  },
-  2926: {
-    expressID: 2926,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0k0u2o4KfCQAD3m$jiz9pS",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2604],
-    RelatingPropertyDefinition: 2846,
-  },
-  2930: {
-    expressID: 2930,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2a$LQzFD1A5gnrTGLElTML",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2604],
-    RelatingPropertyDefinition: 2848,
-  },
-  2933: {
-    expressID: 2933,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0mfrdFYP5DXBrsWToS6dWS",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2621],
-    RelatingPropertyDefinition: 2850,
-  },
-  2937: {
-    expressID: 2937,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2QB4zr42r7aPHpTJN$GSZB",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2621],
-    RelatingPropertyDefinition: 2852,
-  },
-  2940: {
-    expressID: 2940,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3urmbfoPvExeyGXTkGvU_Q",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2638],
-    RelatingPropertyDefinition: 2854,
-  },
-  2944: {
-    expressID: 2944,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "02in0aVyHDaOLrNIRcZGks",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2638],
-    RelatingPropertyDefinition: 2856,
-  },
-  2947: {
-    expressID: 2947,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2KDoBEonP7WREtu9daC1f9",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2655],
-    RelatingPropertyDefinition: 2858,
-  },
-  2951: {
-    expressID: 2951,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "08uRWEwzT9tPnSL80o6ad3",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2655],
-    RelatingPropertyDefinition: 2860,
-  },
-  2954: {
-    expressID: 2954,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2xEqDwMx9C4x$XwfJdWKA3",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2672],
-    RelatingPropertyDefinition: 2862,
-  },
-  2958: {
-    expressID: 2958,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3L3JkRjMb1ePmXv8rMmPed",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2672],
-    RelatingPropertyDefinition: 2864,
-  },
-  2961: {
-    expressID: 2961,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3D$$OYeOT6$Opwh9hibewl",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2689],
-    RelatingPropertyDefinition: 2866,
-  },
-  2965: {
-    expressID: 2965,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "31VnOb$rPA$QH6f9KqHqrZ",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2689],
-    RelatingPropertyDefinition: 2868,
-  },
-  2968: {
-    expressID: 2968,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0M8vY73bbA0hClpW2eujXh",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2706],
-    RelatingPropertyDefinition: 2870,
-  },
-  2972: {
-    expressID: 2972,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "27rX1lI$vBwhR7d9xv46mu",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2706],
-    RelatingPropertyDefinition: 2872,
-  },
-  2975: {
-    expressID: 2975,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0YokvoROfECA4KelqDY1nE",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2723],
-    RelatingPropertyDefinition: 2874,
-  },
-  2979: {
-    expressID: 2979,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0YGxmQqgL7CuIOiYYVFJdU",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2723],
-    RelatingPropertyDefinition: 2876,
-  },
-  2982: {
-    expressID: 2982,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3YV8ircBj9GRxDpVW81DOU",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2740],
-    RelatingPropertyDefinition: 2878,
-  },
-  2986: {
-    expressID: 2986,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1u5urIHhv1Huz7uO9ljWbX",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2740],
-    RelatingPropertyDefinition: 2880,
-  },
-  2989: {
-    expressID: 2989,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3SHZ39679BZO8mpnNoyCiU",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2757],
-    RelatingPropertyDefinition: 2882,
-  },
-  2993: {
-    expressID: 2993,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0s9EuiVO16zPhiMIYIQf95",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2757],
-    RelatingPropertyDefinition: 2884,
-  },
-  2996: {
-    expressID: 2996,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2d8AGRlLrE9xYFXHcFs1hE",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2774],
-    RelatingPropertyDefinition: 2886,
-  },
-  3000: {
-    expressID: 3000,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1B8l2LEYX3FwKM5Bbqd2e0",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2774],
-    RelatingPropertyDefinition: 2888,
-  },
-  3003: {
-    expressID: 3003,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1oKFOdn79AVBhWIsUv$d0Q",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2791],
-    RelatingPropertyDefinition: 2890,
-  },
-  3007: {
-    expressID: 3007,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3loEuxK5f8lOOjq9SMy6Ca",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2791],
-    RelatingPropertyDefinition: 2892,
-  },
-  3010: {
-    expressID: 3010,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1HDTndCe97Xxycc9lW_NUG",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2808],
-    RelatingPropertyDefinition: 2894,
-  },
-  3014: {
-    expressID: 3014,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "09mRFOva99K8Fl0YpcHVfD",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2808],
-    RelatingPropertyDefinition: 2896,
-  },
-  3017: {
-    expressID: 3017,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  3018: {
-    expressID: 3018,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1TsLjkSOD0m8elyytITvHp",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [3017],
-  },
-  3020: {
-    expressID: 3020,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1Fxkw$zcHC9xdCZT_RiVcm",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2553],
-    RelatingPropertyDefinition: 3018,
-  },
-  3023: {
-    expressID: 3023,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  3024: {
-    expressID: 3024,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "2TdLAMJg94WAtoRJJjSX0Q",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [3023],
-  },
-  3026: {
-    expressID: 3026,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "38zdhW5$17Cud2ttMbnl3U",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2570],
-    RelatingPropertyDefinition: 3024,
-  },
-  3029: {
-    expressID: 3029,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  3030: {
-    expressID: 3030,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "05PUyEq_91KOswA6ItPvck",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [3029],
-  },
-  3032: {
-    expressID: 3032,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0mNdM3tyX5GQXROYTN5vr6",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2587],
-    RelatingPropertyDefinition: 3030,
-  },
-  3035: {
-    expressID: 3035,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  3036: {
-    expressID: 3036,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3CT7yIFlDFygMMe2w807cS",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [3035],
-  },
-  3038: {
-    expressID: 3038,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "36WjsBc9z078JS8bQdSpTZ",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2604],
-    RelatingPropertyDefinition: 3036,
-  },
-  3041: {
-    expressID: 3041,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  3042: {
-    expressID: 3042,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3QEjHpBBb1y8FE8MGCNHZK",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [3041],
-  },
-  3044: {
-    expressID: 3044,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2u$W3rFWD2YhD1_BdlkdC0",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2621],
-    RelatingPropertyDefinition: 3042,
-  },
-  3047: {
-    expressID: 3047,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  3048: {
-    expressID: 3048,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "2w9_SzoRP0$BipdOOpq6o8",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [3047],
-  },
-  3050: {
-    expressID: 3050,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3WJ$62B1P9kOcPXYAuVp4f",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2638],
-    RelatingPropertyDefinition: 3048,
-  },
-  3053: {
-    expressID: 3053,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  3054: {
-    expressID: 3054,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "0GtBvBgJ9AigrTNcDdIn9j",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [3053],
-  },
-  3056: {
-    expressID: 3056,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1Upnp2tIj25OvkU7nyyVVK",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2655],
-    RelatingPropertyDefinition: 3054,
-  },
-  3059: {
-    expressID: 3059,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  3060: {
-    expressID: 3060,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1egToLUaX2pfkyqhxzGaek",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [3059],
-  },
-  3062: {
-    expressID: 3062,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "38vErd_1b4F8Ex8c0RXHuZ",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2672],
-    RelatingPropertyDefinition: 3060,
-  },
-  3065: {
-    expressID: 3065,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  3066: {
-    expressID: 3066,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "0TMTE0uJT9ch$4SkacycZ9",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [3065],
-  },
-  3068: {
-    expressID: 3068,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3FPLUWBCXDix4HLY8jee2j",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2689],
-    RelatingPropertyDefinition: 3066,
-  },
-  3071: {
-    expressID: 3071,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  3072: {
-    expressID: 3072,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "0pICnX6KX8C9b4C5a2w44l",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [3071],
-  },
-  3074: {
-    expressID: 3074,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2se9pP0hfECgbtB2PfGxch",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2706],
-    RelatingPropertyDefinition: 3072,
-  },
-  3077: {
-    expressID: 3077,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  3078: {
-    expressID: 3078,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1aIdTyCpbAgRfhsXgkPqdO",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [3077],
-  },
-  3080: {
-    expressID: 3080,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2_pjz6Hfz2igfxmrgCNmSW",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2723],
-    RelatingPropertyDefinition: 3078,
-  },
-  3083: {
-    expressID: 3083,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  3084: {
-    expressID: 3084,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "0ulvwmtOH328tsISPUi99P",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [3083],
-  },
-  3086: {
-    expressID: 3086,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2bIXjqsJz03gFvkK$Sq6QN",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2740],
-    RelatingPropertyDefinition: 3084,
-  },
-  3089: {
-    expressID: 3089,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  3090: {
-    expressID: 3090,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3FuZMJrrj3RgsKHWG28uEn",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [3089],
-  },
-  3092: {
-    expressID: 3092,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "011zPUD$f2Guavr2wBrfO$",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2757],
-    RelatingPropertyDefinition: 3090,
-  },
-  3095: {
-    expressID: 3095,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  3096: {
-    expressID: 3096,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "1QqWzkZkf0VOtLlF7h6yk5",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [3095],
-  },
-  3098: {
-    expressID: 3098,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2bNCyZKofDgw7nlefNVAVd",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2774],
-    RelatingPropertyDefinition: 3096,
-  },
-  3101: {
-    expressID: 3101,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.18300000003047903,
-  },
-  3102: {
-    expressID: 3102,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "04fl_STgD5Nu4VIYrPR04j",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [3101],
-  },
-  3104: {
-    expressID: 3104,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2ZgX8nksD8AvN_cnC1cw0o",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2791],
-    RelatingPropertyDefinition: 3102,
-  },
-  3107: {
-    expressID: 3107,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 0.09162877119961423,
-  },
-  3108: {
-    expressID: 3108,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "2ldRPgvdX8XOrkZ69cr9s5",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [3107],
-  },
-  3110: {
-    expressID: 3110,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0nAe3Tl6b3ru9BZ94GiBxa",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2808],
-    RelatingPropertyDefinition: 3108,
-  },
-  3132: {
-    expressID: 3132,
-    type: "IFCSLAB",
-    GlobalId: "24bKYviez4sfXQ1fRhny9U",
-    OwnerHistory: 42,
-    Name: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete:204429",
-    Description: null,
-    ObjectType: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete",
-    ObjectPlacement: 3114,
-    Representation: 3129,
-    Tag: "204429",
-    PredefinedType: "FLOOR",
-  },
-  3135: {
-    expressID: 3135,
-    type: "IFCSLABTYPE",
-    GlobalId: "3PGmJeixD4YQjn4kVJ89uQ",
-    OwnerHistory: 42,
-    Name: "Geschossdecke:Steel Bar Joist - VCT on LW Concrete",
-    Description: null,
-    ApplicableOccurrence: null,
-    HasPropertySets: [3167],
-    RepresentationMaps: null,
-    Tag: "25398",
-    ElementType: null,
-    PredefinedType: "FLOOR",
-  },
-  3136: {
-    expressID: 3136,
-    type: "IFCMATERIALLAYERSETUSAGE",
-    ForLayerSet: 280,
-    LayerSetDirection: "AXIS3",
-    DirectionSense: "POSITIVE",
-    OffsetFromReferenceLine: 0,
-  },
-  3137: {
-    expressID: 3137,
-    type: "IFCPROPERTYSET",
-    GlobalId: "02jutPzR56vfBLSOgdR5YL",
-    OwnerHistory: 42,
-    Name: "Pset_QuantityTakeOff",
-    Description: null,
-    HasProperties: [287],
-  },
-  3139: {
-    expressID: 3139,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Reference",
-    Description: null,
-    NominalValue: "Steel Bar Joist - VCT on LW Concrete",
-    Unit: null,
-  },
-  3140: {
-    expressID: 3140,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3orCXq1W5FV83Zi$xCYkms",
-    OwnerHistory: 42,
-    Name: "Pset_ReinforcementBarPitchOfSlab",
-    Description: null,
-    HasProperties: [3139],
-  },
-  3142: {
-    expressID: 3142,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 0.06065895389245601,
-    Unit: null,
-  },
-  3143: {
-    expressID: 3143,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3Mthny9U",
-    OwnerHistory: 42,
-    Name: "Pset_SlabCommon",
-    Description: null,
-    HasProperties: [287, 300, 301, 302, 3142],
-  },
-  3145: {
-    expressID: 3145,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1oku0d4XnDrQn5pe4Y9sCv",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [3132],
-    RelatingPropertyDefinition: 3137,
-  },
-  3149: {
-    expressID: 3149,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2dtiClg$9FZwAIjcDIM8Ae",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [3132],
-    RelatingPropertyDefinition: 3140,
-  },
-  3152: {
-    expressID: 3152,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3QPc7FTUP3bvXVeB1ij3MV",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [3132],
-    RelatingPropertyDefinition: 3143,
-  },
-  3155: {
-    expressID: 3155,
-    type: "IFCQUANTITYAREA",
-    Name: "GrossArea",
-    Description: "",
-    Unit: null,
-    AreaValue: 145.231722652721,
-  },
-  3156: {
-    expressID: 3156,
-    type: "IFCQUANTITYAREA",
-    Name: "NetArea",
-    Description: "",
-    Unit: null,
-    AreaValue: 145.231722652721,
-  },
-  3157: {
-    expressID: 3157,
-    type: "IFCQUANTITYVOLUME",
-    Name: "GrossVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 74.0681785528879,
-  },
-  3158: {
-    expressID: 3158,
-    type: "IFCQUANTITYVOLUME",
-    Name: "NetVolume",
-    Description: "",
-    Unit: null,
-    VolumeValue: 74.0681785528879,
-  },
-  3159: {
-    expressID: 3159,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Perimeter",
-    Description: "",
-    Unit: null,
-    LengthValue: 67465.1551370703,
-  },
-  3160: {
-    expressID: 3160,
-    type: "IFCQUANTITYLENGTH",
-    Name: "Width",
-    Description: "",
-    Unit: null,
-    LengthValue: 510.000000000001,
-  },
-  3161: {
-    expressID: 3161,
-    type: "IFCELEMENTQUANTITY",
-    GlobalId: "3Riph3kyz2Cxtbf0BUvH0Q",
-    OwnerHistory: 42,
-    Name: "BaseQuantities",
-    Description: null,
-    MethodOfMeasurement: null,
-    Quantities: [3155, 3156, 3157, 3158, 3159, 3160],
-  },
-  3163: {
-    expressID: 3163,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "2N4oy8AWDCFPEneiqUWvYg",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [3132],
-    RelatingPropertyDefinition: 3161,
-  },
-  3166: {
-    expressID: 3166,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "ThermalTransmittance",
-    Description: null,
-    NominalValue: 0.06065895389245601,
-    Unit: null,
-  },
-  3167: {
-    expressID: 3167,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0yLpAt7uf0iOurLZGlZTIC",
-    OwnerHistory: 42,
-    Name: "Pset_SlabCommon",
-    Description: null,
-    HasProperties: [300, 3166],
-  },
-  3172: {
-    expressID: 3172,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Name",
-    Description: null,
-    NominalValue: "Level 1",
-    Unit: null,
-  },
-  3173: {
-    expressID: 3173,
-    type: "IFCPROPERTYSET",
-    GlobalId: "0UlMapPsr8WQb5DC1Sx_YV",
-    OwnerHistory: 42,
-    Name: "Pset_AirSideSystemInformation",
-    Description: null,
-    HasProperties: [3172],
-  },
-  3175: {
-    expressID: 3175,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "AboveGround",
-    Description: null,
-    NominalValue: "U",
-    Unit: null,
-  },
-  3176: {
-    expressID: 3176,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1vK3KfqgSHqv5Y2_o6FnIY",
-    OwnerHistory: 42,
-    Name: "Pset_BuildingStoreyCommon",
-    Description: null,
-    HasProperties: [3175],
-  },
-  3178: {
-    expressID: 3178,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Name",
-    Description: null,
-    NominalValue: "Level 1",
-    Unit: null,
-  },
-  3179: {
-    expressID: 3179,
-    type: "IFCPROPERTYSET",
-    GlobalId: "2ybxfGcSj4_wyHzzXnIr4l",
-    OwnerHistory: 42,
-    Name: "Pset_ProductRequirements",
-    Description: null,
-    HasProperties: [3178],
-  },
-  3181: {
-    expressID: 3181,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1$nspnMKb2Nufoxo2SMdrN",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [141],
-    RelatingPropertyDefinition: 3173,
-  },
-  3185: {
-    expressID: 3185,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0vU5od_MPCaOG13ilj7Ue_",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [141],
-    RelatingPropertyDefinition: 3176,
-  },
-  3188: {
-    expressID: 3188,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0X7grwzlD8cPOS7MvZLLUb",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [141],
-    RelatingPropertyDefinition: 3179,
-  },
-  3191: {
-    expressID: 3191,
-    type: "IFCRELCONTAINEDINSPATIALSTRUCTURE",
-    GlobalId: "1vK3KfqgSHqv5Y0066FnIY",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedElements: [199, 385, 488, 565, 602],
-    RelatingStructure: 141,
-  },
-  3199: {
-    expressID: 3199,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Name",
-    Description: null,
-    NominalValue: "Level 2",
-    Unit: null,
-  },
-  3200: {
-    expressID: 3200,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1xUQLrRv1ET9jHHgYtV_6S",
-    OwnerHistory: 42,
-    Name: "Pset_AirSideSystemInformation",
-    Description: null,
-    HasProperties: [3199],
-  },
-  3202: {
-    expressID: 3202,
-    type: "IFCPROPERTYSET",
-    GlobalId: "14lOI8vZuHqv6B2_o6Fnc4",
-    OwnerHistory: 42,
-    Name: "Pset_BuildingStoreyCommon",
-    Description: null,
-    HasProperties: [3175],
-  },
-  3204: {
-    expressID: 3204,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Name",
-    Description: null,
-    NominalValue: "Level 2",
-    Unit: null,
-  },
-  3205: {
-    expressID: 3205,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3IMEV0N7jFTx68jGaNpFb9",
-    OwnerHistory: 42,
-    Name: "Pset_ProductRequirements",
-    Description: null,
-    HasProperties: [3204],
-  },
-  3207: {
-    expressID: 3207,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3SQ6C4MR96kQUT5uluJyu7",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [147],
-    RelatingPropertyDefinition: 3200,
-  },
-  3211: {
-    expressID: 3211,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0TACnsIQnA$wEOmehsNPtH",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [147],
-    RelatingPropertyDefinition: 3202,
-  },
-  3214: {
-    expressID: 3214,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3reJH3HAnFtRPm3KBbPd0v",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [147],
-    RelatingPropertyDefinition: 3205,
-  },
-  3217: {
-    expressID: 3217,
-    type: "IFCRELCONTAINEDINSPATIALSTRUCTURE",
-    GlobalId: "14lOI8vZuHqv6B0066Fnc4",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedElements: [1288, 1415, 1494, 1571, 1610],
-    RelatingStructure: 147,
-  },
-  3225: {
-    expressID: 3225,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Name",
-    Description: null,
-    NominalValue: "Level 3",
-    Unit: null,
-  },
-  3226: {
-    expressID: 3226,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1wxDzgJAXA08LWE2vIHXsw",
-    OwnerHistory: 42,
-    Name: "Pset_AirSideSystemInformation",
-    Description: null,
-    HasProperties: [3225],
-  },
-  3228: {
-    expressID: 3228,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3Nhhny7v",
-    OwnerHistory: 42,
-    Name: "Pset_BuildingStoreyCommon",
-    Description: null,
-    HasProperties: [3175],
-  },
-  3230: {
-    expressID: 3230,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Name",
-    Description: null,
-    NominalValue: "Level 3",
-    Unit: null,
-  },
-  3231: {
-    expressID: 3231,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1uq8iqXRL7cQpYLarDAeGt",
-    OwnerHistory: 42,
-    Name: "Pset_ProductRequirements",
-    Description: null,
-    HasProperties: [3230],
-  },
-  3233: {
-    expressID: 3233,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3$KQ01UGzEOPAWEbDY8zPx",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [153],
-    RelatingPropertyDefinition: 3226,
-  },
-  3237: {
-    expressID: 3237,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "3sJ$1fxu97DO0qCH_sMFWT",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [153],
-    RelatingPropertyDefinition: 3228,
-  },
-  3240: {
-    expressID: 3240,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0_0hR2mvL6AhXusTmZknLU",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [153],
-    RelatingPropertyDefinition: 3231,
-  },
-  3243: {
-    expressID: 3243,
-    type: "IFCRELCONTAINEDINSPATIALSTRUCTURE",
-    GlobalId: "24bKYviez4sfXQ1fVhny7v",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedElements: [2216, 2341, 2420, 2497, 2536],
-    RelatingStructure: 153,
-  },
-  3251: {
-    expressID: 3251,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Name",
-    Description: null,
-    NominalValue: "Level 4",
-    Unit: null,
-  },
-  3252: {
-    expressID: 3252,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3iH9s__5n6lRBhOZP5ThJh",
-    OwnerHistory: 42,
-    Name: "Pset_AirSideSystemInformation",
-    Description: null,
-    HasProperties: [3251],
-  },
-  3254: {
-    expressID: 3254,
-    type: "IFCPROPERTYSET",
-    GlobalId: "24bKYviez4sfXQ3NhhnyAc",
-    OwnerHistory: 42,
-    Name: "Pset_BuildingStoreyCommon",
-    Description: null,
-    HasProperties: [3175],
-  },
-  3256: {
-    expressID: 3256,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "Name",
-    Description: null,
-    NominalValue: "Level 4",
-    Unit: null,
-  },
-  3257: {
-    expressID: 3257,
-    type: "IFCPROPERTYSET",
-    GlobalId: "1PQB9fO7P6AfSLEMWShg72",
-    OwnerHistory: 42,
-    Name: "Pset_ProductRequirements",
-    Description: null,
-    HasProperties: [3256],
-  },
-  3259: {
-    expressID: 3259,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "0YvZ_$9MPFehHQZrgxsiKU",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [159],
-    RelatingPropertyDefinition: 3252,
-  },
-  3263: {
-    expressID: 3263,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "03QReX$GzEm9FvtpjGcVqE",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [159],
-    RelatingPropertyDefinition: 3254,
-  },
-  3266: {
-    expressID: 3266,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "1YzFdDRdz5fx5$AI8ew0EI",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [159],
-    RelatingPropertyDefinition: 3257,
-  },
-  3269: {
-    expressID: 3269,
-    type: "IFCRELCONTAINEDINSPATIALSTRUCTURE",
-    GlobalId: "24bKYviez4sfXQ1fVhnyAc",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedElements: [3132],
-    RelatingStructure: 159,
-  },
-  3273: {
-    expressID: 3273,
-    type: "IFCRELAGGREGATES",
-    GlobalId: "3pM_ppZCz85xOodM14exVT",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatingObject: 121,
-    RelatedObjects: [163],
-  },
-  3277: {
-    expressID: 3277,
-    type: "IFCRELAGGREGATES",
-    GlobalId: "1BjUU4Md9CX9AHQk4ThALI",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatingObject: 163,
-    RelatedObjects: [132],
-  },
-  3281: {
-    expressID: 3281,
-    type: "IFCRELAGGREGATES",
-    GlobalId: "3ioAY2VOL1QOEtMGyzl4Rh",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatingObject: 132,
-    RelatedObjects: [141, 147, 153, 159],
-  },
-  3288: {
-    expressID: 3288,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "NumberOfStoreys",
-    Description: null,
-    NominalValue: 4,
-    Unit: null,
-  },
-  3289: {
-    expressID: 3289,
-    type: "IFCPROPERTYSINGLEVALUE",
-    Name: "IsLandmarked",
-    Description: null,
-    NominalValue: "U",
-    Unit: null,
-  },
-  3290: {
-    expressID: 3290,
-    type: "IFCPROPERTYSET",
-    GlobalId: "3ioAY2VOL1QOEtKkSzl4Rh",
-    OwnerHistory: 42,
-    Name: "Pset_BuildingCommon",
-    Description: null,
-    HasProperties: [3288, 3289],
-  },
-  3292: {
-    expressID: 3292,
-    type: "IFCRELDEFINESBYPROPERTIES",
-    GlobalId: "06D2gNa_nDH9Jp$ciQpw48",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [132],
-    RelatingPropertyDefinition: 3290,
-  },
-  3296: {
-    expressID: 3296,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "3IZ8QQTO1A1As3fxvRkmyc",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [199],
-    RelatingMaterial: 286,
-  },
-  3299: {
-    expressID: 3299,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "1krDbT6g9B7u3FB_gzKPUx",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [385],
-    RelatingMaterial: 417,
-  },
-  3302: {
-    expressID: 3302,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "3eeRti9pr6J9LKRZy0xPQj",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [418],
-    RelatingMaterial: 414,
-  },
-  3305: {
-    expressID: 3305,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "3mfzdeoCb6i8jeR7Zf1s5d",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [488],
-    RelatingMaterial: 505,
-  },
-  3308: {
-    expressID: 3308,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "0YeoTSEtbBlPX3ORchs6Te",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [565],
-    RelatingMaterial: 582,
-  },
-  3311: {
-    expressID: 3311,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "28Gv7aFFb1Iv78PwR$3qqS",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1288],
-    RelatingMaterial: 1328,
-  },
-  3314: {
-    expressID: 3314,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "3WVGvkpSP1TeapfCJvrcG7",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1415],
-    RelatingMaterial: 1432,
-  },
-  3317: {
-    expressID: 3317,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "0YbvKA_b9768cmSPoFRKUu",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1494],
-    RelatingMaterial: 1511,
-  },
-  3320: {
-    expressID: 3320,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "0p9p35hRv2WurzN6nLqPfw",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1571],
-    RelatingMaterial: 1588,
-  },
-  3323: {
-    expressID: 3323,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "0HlW_22Kr5xBz7iwe0zeMj",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2216],
-    RelatingMaterial: 2254,
-  },
-  3326: {
-    expressID: 3326,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "0sM9d0OXX3Rez1Ylt5eaTx",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2341],
-    RelatingMaterial: 2358,
-  },
-  3329: {
-    expressID: 3329,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "34bCnCp2P8RQR1cIaPLKlC",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2420],
-    RelatingMaterial: 2437,
-  },
-  3332: {
-    expressID: 3332,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "3IGaf$u$fFguws6F0RySy9",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2497],
-    RelatingMaterial: 2514,
-  },
-  3335: {
-    expressID: 3335,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "19jzqhRGL8uxlwCcoucmO6",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [3132],
-    RelatingMaterial: 3136,
-  },
-  3338: {
-    expressID: 3338,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "2kaekOU8j7cRZVIYArbAby",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [214, 1291, 2219, 3135],
-    RelatingMaterial: 280,
-  },
-  3344: {
-    expressID: 3344,
-    type: "IFCRELASSOCIATESMATERIAL",
-    GlobalId: "0SlrpypNvBN81PvStr1BE0",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [
-      629, 659, 680, 697, 714, 731, 748, 765, 782, 799, 816, 833, 850, 867, 884,
-      901, 922, 939, 1627, 1644, 1661, 1678, 1695, 1712, 1729, 1746, 1763, 1780,
-      1797, 1814, 1831, 1848, 1865, 1882, 2553, 2570, 2587, 2604, 2621, 2638,
-      2655, 2672, 2689, 2706, 2723, 2740, 2757, 2774, 2791, 2808,
-    ],
-    RelatingMaterial: 631,
-  },
-  3396: {
-    expressID: 3396,
-    type: "IFCRELDEFINESBYTYPE",
-    GlobalId: "3xGmIKw6D6PPH_FLHUA1Pa",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [199],
-    RelatingType: 214,
-  },
-  3399: {
-    expressID: 3399,
-    type: "IFCRELDEFINESBYTYPE",
-    GlobalId: "2sUQh0ukz2fRWS$NmIFmQY",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [385, 488, 565, 1415, 1494, 1571, 2341, 2420, 2497],
-    RelatingType: 418,
-  },
-  3402: {
-    expressID: 3402,
-    type: "IFCRELDEFINESBYTYPE",
-    GlobalId: "1w41O1Dj1FxO4JVSxIhIaV",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [
-      659, 680, 697, 714, 731, 748, 765, 782, 799, 816, 833, 850, 867, 884, 901,
-      1627, 1644, 1661, 1678, 1695, 1712, 1729, 1746, 1763, 1780, 1797, 1814,
-      1831, 1848, 1865, 2553, 2570, 2587, 2604, 2621, 2638, 2655, 2672, 2689,
-      2706, 2723, 2740, 2757, 2774, 2791,
-    ],
-    RelatingType: 629,
-  },
-  3405: {
-    expressID: 3405,
-    type: "IFCRELDEFINESBYTYPE",
-    GlobalId: "2KJwfqojPEu9h87B2q1UJT",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [939, 1882, 2808],
-    RelatingType: 922,
-  },
-  3408: {
-    expressID: 3408,
-    type: "IFCRELDEFINESBYTYPE",
-    GlobalId: "2Ih0G1Ud54Nun6IKZDU6nF",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [602, 1610, 2536],
-    RelatingType: 965,
-  },
-  3411: {
-    expressID: 3411,
-    type: "IFCRELDEFINESBYTYPE",
-    GlobalId: "2LIN$HGU1ATf2aE0Pr8XMR",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [1288],
-    RelatingType: 1291,
-  },
-  3414: {
-    expressID: 3414,
-    type: "IFCRELDEFINESBYTYPE",
-    GlobalId: "2ua399bp16QO5FWYkRVUBJ",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [2216],
-    RelatingType: 2219,
-  },
-  3417: {
-    expressID: 3417,
-    type: "IFCRELDEFINESBYTYPE",
-    GlobalId: "2g8wB4VGT3XwYoYyRnHf5X",
-    OwnerHistory: 42,
-    Name: null,
-    Description: null,
-    RelatedObjects: [3132],
-    RelatingType: 3135,
-  },
-  3420: {
-    expressID: 3420,
-    type: "IFCRELCONNECTSPATHELEMENTS",
-    GlobalId: "1LtIVE5eP7fPRx3TPTKce3",
-    OwnerHistory: 42,
-    Name: "24bKYviez4sfXQ1fRhnyTy|24bKYviez4sfXQ1fRhnyTd",
-    Description: "Structural",
-    ConnectionGeometry: null,
-    RelatingElement: 385,
-    RelatedElement: 488,
-    RelatingPriorities: [],
-    RelatedPriorities: [],
-    RelatedConnectionType: "ATSTART",
-    RelatingConnectionType: "ATEND",
-  },
-  3425: {
-    expressID: 3425,
-    type: "IFCRELCONNECTSPATHELEMENTS",
-    GlobalId: "1rioxBJefEfPm5IMdF1uv_",
-    OwnerHistory: 42,
-    Name: "24bKYviez4sfXQ1fRhnyTd|24bKYviez4sfXQ1fRhnyTg",
-    Description: "Structural",
-    ConnectionGeometry: null,
-    RelatingElement: 488,
-    RelatedElement: 565,
-    RelatingPriorities: [],
-    RelatedPriorities: [],
-    RelatedConnectionType: "ATSTART",
-    RelatingConnectionType: "ATEND",
-  },
-  3430: {
-    expressID: 3430,
-    type: "IFCRELCONNECTSPATHELEMENTS",
-    GlobalId: "1zBALk5zf0EQBbGVb91VMB",
-    OwnerHistory: 42,
-    Name: "24bKYviez4sfXQ1fRhny45|24bKYviez4sfXQ1fRhny44",
-    Description: "Structural",
-    ConnectionGeometry: null,
-    RelatingElement: 1415,
-    RelatedElement: 1494,
-    RelatingPriorities: [],
-    RelatedPriorities: [],
-    RelatedConnectionType: "ATSTART",
-    RelatingConnectionType: "ATEND",
-  },
-  3435: {
-    expressID: 3435,
-    type: "IFCRELCONNECTSPATHELEMENTS",
-    GlobalId: "2hoaOCeV11jRD6aQKrc1kI",
-    OwnerHistory: 42,
-    Name: "24bKYviez4sfXQ1fRhny44|24bKYviez4sfXQ1fRhny4B",
-    Description: "Structural",
-    ConnectionGeometry: null,
-    RelatingElement: 1494,
-    RelatedElement: 1571,
-    RelatingPriorities: [],
-    RelatedPriorities: [],
-    RelatedConnectionType: "ATSTART",
-    RelatingConnectionType: "ATEND",
-  },
-  3440: {
-    expressID: 3440,
-    type: "IFCRELCONNECTSPATHELEMENTS",
-    GlobalId: "2ORU_T46r0Ku1bTq4FCtG6",
-    OwnerHistory: 42,
-    Name: "24bKYviez4sfXQ1fRhnyBU|24bKYviez4sfXQ1fRhnyBT",
-    Description: "Structural",
-    ConnectionGeometry: null,
-    RelatingElement: 2341,
-    RelatedElement: 2420,
-    RelatingPriorities: [],
-    RelatedPriorities: [],
-    RelatedConnectionType: "ATSTART",
-    RelatingConnectionType: "ATEND",
-  },
-  3445: {
-    expressID: 3445,
-    type: "IFCRELCONNECTSPATHELEMENTS",
-    GlobalId: "06kG$iYL1BaRpGdCOsGzr4",
-    OwnerHistory: 42,
-    Name: "24bKYviez4sfXQ1fRhnyBT|24bKYviez4sfXQ1fRhnyBS",
-    Description: "Structural",
-    ConnectionGeometry: null,
-    RelatingElement: 2420,
-    RelatedElement: 2497,
-    RelatingPriorities: [],
-    RelatedPriorities: [],
-    RelatedConnectionType: "ATSTART",
-    RelatingConnectionType: "ATEND",
-  },
-  3450: {
-    expressID: 3450,
-    type: "IFCPRESENTATIONLAYERASSIGNMENT",
-    Name: "A-FLOR-____-OTLN",
-    Description: null,
-    AssignedItems: [187, 1283, 1301, 2211, 2229, 3127],
-    Identifier: null,
-  },
-  3458: {
-    expressID: 3458,
-    type: "IFCPRESENTATIONLAYERASSIGNMENT",
-    Name: "A-GLAZ-CURT-OTLN",
-    Description: null,
-    AssignedItems: [
-      623, 645, 667, 684, 701, 718, 735, 752, 769, 786, 803, 820, 837, 854, 871,
-      888, 917, 926, 1613, 1631, 1648, 1665, 1682, 1699, 1716, 1733, 1750, 1767,
-      1784, 1801, 1818, 1835, 1852, 1869, 2539, 2557, 2574, 2591, 2608, 2625,
-      2642, 2659, 2676, 2693, 2710, 2727, 2744, 2761, 2778, 2795,
-    ],
-    Identifier: null,
-  },
-  3510: {
-    expressID: 3510,
-    type: "IFCPRESENTATIONLAYERASSIGNMENT",
-    Name: "L-SITE-WALL-OTLN",
-    Description: null,
-    AssignedItems: [
-      342, 379, 452, 482, 531, 559, 1379, 1409, 1458, 1488, 1537, 1565, 2305,
-      2335, 2384, 2414, 2463, 2491,
-    ],
-    Identifier: null,
-  },
-  coordinationMatrix: [
-    1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 12.443590731267701, -4,
-    6.973254374598691, 1,
-  ],
-  globalHeight: 0,
-};
-
-const data11 = {
-  "1": {
-    "expressID": 1,
-    "type": "IFCORGANIZATION",
-    "Identification": null,
-    "Name": "Autodesk Revit 2020 (DEU)",
-    "Description": null,
-    "Roles": null,
-    "Addresses": null
-  },
-  "5": {
-    "expressID": 5,
-    "type": "IFCAPPLICATION",
-    "ApplicationDeveloper": 1,
-    "Version": "2020",
-    "ApplicationFullName": "Autodesk Revit 2020 (DEU)",
-    "ApplicationIdentifier": "Revit"
-  },
-  "36": {
-    "expressID": 36,
-    "type": "IFCPERSON",
-    "Identification": null,
-    "FamilyName": "",
-    "GivenName": "Lill",
-    "MiddleNames": null,
-    "PrefixTitles": null,
-    "SuffixTitles": null,
-    "Roles": null,
-    "Addresses": null
-  },
-  "38": {
-    "expressID": 38,
-    "type": "IFCORGANIZATION",
-    "Identification": null,
-    "Name": "",
-    "Description": "",
-    "Roles": null,
-    "Addresses": null
-  },
-  "39": {
-    "expressID": 39,
-    "type": "IFCPERSONANDORGANIZATION",
-    "ThePerson": 36,
-    "TheOrganization": 38,
-    "Roles": null
-  },
-  "42": {
-    "expressID": 42,
-    "type": "IFCOWNERHISTORY",
-    "OwningUser": 39,
-    "OwningApplication": 5,
-    "State": null,
-    "ChangeAction": "NOCHANGE",
-    "LastModifiedDate": null,
-    "LastModifyingUser": null,
-    "LastModifyingApplication": null,
-    "CreationDate": 1661521572
-  },
-  "43": {
-    "expressID": 43,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "LENGTHUNIT",
-    "Prefix": "MILLI",
-    "Name": "METRE"
-  },
-  "44": {
-    "expressID": 44,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "LENGTHUNIT",
-    "Prefix": null,
-    "Name": "METRE"
-  },
-  "45": {
-    "expressID": 45,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "AREAUNIT",
-    "Prefix": null,
-    "Name": "SQUARE_METRE"
-  },
-  "46": {
-    "expressID": 46,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "VOLUMEUNIT",
-    "Prefix": null,
-    "Name": "CUBIC_METRE"
-  },
-  "47": {
-    "expressID": 47,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "PLANEANGLEUNIT",
-    "Prefix": null,
-    "Name": "RADIAN"
-  },
-  "48": {
-    "expressID": 48,
-    "type": "IFCDIMENSIONALEXPONENTS",
-    "LengthExponent": 0,
-    "MassExponent": 0,
-    "TimeExponent": 0,
-    "ElectricCurrentExponent": 0,
-    "ThermodynamicTemperatureExponent": 0,
-    "AmountOfSubstanceExponent": 0,
-    "LuminousIntensityExponent": 0
-  },
-  "49": {
-    "expressID": 49,
-    "type": "IFCMEASUREWITHUNIT",
-    "ValueComponent": 0.017453292519943302,
-    "UnitComponent": 47
-  },
-  "50": {
-    "expressID": 50,
-    "type": "IFCCONVERSIONBASEDUNIT",
-    "Dimensions": 48,
-    "UnitType": "PLANEANGLEUNIT",
-    "Name": "DEGREE",
-    "ConversionFactor": 49
-  },
-  "51": {
-    "expressID": 51,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "MASSUNIT",
-    "Prefix": "KILO",
-    "Name": "GRAM"
-  },
-  "52": {
-    "expressID": 52,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 51,
-    "Exponent": 1
-  },
-  "53": {
-    "expressID": 53,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 44,
-    "Exponent": -3
-  },
-  "54": {
-    "expressID": 54,
-    "type": "IFCDERIVEDUNIT",
-    "Elements": [52, 53],
-    "UnitType": "MASSDENSITYUNIT",
-    "UserDefinedType": null
-  },
-  "56": {
-    "expressID": 56,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 44,
-    "Exponent": 4
-  },
-  "57": {
-    "expressID": 57,
-    "type": "IFCDERIVEDUNIT",
-    "Elements": [56],
-    "UnitType": "MOMENTOFINERTIAUNIT",
-    "UserDefinedType": null
-  },
-  "59": {
-    "expressID": 59,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "TIMEUNIT",
-    "Prefix": null,
-    "Name": "SECOND"
-  },
-  "60": {
-    "expressID": 60,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "FREQUENCYUNIT",
-    "Prefix": null,
-    "Name": "HERTZ"
-  },
-  "61": {
-    "expressID": 61,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "THERMODYNAMICTEMPERATUREUNIT",
-    "Prefix": null,
-    "Name": "KELVIN"
-  },
-  "62": {
-    "expressID": 62,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "THERMODYNAMICTEMPERATUREUNIT",
-    "Prefix": null,
-    "Name": "DEGREE_CELSIUS"
-  },
-  "63": {
-    "expressID": 63,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 51,
-    "Exponent": 1
-  },
-  "64": {
-    "expressID": 64,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 61,
-    "Exponent": -1
-  },
-  "65": {
-    "expressID": 65,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 59,
-    "Exponent": -3
-  },
-  "66": {
-    "expressID": 66,
-    "type": "IFCDERIVEDUNIT",
-    "Elements": [63, 64, 65],
-    "UnitType": "THERMALTRANSMITTANCEUNIT",
-    "UserDefinedType": null
-  },
-  "68": {
-    "expressID": 68,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "LENGTHUNIT",
-    "Prefix": "DECI",
-    "Name": "METRE"
-  },
-  "69": {
-    "expressID": 69,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 44,
-    "Exponent": 3
-  },
-  "70": {
-    "expressID": 70,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 59,
-    "Exponent": -1
-  },
-  "71": {
-    "expressID": 71,
-    "type": "IFCDERIVEDUNIT",
-    "Elements": [69, 70],
-    "UnitType": "VOLUMETRICFLOWRATEUNIT",
-    "UserDefinedType": null
-  },
-  "73": {
-    "expressID": 73,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "ELECTRICCURRENTUNIT",
-    "Prefix": null,
-    "Name": "AMPERE"
-  },
-  "74": {
-    "expressID": 74,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "ELECTRICVOLTAGEUNIT",
-    "Prefix": null,
-    "Name": "VOLT"
-  },
-  "75": {
-    "expressID": 75,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "POWERUNIT",
-    "Prefix": null,
-    "Name": "WATT"
-  },
-  "76": {
-    "expressID": 76,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "FORCEUNIT",
-    "Prefix": "KILO",
-    "Name": "NEWTON"
-  },
-  "77": {
-    "expressID": 77,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "ILLUMINANCEUNIT",
-    "Prefix": null,
-    "Name": "LUX"
-  },
-  "78": {
-    "expressID": 78,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "LUMINOUSFLUXUNIT",
-    "Prefix": null,
-    "Name": "LUMEN"
-  },
-  "79": {
-    "expressID": 79,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "LUMINOUSINTENSITYUNIT",
-    "Prefix": null,
-    "Name": "CANDELA"
-  },
-  "80": {
-    "expressID": 80,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 51,
-    "Exponent": -1
-  },
-  "81": {
-    "expressID": 81,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 44,
-    "Exponent": -2
-  },
-  "82": {
-    "expressID": 82,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 59,
-    "Exponent": 3
-  },
-  "83": {
-    "expressID": 83,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 78,
-    "Exponent": 1
-  },
-  "84": {
-    "expressID": 84,
-    "type": "IFCDERIVEDUNIT",
-    "Elements": [80, 81, 82, 83],
-    "UnitType": "USERDEFINED",
-    "UserDefinedType": "Luminous Efficacy"
-  },
-  "86": {
-    "expressID": 86,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 44,
-    "Exponent": 1
-  },
-  "87": {
-    "expressID": 87,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 59,
-    "Exponent": -1
-  },
-  "88": {
-    "expressID": 88,
-    "type": "IFCDERIVEDUNIT",
-    "Elements": [86, 87],
-    "UnitType": "LINEARVELOCITYUNIT",
-    "UserDefinedType": null
-  },
-  "90": {
-    "expressID": 90,
-    "type": "IFCSIUNIT",
-    "Dimensions": { "type": 0 },
-    "UnitType": "PRESSUREUNIT",
-    "Prefix": null,
-    "Name": "PASCAL"
-  },
-  "91": {
-    "expressID": 91,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 44,
-    "Exponent": -2
-  },
-  "92": {
-    "expressID": 92,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 51,
-    "Exponent": 1
-  },
-  "93": {
-    "expressID": 93,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 59,
-    "Exponent": -2
-  },
-  "94": {
-    "expressID": 94,
-    "type": "IFCDERIVEDUNIT",
-    "Elements": [91, 92, 93],
-    "UnitType": "USERDEFINED",
-    "UserDefinedType": "Friction Loss"
-  },
-  "96": {
-    "expressID": 96,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 51,
-    "Exponent": 1
-  },
-  "97": {
-    "expressID": 97,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 44,
-    "Exponent": 1
-  },
-  "98": {
-    "expressID": 98,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 59,
-    "Exponent": -2
-  },
-  "99": {
-    "expressID": 99,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 44,
-    "Exponent": -1
-  },
-  "100": {
-    "expressID": 100,
-    "type": "IFCDERIVEDUNIT",
-    "Elements": [96, 97, 98, 99],
-    "UnitType": "LINEARFORCEUNIT",
-    "UserDefinedType": null
-  },
-  "102": {
-    "expressID": 102,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 51,
-    "Exponent": 1
-  },
-  "103": {
-    "expressID": 103,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 44,
-    "Exponent": 1
-  },
-  "104": {
-    "expressID": 104,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 59,
-    "Exponent": -2
-  },
-  "105": {
-    "expressID": 105,
-    "type": "IFCDERIVEDUNITELEMENT",
-    "Unit": 44,
-    "Exponent": -2
-  },
-  "106": {
-    "expressID": 106,
-    "type": "IFCDERIVEDUNIT",
-    "Elements": [102, 103, 104, 105],
-    "UnitType": "PLANARFORCEUNIT",
-    "UserDefinedType": null
-  },
-  "108": {
-    "expressID": 108,
-    "type": "IFCUNITASSIGNMENT",
-    "Units": [
-      43, 45, 46, 50, 51, 54, 57, 59, 60, 62, 66, 71, 73, 74, 75, 76, 77, 78,
-      79, 84, 88, 90, 94, 100, 106
-    ]
-  },
-  "121": {
-    "expressID": 121,
-    "type": "IFCPROJECT",
-    "GlobalId": "3HIGkz_k1DruesNNzlKaLt",
-    "OwnerHistory": 42,
-    "Name": "Project  Number",
-    "Description": null,
-    "ObjectType": null,
-    "LongName": "Project Name",
-    "Phase": "Project  Status",
-    "RepresentationContexts": [113],
-    "UnitsInContext": 108
-  },
-  "128": {
-    "expressID": 128,
-    "type": "IFCPOSTALADDRESS",
-    "Purpose": null,
-    "Description": null,
-    "UserDefinedPurpose": null,
-    "InternalLocation": null,
-    "AddressLines": ["## Street\\X\\0D\\X\\0ACity, State  Zip"],
-    "PostalBox": null,
-    "Town": "",
-    "Region": "Boston",
-    "PostalCode": "",
-    "Country": "MA"
-  },
-  "132": {
-    "expressID": 132,
-    "type": "IFCBUILDING",
-    "GlobalId": "3HIGkz_k1DruesNNzlKaLs",
-    "OwnerHistory": 42,
-    "Name": "",
-    "Description": null,
-    "ObjectType": null,
-    "ObjectPlacement": 33,
-    "Representation": null,
-    "LongName": "",
-    "CompositionType": "ELEMENT",
-    "ElevationOfRefHeight": null,
-    "ElevationOfTerrain": null,
-    "BuildingAddress": 128
-  },
-  "141": {
-    "expressID": 141,
-    "type": "IFCBUILDINGSTOREY",
-    "GlobalId": "3HIGkz_k1DruesNN_GhOc8",
-    "OwnerHistory": 42,
-    "Name": "Level 1",
-    "Description": null,
-    "ObjectType": "Ebene:8mm Head",
-    "ObjectPlacement": 139,
-    "Representation": null,
-    "LongName": "Level 1",
-    "CompositionType": "ELEMENT",
-    "Elevation": 0
-  },
-  "147": {
-    "expressID": 147,
-    "type": "IFCBUILDINGSTOREY",
-    "GlobalId": "3HIGkz_k1DruesNN_GhOIk",
-    "OwnerHistory": 42,
-    "Name": "Level 2",
-    "Description": null,
-    "ObjectType": "Ebene:8mm Head",
-    "ObjectPlacement": 146,
-    "Representation": null,
-    "LongName": "Level 2",
-    "CompositionType": "ELEMENT",
-    "Elevation": 4000
-  },
-  "151": {
-    "expressID": 151,
-    "type": "IFCSITE",
-    "GlobalId": "3HIGkz_k1DruesNNzlKaLr",
-    "OwnerHistory": 42,
-    "Name": "Default",
-    "Description": null,
-    "ObjectType": null,
-    "ObjectPlacement": 150,
-    "Representation": null,
-    "LongName": null,
-    "CompositionType": "ELEMENT",
-    "RefLatitude": [42, 21, 31, 181945],
-    "RefLongitude": [-71, -3, -24, -263305],
-    "RefElevation": 0,
-    "LandTitleNumber": null,
-    "SiteAddress": null
-  },
-  "187": {
-    "expressID": 187,
-    "type": "IFCSLAB",
-    "GlobalId": "24bKYviez4sfXQ1fRhnyUf",
-    "OwnerHistory": 42,
-    "Name": "Geschossdecke:Steel Bar Joist - VCT on LW Concrete:203642",
-    "Description": null,
-    "ObjectType": "Geschossdecke:Steel Bar Joist - VCT on LW Concrete",
-    "ObjectPlacement": 156,
-    "Representation": 182,
-    "Tag": "203642",
-    "PredefinedType": "FLOOR"
-  },
-  "202": {
-    "expressID": 202,
-    "type": "IFCSLABTYPE",
-    "GlobalId": "1_QzDWv_CHr9BT0026FqIR",
-    "OwnerHistory": 42,
-    "Name": "Geschossdecke:Steel Bar Joist - VCT on LW Concrete",
-    "Description": null,
-    "ApplicableOccurrence": null,
-    "HasPropertySets": [318],
-    "RepresentationMaps": null,
-    "Tag": "25398",
-    "ElementType": null,
-    "PredefinedType": "FLOOR"
-  },
-  "204": {
-    "expressID": 204,
-    "type": "IFCMATERIAL",
-    "Name": "Vinyl Composition Tile"
-  },
-  "218": {
-    "expressID": 218,
-    "type": "IFCMATERIALDEFINITIONREPRESENTATION",
-    "Name": null,
-    "Description": null,
-    "Representations": [215],
-    "RepresentedMaterial": 204
-  },
-  "222": {
-    "expressID": 222,
-    "type": "IFCMATERIAL",
-    "Name": "Concrete, Lightweight"
-  },
-  "233": {
-    "expressID": 233,
-    "type": "IFCMATERIALDEFINITIONREPRESENTATION",
-    "Name": null,
-    "Description": null,
-    "Representations": [231],
-    "RepresentedMaterial": 222
-  },
-  "237": { "expressID": 237, "type": "IFCMATERIAL", "Name": "Metal Deck" },
-  "248": {
-    "expressID": 248,
-    "type": "IFCMATERIALDEFINITIONREPRESENTATION",
-    "Name": null,
-    "Description": null,
-    "Representations": [246],
-    "RepresentedMaterial": 237
-  },
-  "252": {
-    "expressID": 252,
-    "type": "IFCMATERIAL",
-    "Name": "Structure, Steel Bar Joist Layer"
-  },
-  "259": {
-    "expressID": 259,
-    "type": "IFCMATERIALDEFINITIONREPRESENTATION",
-    "Name": null,
-    "Description": null,
-    "Representations": [257],
-    "RepresentedMaterial": 252
-  },
-  "263": {
-    "expressID": 263,
-    "type": "IFCMATERIALLAYER",
-    "Material": 204,
-    "LayerThickness": 5,
-    "IsVentilated": null
-  },
-  "265": {
-    "expressID": 265,
-    "type": "IFCMATERIALLAYER",
-    "Material": 222,
-    "LayerThickness": 100,
-    "IsVentilated": null
-  },
-  "266": {
-    "expressID": 266,
-    "type": "IFCMATERIALLAYER",
-    "Material": 237,
-    "LayerThickness": 5,
-    "IsVentilated": null
-  },
-  "267": {
-    "expressID": 267,
-    "type": "IFCMATERIALLAYER",
-    "Material": 252,
-    "LayerThickness": 400,
-    "IsVentilated": null
-  },
-  "268": {
-    "expressID": 268,
-    "type": "IFCMATERIALLAYERSET",
-    "MaterialLayers": [263, 265, 266, 267],
-    "LayerSetName": "Geschossdecke:Steel Bar Joist - VCT on LW Concrete "
-  },
-  "274": {
-    "expressID": 274,
-    "type": "IFCMATERIALLAYERSETUSAGE",
-    "ForLayerSet": 268,
-    "LayerSetDirection": "AXIS3",
-    "DirectionSense": "POSITIVE",
-    "OffsetFromReferenceLine": 0
-  },
-  "275": {
-    "expressID": 275,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "Steel Bar Joist - VCT on LW Concrete",
-    "Unit": null
-  },
-  "279": {
-    "expressID": 279,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2Tzf1FqtzFeu5E6jnIeYXh",
-    "OwnerHistory": 42,
-    "Name": "Pset_QuantityTakeOff",
-    "Description": null,
-    "HasProperties": [275]
-  },
-  "284": {
-    "expressID": 284,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "Steel Bar Joist - VCT on LW Concrete",
-    "Unit": null
-  },
-  "285": {
-    "expressID": 285,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "1bTAFa6k90xhGOTb0JTHTQ",
-    "OwnerHistory": 42,
-    "Name": "Pset_ReinforcementBarPitchOfSlab",
-    "Description": null,
-    "HasProperties": [284]
-  },
-  "287": {
-    "expressID": 287,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "ThermalTransmittance",
-    "Description": null,
-    "NominalValue": 0.06065895389245601,
-    "Unit": null
-  },
-  "288": {
-    "expressID": 288,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "IsExternal",
-    "Description": null,
-    "NominalValue": "F",
-    "Unit": null
-  },
-  "289": {
-    "expressID": 289,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "LoadBearing",
-    "Description": null,
-    "NominalValue": "F",
-    "Unit": null
-  },
-  "290": {
-    "expressID": 290,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "PitchAngle",
-    "Description": null,
-    "NominalValue": 0,
-    "Unit": null
-  },
-  "291": {
-    "expressID": 291,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "24bKYviez4sfXQ3MthnyUf",
-    "OwnerHistory": 42,
-    "Name": "Pset_SlabCommon",
-    "Description": null,
-    "HasProperties": [275, 287, 288, 289, 290]
-  },
-  "293": {
-    "expressID": 293,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "37r6LWsYr7J9g1yRkrfweF",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [187],
-    "RelatingPropertyDefinition": 279
-  },
-  "297": {
-    "expressID": 297,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "0AQrSBFyn0bQFL6_h0PNz5",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [187],
-    "RelatingPropertyDefinition": 285
-  },
-  "300": {
-    "expressID": 300,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "0xybXPwrnBWuZJ9TFUS$fJ",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [187],
-    "RelatingPropertyDefinition": 291
-  },
-  "303": {
-    "expressID": 303,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossArea",
-    "Description": "",
-    "Unit": null,
-    "AreaValue": 783.178256370891
-  },
-  "305": {
-    "expressID": 305,
-    "type": "IFCQUANTITYAREA",
-    "Name": "NetArea",
-    "Description": "",
-    "Unit": null,
-    "AreaValue": 783.178256370891
-  },
-  "306": {
-    "expressID": 306,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "GrossVolume",
-    "Description": "",
-    "Unit": null,
-    "VolumeValue": 399.420910749155
-  },
-  "307": {
-    "expressID": 307,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "NetVolume",
-    "Description": "",
-    "Unit": null,
-    "VolumeValue": 399.420910749155
-  },
-  "308": {
-    "expressID": 308,
-    "type": "IFCQUANTITYLENGTH",
-    "Name": "Perimeter",
-    "Description": "",
-    "Unit": null,
-    "LengthValue": 111973.641211074
-  },
-  "309": {
-    "expressID": 309,
-    "type": "IFCQUANTITYLENGTH",
-    "Name": "Width",
-    "Description": "",
-    "Unit": null,
-    "LengthValue": 510
-  },
-  "310": {
-    "expressID": 310,
-    "type": "IFCELEMENTQUANTITY",
-    "GlobalId": "051VUyzmvDjumn37Ywo8TQ",
-    "OwnerHistory": 42,
-    "Name": "BaseQuantities",
-    "Description": null,
-    "MethodOfMeasurement": null,
-    "Quantities": [303, 305, 306, 307, 308, 309]
-  },
-  "312": {
-    "expressID": 312,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "2XHEq2zPnF6gN0vpz_v3qz",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [187],
-    "RelatingPropertyDefinition": 310
-  },
-  "315": {
-    "expressID": 315,
-    "type": "IFCCLASSIFICATION",
-    "Source": "https://www.csiresources.org/standards/uniformat",
-    "Edition": "1998",
-    "EditionDate": null,
-    "Name": "Uniformat"
-  },
-  "317": {
-    "expressID": 317,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "ThermalTransmittance",
-    "Description": null,
-    "NominalValue": 0.06065895389245601,
-    "Unit": null
-  },
-  "318": {
-    "expressID": 318,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "1_QzDWv_CHr9BT2$k6FqIR",
-    "OwnerHistory": 42,
-    "Name": "Pset_SlabCommon",
-    "Description": null,
-    "HasProperties": [288, 317]
-  },
-  "373": {
-    "expressID": 373,
-    "type": "IFCWALLSTANDARDCASE",
-    "GlobalId": "24bKYviez4sfXQ1fRhnyTy",
-    "OwnerHistory": 42,
-    "Name": "Basiswand:Retaining - 300mm Concrete:203695",
-    "Description": null,
-    "ObjectType": "Basiswand:Retaining - 300mm Concrete",
-    "ObjectPlacement": 325,
-    "Representation": 369,
-    "Tag": "203695"
-  },
-  "376": {
-    "expressID": 376,
-    "type": "IFCQUANTITYLENGTH",
-    "Name": "Height",
-    "Description": null,
-    "Unit": null,
-    "LengthValue": 3490
-  },
-  "377": {
-    "expressID": 377,
-    "type": "IFCQUANTITYLENGTH",
-    "Name": "Length",
-    "Description": null,
-    "Unit": null,
-    "LengthValue": 5066.28985623419
-  },
-  "378": {
-    "expressID": 378,
-    "type": "IFCQUANTITYLENGTH",
-    "Name": "Width",
-    "Description": null,
-    "Unit": null,
-    "LengthValue": 300
-  },
-  "379": {
-    "expressID": 379,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossFootprintArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 1.51988695687026
-  },
-  "380": {
-    "expressID": 380,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "GrossVolume",
-    "Description": null,
-    "Unit": null,
-    "VolumeValue": 5.3044054794772
-  },
-  "381": {
-    "expressID": 381,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossSideArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 17.6813515982573
-  },
-  "382": {
-    "expressID": 382,
-    "type": "IFCQUANTITYAREA",
-    "Name": "NetSideArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 17.6813515982573
-  },
-  "383": {
-    "expressID": 383,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "NetVolume",
-    "Description": null,
-    "Unit": null,
-    "VolumeValue": 5.30440547947718
-  },
-  "384": {
-    "expressID": 384,
-    "type": "IFCELEMENTQUANTITY",
-    "GlobalId": "3WgaQfVkP5LuClomJzp0VO",
-    "OwnerHistory": 42,
-    "Name": "BaseQuantities",
-    "Description": null,
-    "MethodOfMeasurement": null,
-    "Quantities": [376, 377, 378, 379, 380, 381, 382, 383]
-  },
-  "386": {
-    "expressID": 386,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "3$5DTKrxP9_hwh2xzyTuyA",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [373],
-    "RelatingPropertyDefinition": 384
-  },
-  "390": {
-    "expressID": 390,
-    "type": "IFCMATERIAL",
-    "Name": "Concrete, Cast-in-Place gray"
-  },
-  "397": {
-    "expressID": 397,
-    "type": "IFCMATERIALDEFINITIONREPRESENTATION",
-    "Name": null,
-    "Description": null,
-    "Representations": [395],
-    "RepresentedMaterial": 390
-  },
-  "401": {
-    "expressID": 401,
-    "type": "IFCMATERIALLAYER",
-    "Material": 390,
-    "LayerThickness": 300,
-    "IsVentilated": null
-  },
-  "402": {
-    "expressID": 402,
-    "type": "IFCMATERIALLAYERSET",
-    "MaterialLayers": [401],
-    "LayerSetName": "Basiswand:Retaining - 300mm Concrete"
-  },
-  "405": {
-    "expressID": 405,
-    "type": "IFCMATERIALLAYERSETUSAGE",
-    "ForLayerSet": 402,
-    "LayerSetDirection": "AXIS2",
-    "DirectionSense": "NEGATIVE",
-    "OffsetFromReferenceLine": 150
-  },
-  "406": {
-    "expressID": 406,
-    "type": "IFCWALLTYPE",
-    "GlobalId": "1HBVb1NdfA6PUA6LzWtJ1Q",
-    "OwnerHistory": 42,
-    "Name": "Basiswand:Retaining - 300mm Concrete",
-    "Description": null,
-    "ApplicableOccurrence": null,
-    "HasPropertySets": [409],
-    "RepresentationMaps": null,
-    "Tag": "31001",
-    "ElementType": null,
-    "PredefinedType": "STANDARD"
-  },
-  "407": {
-    "expressID": 407,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "ThermalTransmittance",
-    "Description": null,
-    "NominalValue": 3.48666666666667,
-    "Unit": null
-  },
-  "408": {
-    "expressID": 408,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "IsExternal",
-    "Description": null,
-    "NominalValue": "T",
-    "Unit": null
-  },
-  "409": {
-    "expressID": 409,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "1HBVb1NdfA6PUA4g9WtJ1Q",
-    "OwnerHistory": 42,
-    "Name": "Pset_WallCommon",
-    "Description": null,
-    "HasProperties": [407, 408]
-  },
-  "413": {
-    "expressID": 413,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "Retaining - 300mm Concrete",
-    "Unit": null
-  },
-  "414": {
-    "expressID": 414,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "023JVN2dH4A86SLeQwTLr2",
-    "OwnerHistory": 42,
-    "Name": "Pset_QuantityTakeOff",
-    "Description": null,
-    "HasProperties": [413]
-  },
-  "416": {
-    "expressID": 416,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "Retaining - 300mm Concrete",
-    "Unit": null
-  },
-  "417": {
-    "expressID": 417,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2MNCBCXBzCfhPDFdIkoUjy",
-    "OwnerHistory": 42,
-    "Name": "Pset_ReinforcementBarPitchOfWall",
-    "Description": null,
-    "HasProperties": [416]
-  },
-  "419": {
-    "expressID": 419,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "ThermalTransmittance",
-    "Description": null,
-    "NominalValue": 3.48666666666667,
-    "Unit": null
-  },
-  "420": {
-    "expressID": 420,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "ExtendToStructure",
-    "Description": null,
-    "NominalValue": "T",
-    "Unit": null
-  },
-  "421": {
-    "expressID": 421,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "24bKYviez4sfXQ3MlhnyTy",
-    "OwnerHistory": 42,
-    "Name": "Pset_WallCommon",
-    "Description": null,
-    "HasProperties": [289, 408, 413, 419, 420]
-  },
-  "423": {
-    "expressID": 423,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "27IMvdP7r0S9fyDc8vVZgI",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [373],
-    "RelatingPropertyDefinition": 414
-  },
-  "426": {
-    "expressID": 426,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "2n$87LGQvBhOGmIFIjQQfX",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [373],
-    "RelatingPropertyDefinition": 417
-  },
-  "429": {
-    "expressID": 429,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1$ORdVuoPF$vvB_Yx_CArH",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [373],
-    "RelatingPropertyDefinition": 421
-  },
-  "476": {
-    "expressID": 476,
-    "type": "IFCWALLSTANDARDCASE",
-    "GlobalId": "24bKYviez4sfXQ1fRhnyTd",
-    "OwnerHistory": 42,
-    "Name": "Basiswand:Retaining - 300mm Concrete:203700",
-    "Description": null,
-    "ObjectType": "Basiswand:Retaining - 300mm Concrete",
-    "ObjectPlacement": 435,
-    "Representation": 472,
-    "Tag": "203700"
-  },
-  "479": {
-    "expressID": 479,
-    "type": "IFCQUANTITYLENGTH",
-    "Name": "Height",
-    "Description": null,
-    "Unit": null,
-    "LengthValue": 3490
-  },
-  "480": {
-    "expressID": 480,
-    "type": "IFCQUANTITYLENGTH",
-    "Name": "Length",
-    "Description": null,
-    "Unit": null,
-    "LengthValue": 28366.2877123009
-  },
-  "481": {
-    "expressID": 481,
-    "type": "IFCQUANTITYLENGTH",
-    "Name": "Width",
-    "Description": null,
-    "Unit": null,
-    "LengthValue": 300
-  },
-  "482": {
-    "expressID": 482,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossFootprintArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 8.50988631369031
-  },
-  "483": {
-    "expressID": 483,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "GrossVolume",
-    "Description": null,
-    "Unit": null,
-    "VolumeValue": 29.6995032347791
-  },
-  "484": {
-    "expressID": 484,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossSideArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 98.9983441159303
-  },
-  "485": {
-    "expressID": 485,
-    "type": "IFCQUANTITYAREA",
-    "Name": "NetSideArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 98.9983441159303
-  },
-  "486": {
-    "expressID": 486,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "NetVolume",
-    "Description": null,
-    "Unit": null,
-    "VolumeValue": 29.699503234779
-  },
-  "487": {
-    "expressID": 487,
-    "type": "IFCELEMENTQUANTITY",
-    "GlobalId": "2yTUbyP3HEwwfR068fweyv",
-    "OwnerHistory": 42,
-    "Name": "BaseQuantities",
-    "Description": null,
-    "MethodOfMeasurement": null,
-    "Quantities": [479, 480, 481, 482, 483, 484, 485, 486]
-  },
-  "489": {
-    "expressID": 489,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "0jAlyQHAX538KHbPcOH4PP",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [476],
-    "RelatingPropertyDefinition": 487
-  },
-  "493": {
-    "expressID": 493,
-    "type": "IFCMATERIALLAYERSETUSAGE",
-    "ForLayerSet": 402,
-    "LayerSetDirection": "AXIS2",
-    "DirectionSense": "NEGATIVE",
-    "OffsetFromReferenceLine": 150
-  },
-  "494": {
-    "expressID": 494,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "0cmM9Zk_9ADewZx4jGgpya",
-    "OwnerHistory": 42,
-    "Name": "Pset_QuantityTakeOff",
-    "Description": null,
-    "HasProperties": [413]
-  },
-  "496": {
-    "expressID": 496,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "Retaining - 300mm Concrete",
-    "Unit": null
-  },
-  "497": {
-    "expressID": 497,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "1OcpUtVHH48xk1I8BORK3g",
-    "OwnerHistory": 42,
-    "Name": "Pset_ReinforcementBarPitchOfWall",
-    "Description": null,
-    "HasProperties": [496]
-  },
-  "499": {
-    "expressID": 499,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "ThermalTransmittance",
-    "Description": null,
-    "NominalValue": 3.48666666666667,
-    "Unit": null
-  },
-  "500": {
-    "expressID": 500,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "24bKYviez4sfXQ3MlhnyTd",
-    "OwnerHistory": 42,
-    "Name": "Pset_WallCommon",
-    "Description": null,
-    "HasProperties": [289, 408, 413, 420, 499]
-  },
-  "502": {
-    "expressID": 502,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "3nYnWiqrnC4BhCeP1v7uhh",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [476],
-    "RelatingPropertyDefinition": 494
-  },
-  "505": {
-    "expressID": 505,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "21DfMyJzDB7RFpllb0Z6tL",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [476],
-    "RelatingPropertyDefinition": 497
-  },
-  "508": {
-    "expressID": 508,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "3eByIx8_fExPyVSvG6lH0S",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [476],
-    "RelatingPropertyDefinition": 500
-  },
-  "553": {
-    "expressID": 553,
-    "type": "IFCWALLSTANDARDCASE",
-    "GlobalId": "24bKYviez4sfXQ1fRhnyTg",
-    "OwnerHistory": 42,
-    "Name": "Basiswand:Retaining - 300mm Concrete:203705",
-    "Description": null,
-    "ObjectType": "Basiswand:Retaining - 300mm Concrete",
-    "ObjectPlacement": 514,
-    "Representation": 549,
-    "Tag": "203705"
-  },
-  "556": {
-    "expressID": 556,
-    "type": "IFCQUANTITYLENGTH",
-    "Name": "Height",
-    "Description": null,
-    "Unit": null,
-    "LengthValue": 3490
-  },
-  "557": {
-    "expressID": 557,
-    "type": "IFCQUANTITYLENGTH",
-    "Name": "Length",
-    "Description": null,
-    "Unit": null,
-    "LengthValue": 4766.28985623419
-  },
-  "558": {
-    "expressID": 558,
-    "type": "IFCQUANTITYLENGTH",
-    "Name": "Width",
-    "Description": null,
-    "Unit": null,
-    "LengthValue": 300
-  },
-  "559": {
-    "expressID": 559,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossFootprintArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 1.4298869568702601
-  },
-  "560": {
-    "expressID": 560,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "GrossVolume",
-    "Description": null,
-    "Unit": null,
-    "VolumeValue": 4.9903054794772
-  },
-  "561": {
-    "expressID": 561,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossSideArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 16.6343515982573
-  },
-  "562": {
-    "expressID": 562,
-    "type": "IFCQUANTITYAREA",
-    "Name": "NetSideArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 16.6343515982573
-  },
-  "563": {
-    "expressID": 563,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "NetVolume",
-    "Description": null,
-    "Unit": null,
-    "VolumeValue": 4.99030547947718
-  },
-  "564": {
-    "expressID": 564,
-    "type": "IFCELEMENTQUANTITY",
-    "GlobalId": "2Phh8IRG93IQsiVqX8x1L6",
-    "OwnerHistory": 42,
-    "Name": "BaseQuantities",
-    "Description": null,
-    "MethodOfMeasurement": null,
-    "Quantities": [556, 557, 558, 559, 560, 561, 562, 563]
-  },
-  "566": {
-    "expressID": 566,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "3O9vNhhaDFuwtUDbdJtDoD",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [553],
-    "RelatingPropertyDefinition": 564
-  },
-  "570": {
-    "expressID": 570,
-    "type": "IFCMATERIALLAYERSETUSAGE",
-    "ForLayerSet": 402,
-    "LayerSetDirection": "AXIS2",
-    "DirectionSense": "NEGATIVE",
-    "OffsetFromReferenceLine": 150
-  },
-  "571": {
-    "expressID": 571,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2UO0Y5alz5VPIvj6DOzsFJ",
-    "OwnerHistory": 42,
-    "Name": "Pset_QuantityTakeOff",
-    "Description": null,
-    "HasProperties": [413]
-  },
-  "573": {
-    "expressID": 573,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "Retaining - 300mm Concrete",
-    "Unit": null
-  },
-  "574": {
-    "expressID": 574,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "1AVV3OZb5CSQgJQoB5825z",
-    "OwnerHistory": 42,
-    "Name": "Pset_ReinforcementBarPitchOfWall",
-    "Description": null,
-    "HasProperties": [573]
-  },
-  "576": {
-    "expressID": 576,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "ThermalTransmittance",
-    "Description": null,
-    "NominalValue": 3.48666666666667,
-    "Unit": null
-  },
-  "577": {
-    "expressID": 577,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "24bKYviez4sfXQ3MlhnyTg",
-    "OwnerHistory": 42,
-    "Name": "Pset_WallCommon",
-    "Description": null,
-    "HasProperties": [289, 408, 413, 420, 576]
-  },
-  "579": {
-    "expressID": 579,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "2LXvNOaO17jRCP1sMRpIEx",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [553],
-    "RelatingPropertyDefinition": 571
-  },
-  "582": {
-    "expressID": 582,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "2hseA8Ur9AEh7_qnEZqXns",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [553],
-    "RelatingPropertyDefinition": 574
-  },
-  "585": {
-    "expressID": 585,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "0qnmICcOXECeR6u71OEv91",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [553],
-    "RelatingPropertyDefinition": 577
-  },
-  "621": {
-    "expressID": 621,
-    "type": "IFCSLAB",
-    "GlobalId": "24bKYviez4sfXQ1fRhny42",
-    "OwnerHistory": 42,
-    "Name": "Geschossdecke:Steel Bar Joist - VCT on LW Concrete:204241",
-    "Description": null,
-    "ObjectType": "Geschossdecke:Steel Bar Joist - VCT on LW Concrete",
-    "ObjectPlacement": 589,
-    "Representation": 618,
-    "Tag": "204241",
-    "PredefinedType": "FLOOR"
-  },
-  "624": {
-    "expressID": 624,
-    "type": "IFCSLABTYPE",
-    "GlobalId": "3USOgzgJfCsQmgMStAXyKs",
-    "OwnerHistory": 42,
-    "Name": "Geschossdecke:Steel Bar Joist - VCT on LW Concrete",
-    "Description": null,
-    "ApplicableOccurrence": null,
-    "HasPropertySets": [700],
-    "RepresentationMaps": null,
-    "Tag": "25398",
-    "ElementType": null,
-    "PredefinedType": "FLOOR"
-  },
-  "644": {
-    "expressID": 644,
-    "type": "IFCOPENINGELEMENT",
-    "GlobalId": "24bKYviez4sfXQ1fRhn$m4",
-    "OwnerHistory": 42,
-    "Name": "Geschossdecke:Steel Bar Joist - VCT on LW Concrete :204241:2",
-    "Description": null,
-    "ObjectType": "Opening",
-    "ObjectPlacement": 642,
-    "Representation": 636,
-    "Tag": "204241"
-  },
-  "649": {
-    "expressID": 649,
-    "type": "IFCQUANTITYLENGTH",
-    "Name": "Depth",
-    "Description": "",
-    "Unit": null,
-    "LengthValue": 510
-  },
-  "650": {
-    "expressID": 650,
-    "type": "IFCQUANTITYLENGTH",
-    "Name": "Height",
-    "Description": "",
-    "Unit": null,
-    "LengthValue": 13742.5922206409
-  },
-  "651": {
-    "expressID": 651,
-    "type": "IFCQUANTITYLENGTH",
-    "Name": "Width",
-    "Description": "",
-    "Unit": null,
-    "LengthValue": 11481.7454559607
-  },
-  "652": {
-    "expressID": 652,
-    "type": "IFCELEMENTQUANTITY",
-    "GlobalId": "26YuJJhkLDAhuuqmo0ILKt",
-    "OwnerHistory": 42,
-    "Name": "BaseQuantities",
-    "Description": null,
-    "MethodOfMeasurement": null,
-    "Quantities": [649, 650, 651]
-  },
-  "654": {
-    "expressID": 654,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "0xs7THLEvEG8dqz3aOSr$h",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [644],
-    "RelatingPropertyDefinition": 652
-  },
-  "658": {
-    "expressID": 658,
-    "type": "IFCRELVOIDSELEMENT",
-    "GlobalId": "1_rvInl8P6bQUPF1LHznu_",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatingBuildingElement": 621,
-    "RelatedOpeningElement": 644
-  },
-  "661": {
-    "expressID": 661,
-    "type": "IFCMATERIALLAYERSETUSAGE",
-    "ForLayerSet": 268,
-    "LayerSetDirection": "AXIS3",
-    "DirectionSense": "POSITIVE",
-    "OffsetFromReferenceLine": 0
-  },
-  "662": {
-    "expressID": 662,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2TSduY69LEOApbXERwvpAi",
-    "OwnerHistory": 42,
-    "Name": "Pset_QuantityTakeOff",
-    "Description": null,
-    "HasProperties": [275]
-  },
-  "664": {
-    "expressID": 664,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "Steel Bar Joist - VCT on LW Concrete",
-    "Unit": null
-  },
-  "665": {
-    "expressID": 665,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2OOaVCp9v69vcxcx7n_wSI",
-    "OwnerHistory": 42,
-    "Name": "Pset_ReinforcementBarPitchOfSlab",
-    "Description": null,
-    "HasProperties": [664]
-  },
-  "667": {
-    "expressID": 667,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "ThermalTransmittance",
-    "Description": null,
-    "NominalValue": 0.06065895389245601,
-    "Unit": null
-  },
-  "668": {
-    "expressID": 668,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "24bKYviez4sfXQ3Mthny42",
-    "OwnerHistory": 42,
-    "Name": "Pset_SlabCommon",
-    "Description": null,
-    "HasProperties": [275, 288, 289, 290, 667]
-  },
-  "670": {
-    "expressID": 670,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "3tpdGPv_zC1xqi0uqRE1sX",
-    "OwnerHistory": 42,
-    "Name": "Pset_OpeningElementCommon",
-    "Description": null,
-    "HasProperties": [275]
-  },
-  "672": {
-    "expressID": 672,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "1KWSNjbhn6lP7WBFsFqJKo",
-    "OwnerHistory": 42,
-    "Name": "Pset_QuantityTakeOff",
-    "Description": null,
-    "HasProperties": [275]
-  },
-  "674": {
-    "expressID": 674,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "0b$bnujnHApeBj3ouOEb7B",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [621],
-    "RelatingPropertyDefinition": 662
-  },
-  "678": {
-    "expressID": 678,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1LFf$hlsXC3RqBaHKUFvVq",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [621],
-    "RelatingPropertyDefinition": 665
-  },
-  "681": {
-    "expressID": 681,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "16Z220YQn75BbQ2euevSXZ",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [621],
-    "RelatingPropertyDefinition": 668
-  },
-  "684": {
-    "expressID": 684,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "2FFa61AVr2YAr_ZjhwUaCi",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [644],
-    "RelatingPropertyDefinition": 670
-  },
-  "687": {
-    "expressID": 687,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "0SmPi00OHBCuthStdyRmIW",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [644],
-    "RelatingPropertyDefinition": 672
-  },
-  "690": {
-    "expressID": 690,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossArea",
-    "Description": "",
-    "Unit": null,
-    "AreaValue": 783.178256370892
-  },
-  "691": {
-    "expressID": 691,
-    "type": "IFCQUANTITYAREA",
-    "Name": "NetArea",
-    "Description": "",
-    "Unit": null,
-    "AreaValue": 625.389310588427
-  },
-  "692": {
-    "expressID": 692,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "NetVolume",
-    "Description": "",
-    "Unit": null,
-    "VolumeValue": 318.948548400097
-  },
-  "693": {
-    "expressID": 693,
-    "type": "IFCQUANTITYLENGTH",
-    "Name": "Perimeter",
-    "Description": "",
-    "Unit": null,
-    "LengthValue": 111973.641211074
-  },
-  "694": {
-    "expressID": 694,
-    "type": "IFCELEMENTQUANTITY",
-    "GlobalId": "3ssonGZYT3DhMbCZSR5RFA",
-    "OwnerHistory": 42,
-    "Name": "BaseQuantities",
-    "Description": null,
-    "MethodOfMeasurement": null,
-    "Quantities": [690, 691, 692, 693]
-  },
-  "696": {
-    "expressID": 696,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1b1uzTIe15RBOStiquRTMa",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [621],
-    "RelatingPropertyDefinition": 694
-  },
-  "699": {
-    "expressID": 699,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "ThermalTransmittance",
-    "Description": null,
-    "NominalValue": 0.06065895389245601,
-    "Unit": null
-  },
-  "700": {
-    "expressID": 700,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "03KV4Fxdn2nBs9sDl1kcJq",
-    "OwnerHistory": 42,
-    "Name": "Pset_SlabCommon",
-    "Description": null,
-    "HasProperties": [288, 699]
-  },
-  "865": {
-    "expressID": 865,
-    "type": "IFCVECTOR",
-    "Orientation": 863,
-    "Magnitude": 304.8
-  },
-  "883": {
-    "expressID": 883,
-    "type": "IFCCOLUMNTYPE",
-    "GlobalId": "24bKYviez4sfXQ3fRhnyDv",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73",
-    "Description": null,
-    "ApplicableOccurrence": null,
-    "HasPropertySets": [941],
-    "RepresentationMaps": [877, 881],
-    "Tag": "195136",
-    "ElementType": null,
-    "PredefinedType": "COLUMN"
-  },
-  "885": { "expressID": 885, "type": "IFCMATERIAL", "Name": "Steel, 45-345" },
-  "892": {
-    "expressID": 892,
-    "type": "IFCMATERIALDEFINITIONREPRESENTATION",
-    "Name": null,
-    "Description": null,
-    "Representations": [890],
-    "RepresentedMaterial": 885
-  },
-  "911": {
-    "expressID": 911,
-    "type": "IFCCOLUMN",
-    "GlobalId": "24bKYviez4sfXQ1fRhnyDv",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73:204714",
-    "Description": null,
-    "ObjectType": "M_W Shapes-Column:W250X73",
-    "ObjectPlacement": 910,
-    "Representation": 905,
-    "Tag": "204714"
-  },
-  "914": {
-    "expressID": 914,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossSurfaceArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 0
-  },
-  "915": {
-    "expressID": 915,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "NetVolume",
-    "Description": null,
-    "Unit": null,
-    "VolumeValue": 0.037789477849891596
-  },
-  "916": {
-    "expressID": 916,
-    "type": "IFCELEMENTQUANTITY",
-    "GlobalId": "11YeNKS590XAMHwq7tWMbc",
-    "OwnerHistory": 42,
-    "Name": "BaseQuantities",
-    "Description": null,
-    "MethodOfMeasurement": null,
-    "Quantities": [914, 915]
-  },
-  "918": {
-    "expressID": 918,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1JwrVU2dXAqBouF4X$TVmq",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [911],
-    "RelatingPropertyDefinition": 916
-  },
-  "922": {
-    "expressID": 922,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "W250X73",
-    "Unit": null
-  },
-  "923": {
-    "expressID": 923,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Slope",
-    "Description": null,
-    "NominalValue": 75.9011138412773,
-    "Unit": null
-  },
-  "924": {
-    "expressID": 924,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "LoadBearing",
-    "Description": null,
-    "NominalValue": "T",
-    "Unit": null
-  },
-  "925": {
-    "expressID": 925,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "1bKvERupH0ihr8gxf7z4K4",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 922, 923, 924]
-  },
-  "927": {
-    "expressID": 927,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "1Tu5KcP_T7AAbgm2ccXu2$",
-    "OwnerHistory": 42,
-    "Name": "Pset_QuantityTakeOff",
-    "Description": null,
-    "HasProperties": [922]
-  },
-  "929": {
-    "expressID": 929,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "W250X73",
-    "Unit": null
-  },
-  "930": {
-    "expressID": 930,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "3YPcR7vw58Lg4EvKXJ4f2Y",
-    "OwnerHistory": 42,
-    "Name": "Pset_ReinforcementBarPitchOfColumn",
-    "Description": null,
-    "HasProperties": [929]
-  },
-  "932": {
-    "expressID": 932,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "0MDd$QjW9Ao8O3E4NrcN2G",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [911],
-    "RelatingPropertyDefinition": 925
-  },
-  "935": {
-    "expressID": 935,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1UQwIjkG1Dy9BkNAkWTORz",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [911],
-    "RelatingPropertyDefinition": 927
-  },
-  "938": {
-    "expressID": 938,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1U5tsEzlP3ZOFquupLBEcR",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [911],
-    "RelatingPropertyDefinition": 930
-  },
-  "941": {
-    "expressID": 941,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "0hi$oqvWH8EA8SA6oih0wO",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 924]
-  },
-  "945": {
-    "expressID": 945,
-    "type": "IFCGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fRhnyCo",
-    "OwnerHistory": 42,
-    "Name": "Modellgruppe:Reihengruppe 1:204769",
-    "Description": null,
-    "ObjectType": "Modellgruppe:Reihengruppe 1"
-  },
-  "1101": {
-    "expressID": 1101,
-    "type": "IFCVECTOR",
-    "Orientation": 1099,
-    "Magnitude": 304.8
-  },
-  "1118": {
-    "expressID": 1118,
-    "type": "IFCCOLUMNTYPE",
-    "GlobalId": "24bKYviez4sfXQ3fRhnyCs",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73",
-    "Description": null,
-    "ApplicableOccurrence": null,
-    "HasPropertySets": [1162],
-    "RepresentationMaps": [1113, 1116],
-    "Tag": "195136",
-    "ElementType": null,
-    "PredefinedType": "COLUMN"
-  },
-  "1134": {
-    "expressID": 1134,
-    "type": "IFCCOLUMN",
-    "GlobalId": "24bKYviez4sfXQ1fRhnyCs",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73:204773",
-    "Description": null,
-    "ObjectType": "M_W Shapes-Column:W250X73",
-    "ObjectPlacement": 1133,
-    "Representation": 1128,
-    "Tag": "204773"
-  },
-  "1137": {
-    "expressID": 1137,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossSurfaceArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 0
-  },
-  "1138": {
-    "expressID": 1138,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "NetVolume",
-    "Description": null,
-    "Unit": null,
-    "VolumeValue": 0.0377894778498914
-  },
-  "1139": {
-    "expressID": 1139,
-    "type": "IFCELEMENTQUANTITY",
-    "GlobalId": "34kI7zIJn7PQ1Vot2OJ1IY",
-    "OwnerHistory": 42,
-    "Name": "BaseQuantities",
-    "Description": null,
-    "MethodOfMeasurement": null,
-    "Quantities": [1137, 1138]
-  },
-  "1141": {
-    "expressID": 1141,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1tnoHZGX1CHRS1BcGn_ue2",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1134],
-    "RelatingPropertyDefinition": 1139
-  },
-  "1145": {
-    "expressID": 1145,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Slope",
-    "Description": null,
-    "NominalValue": 75.9011138412773,
-    "Unit": null
-  },
-  "1146": {
-    "expressID": 1146,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "3RqRReKc9DxeHq3unaRjVq",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 922, 924, 1145]
-  },
-  "1148": {
-    "expressID": 1148,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "1ooFMKaGX8Gw_PQRYOLJna",
-    "OwnerHistory": 42,
-    "Name": "Pset_QuantityTakeOff",
-    "Description": null,
-    "HasProperties": [922]
-  },
-  "1150": {
-    "expressID": 1150,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "W250X73",
-    "Unit": null
-  },
-  "1151": {
-    "expressID": 1151,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "1xNMxIrrL8Kf6AVaKQuZGq",
-    "OwnerHistory": 42,
-    "Name": "Pset_ReinforcementBarPitchOfColumn",
-    "Description": null,
-    "HasProperties": [1150]
-  },
-  "1153": {
-    "expressID": 1153,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1byG2LNKf4vuvVCikNqDqV",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1134],
-    "RelatingPropertyDefinition": 1146
-  },
-  "1156": {
-    "expressID": 1156,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1p89VcmJ5AXQdcY1w92mea",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1134],
-    "RelatingPropertyDefinition": 1148
-  },
-  "1159": {
-    "expressID": 1159,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "0fzBV_hij1gP2eBAhvnnCE",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1134],
-    "RelatingPropertyDefinition": 1151
-  },
-  "1162": {
-    "expressID": 1162,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "02SsO99FT9HvWl9grKZq4c",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 924]
-  },
-  "1166": {
-    "expressID": 1166,
-    "type": "IFCGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fRhnyCq",
-    "OwnerHistory": 42,
-    "Name": "Modellgruppe:Reihengruppe 1:204775",
-    "Description": null,
-    "ObjectType": "Modellgruppe:Reihengruppe 1"
-  },
-  "1321": {
-    "expressID": 1321,
-    "type": "IFCVECTOR",
-    "Orientation": 1319,
-    "Magnitude": 304.8
-  },
-  "1338": {
-    "expressID": 1338,
-    "type": "IFCCOLUMNTYPE",
-    "GlobalId": "24bKYviez4sfXQ3fRhnyCb",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73",
-    "Description": null,
-    "ApplicableOccurrence": null,
-    "HasPropertySets": [1382],
-    "RepresentationMaps": [1333, 1336],
-    "Tag": "195136",
-    "ElementType": null,
-    "PredefinedType": "COLUMN"
-  },
-  "1354": {
-    "expressID": 1354,
-    "type": "IFCCOLUMN",
-    "GlobalId": "24bKYviez4sfXQ1fRhnyCb",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73:204790",
-    "Description": null,
-    "ObjectType": "M_W Shapes-Column:W250X73",
-    "ObjectPlacement": 1353,
-    "Representation": 1348,
-    "Tag": "204790"
-  },
-  "1357": {
-    "expressID": 1357,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossSurfaceArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 0
-  },
-  "1358": {
-    "expressID": 1358,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "NetVolume",
-    "Description": null,
-    "Unit": null,
-    "VolumeValue": 0.0377894778498912
-  },
-  "1359": {
-    "expressID": 1359,
-    "type": "IFCELEMENTQUANTITY",
-    "GlobalId": "3ye9_cRWD0gQMDbYNVozG1",
-    "OwnerHistory": 42,
-    "Name": "BaseQuantities",
-    "Description": null,
-    "MethodOfMeasurement": null,
-    "Quantities": [1357, 1358]
-  },
-  "1361": {
-    "expressID": 1361,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "3k4Gk9FfrDaAQ19Va8SgBm",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1354],
-    "RelatingPropertyDefinition": 1359
-  },
-  "1365": {
-    "expressID": 1365,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Slope",
-    "Description": null,
-    "NominalValue": 75.9011138412773,
-    "Unit": null
-  },
-  "1366": {
-    "expressID": 1366,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "32hq845FbASupgsO$D1IvH",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 922, 924, 1365]
-  },
-  "1368": {
-    "expressID": 1368,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "39ljsK2l55bAz7Ccu4aSBb",
-    "OwnerHistory": 42,
-    "Name": "Pset_QuantityTakeOff",
-    "Description": null,
-    "HasProperties": [922]
-  },
-  "1370": {
-    "expressID": 1370,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "W250X73",
-    "Unit": null
-  },
-  "1371": {
-    "expressID": 1371,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "0G1cXMiAn1aesoeSi_8rb9",
-    "OwnerHistory": 42,
-    "Name": "Pset_ReinforcementBarPitchOfColumn",
-    "Description": null,
-    "HasProperties": [1370]
-  },
-  "1373": {
-    "expressID": 1373,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1woX2uLk905vSZtYYfhoUL",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1354],
-    "RelatingPropertyDefinition": 1366
-  },
-  "1376": {
-    "expressID": 1376,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "25ryNukI1DtgYyRD9ic0dq",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1354],
-    "RelatingPropertyDefinition": 1368
-  },
-  "1379": {
-    "expressID": 1379,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "2G_xvbkb19wxfBWlLEhlwQ",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1354],
-    "RelatingPropertyDefinition": 1371
-  },
-  "1382": {
-    "expressID": 1382,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "1XVE4lJlX3kxb5DH7ZHR6_",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 924]
-  },
-  "1386": {
-    "expressID": 1386,
-    "type": "IFCGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fRhnyCh",
-    "OwnerHistory": 42,
-    "Name": "Modellgruppe:Reihengruppe 1:204792",
-    "Description": null,
-    "ObjectType": "Modellgruppe:Reihengruppe 1"
-  },
-  "1541": {
-    "expressID": 1541,
-    "type": "IFCVECTOR",
-    "Orientation": 1539,
-    "Magnitude": 304.8
-  },
-  "1558": {
-    "expressID": 1558,
-    "type": "IFCCOLUMNTYPE",
-    "GlobalId": "24bKYviez4sfXQ3fRhnyCe",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73",
-    "Description": null,
-    "ApplicableOccurrence": null,
-    "HasPropertySets": [1602],
-    "RepresentationMaps": [1553, 1556],
-    "Tag": "195136",
-    "ElementType": null,
-    "PredefinedType": "COLUMN"
-  },
-  "1574": {
-    "expressID": 1574,
-    "type": "IFCCOLUMN",
-    "GlobalId": "24bKYviez4sfXQ1fRhnyCe",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73:204795",
-    "Description": null,
-    "ObjectType": "M_W Shapes-Column:W250X73",
-    "ObjectPlacement": 1573,
-    "Representation": 1568,
-    "Tag": "204795"
-  },
-  "1577": {
-    "expressID": 1577,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossSurfaceArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 0
-  },
-  "1578": {
-    "expressID": 1578,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "NetVolume",
-    "Description": null,
-    "Unit": null,
-    "VolumeValue": 0.0377894778498915
-  },
-  "1579": {
-    "expressID": 1579,
-    "type": "IFCELEMENTQUANTITY",
-    "GlobalId": "26mczajm1FA8mHm0Azvdmd",
-    "OwnerHistory": 42,
-    "Name": "BaseQuantities",
-    "Description": null,
-    "MethodOfMeasurement": null,
-    "Quantities": [1577, 1578]
-  },
-  "1581": {
-    "expressID": 1581,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "0mXTlur9LC5w7FFZepVDTK",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1574],
-    "RelatingPropertyDefinition": 1579
-  },
-  "1585": {
-    "expressID": 1585,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Slope",
-    "Description": null,
-    "NominalValue": 75.9011138412773,
-    "Unit": null
-  },
-  "1586": {
-    "expressID": 1586,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2bSsgOLrHEjQgjk7pIa6Kp",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 922, 924, 1585]
-  },
-  "1588": {
-    "expressID": 1588,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "372u2$5OH4ZOaWhbZ08_N5",
-    "OwnerHistory": 42,
-    "Name": "Pset_QuantityTakeOff",
-    "Description": null,
-    "HasProperties": [922]
-  },
-  "1590": {
-    "expressID": 1590,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "W250X73",
-    "Unit": null
-  },
-  "1591": {
-    "expressID": 1591,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "3GNXyfvS5F1hGUxnjWJvMQ",
-    "OwnerHistory": 42,
-    "Name": "Pset_ReinforcementBarPitchOfColumn",
-    "Description": null,
-    "HasProperties": [1590]
-  },
-  "1593": {
-    "expressID": 1593,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "0I6Dwno3H0M9X6316O8oSv",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1574],
-    "RelatingPropertyDefinition": 1586
-  },
-  "1596": {
-    "expressID": 1596,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "3yOu1q_Eb6JQEA8Qfj1vLb",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1574],
-    "RelatingPropertyDefinition": 1588
-  },
-  "1599": {
-    "expressID": 1599,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "3dW$wXe2vDhuWfiOEQNaZd",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1574],
-    "RelatingPropertyDefinition": 1591
-  },
-  "1602": {
-    "expressID": 1602,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2JB9ydsNr87eYwjU7_aXSC",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 924]
-  },
-  "1606": {
-    "expressID": 1606,
-    "type": "IFCGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fRhnyCk",
-    "OwnerHistory": 42,
-    "Name": "Modellgruppe:Reihengruppe 1:204797",
-    "Description": null,
-    "ObjectType": "Modellgruppe:Reihengruppe 1"
-  },
-  "1761": {
-    "expressID": 1761,
-    "type": "IFCVECTOR",
-    "Orientation": 1759,
-    "Magnitude": 304.8
-  },
-  "1778": {
-    "expressID": 1778,
-    "type": "IFCCOLUMNTYPE",
-    "GlobalId": "24bKYviez4sfXQ3fRhn$p1",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73",
-    "Description": null,
-    "ApplicableOccurrence": null,
-    "HasPropertySets": [1822],
-    "RepresentationMaps": [1773, 1776],
-    "Tag": "195136",
-    "ElementType": null,
-    "PredefinedType": "COLUMN"
-  },
-  "1794": {
-    "expressID": 1794,
-    "type": "IFCCOLUMN",
-    "GlobalId": "24bKYviez4sfXQ1fRhn$p1",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73:204818",
-    "Description": null,
-    "ObjectType": "M_W Shapes-Column:W250X73",
-    "ObjectPlacement": 1793,
-    "Representation": 1788,
-    "Tag": "204818"
-  },
-  "1797": {
-    "expressID": 1797,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossSurfaceArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 0
-  },
-  "1798": {
-    "expressID": 1798,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "NetVolume",
-    "Description": null,
-    "Unit": null,
-    "VolumeValue": 0.0377894778498897
-  },
-  "1799": {
-    "expressID": 1799,
-    "type": "IFCELEMENTQUANTITY",
-    "GlobalId": "3w9rFsERv7R8b9AmS_XiQo",
-    "OwnerHistory": 42,
-    "Name": "BaseQuantities",
-    "Description": null,
-    "MethodOfMeasurement": null,
-    "Quantities": [1797, 1798]
-  },
-  "1801": {
-    "expressID": 1801,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "0mlxUiwB54su6FosflAcFb",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1794],
-    "RelatingPropertyDefinition": 1799
-  },
-  "1805": {
-    "expressID": 1805,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Slope",
-    "Description": null,
-    "NominalValue": 75.9011138412772,
-    "Unit": null
-  },
-  "1806": {
-    "expressID": 1806,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "3CJ8jw9fX1GPVmnrp2877Z",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 922, 924, 1805]
-  },
-  "1808": {
-    "expressID": 1808,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2$BCjbu_bAEh$fMFz$pqJ3",
-    "OwnerHistory": 42,
-    "Name": "Pset_QuantityTakeOff",
-    "Description": null,
-    "HasProperties": [922]
-  },
-  "1810": {
-    "expressID": 1810,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "W250X73",
-    "Unit": null
-  },
-  "1811": {
-    "expressID": 1811,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2JbjF4iMP8ihKDDWgYiBON",
-    "OwnerHistory": 42,
-    "Name": "Pset_ReinforcementBarPitchOfColumn",
-    "Description": null,
-    "HasProperties": [1810]
-  },
-  "1813": {
-    "expressID": 1813,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "0wlFuu7Uz8LwIoMmHfGTTF",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1794],
-    "RelatingPropertyDefinition": 1806
-  },
-  "1816": {
-    "expressID": 1816,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1ijCcXZK98AwCS0rwSoDM2",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1794],
-    "RelatingPropertyDefinition": 1808
-  },
-  "1819": {
-    "expressID": 1819,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "2vu2wdwqf9aw2SJtW45Shh",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1794],
-    "RelatingPropertyDefinition": 1811
-  },
-  "1822": {
-    "expressID": 1822,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2XaFv6O9zCNBlEhqAptEY1",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 924]
-  },
-  "1826": {
-    "expressID": 1826,
-    "type": "IFCGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fRhn$p7",
-    "OwnerHistory": 42,
-    "Name": "Modellgruppe:Reihengruppe 1:204820",
-    "Description": null,
-    "ObjectType": "Modellgruppe:Reihengruppe 1"
-  },
-  "1981": {
-    "expressID": 1981,
-    "type": "IFCVECTOR",
-    "Orientation": 1979,
-    "Magnitude": 304.8
-  },
-  "1998": {
-    "expressID": 1998,
-    "type": "IFCCOLUMNTYPE",
-    "GlobalId": "24bKYviez4sfXQ3fRhn$oR",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73",
-    "Description": null,
-    "ApplicableOccurrence": null,
-    "HasPropertySets": [2042],
-    "RepresentationMaps": [1993, 1996],
-    "Tag": "195136",
-    "ElementType": null,
-    "PredefinedType": "COLUMN"
-  },
-  "2014": {
-    "expressID": 2014,
-    "type": "IFCCOLUMN",
-    "GlobalId": "24bKYviez4sfXQ1fRhn$oR",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73:204872",
-    "Description": null,
-    "ObjectType": "M_W Shapes-Column:W250X73",
-    "ObjectPlacement": 2013,
-    "Representation": 2008,
-    "Tag": "204872"
-  },
-  "2017": {
-    "expressID": 2017,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossSurfaceArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 0
-  },
-  "2018": {
-    "expressID": 2018,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "NetVolume",
-    "Description": null,
-    "Unit": null,
-    "VolumeValue": 0.0377894778498907
-  },
-  "2019": {
-    "expressID": 2019,
-    "type": "IFCELEMENTQUANTITY",
-    "GlobalId": "0Nvp6NJFv0dwEmOcSa_s5I",
-    "OwnerHistory": 42,
-    "Name": "BaseQuantities",
-    "Description": null,
-    "MethodOfMeasurement": null,
-    "Quantities": [2017, 2018]
-  },
-  "2021": {
-    "expressID": 2021,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1XGxF385DA_P47dSxzwEDT",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2014],
-    "RelatingPropertyDefinition": 2019
-  },
-  "2025": {
-    "expressID": 2025,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Slope",
-    "Description": null,
-    "NominalValue": 75.9011138412773,
-    "Unit": null
-  },
-  "2026": {
-    "expressID": 2026,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "3gwOq7C5PBiuxG0xyQ1OGx",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 922, 924, 2025]
-  },
-  "2028": {
-    "expressID": 2028,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2hbvGfKCf9SPssuGK8CSjb",
-    "OwnerHistory": 42,
-    "Name": "Pset_QuantityTakeOff",
-    "Description": null,
-    "HasProperties": [922]
-  },
-  "2030": {
-    "expressID": 2030,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "W250X73",
-    "Unit": null
-  },
-  "2031": {
-    "expressID": 2031,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2$UyoMoL59gB_lz_I4_vJu",
-    "OwnerHistory": 42,
-    "Name": "Pset_ReinforcementBarPitchOfColumn",
-    "Description": null,
-    "HasProperties": [2030]
-  },
-  "2033": {
-    "expressID": 2033,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "00kufE8un2QOpluQVSYxU9",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2014],
-    "RelatingPropertyDefinition": 2026
-  },
-  "2036": {
-    "expressID": 2036,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "2HsRTecVn4_BRaExh5uFvy",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2014],
-    "RelatingPropertyDefinition": 2028
-  },
-  "2039": {
-    "expressID": 2039,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "2WTYxvcdD2wBb5YW8lMovy",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2014],
-    "RelatingPropertyDefinition": 2031
-  },
-  "2042": {
-    "expressID": 2042,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "3e6AVE26bEfeEvn0zeMncC",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 924]
-  },
-  "2046": {
-    "expressID": 2046,
-    "type": "IFCGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fRhn$oP",
-    "OwnerHistory": 42,
-    "Name": "Modellgruppe:Reihengruppe 1:204874",
-    "Description": null,
-    "ObjectType": "Modellgruppe:Reihengruppe 1"
-  },
-  "2201": {
-    "expressID": 2201,
-    "type": "IFCVECTOR",
-    "Orientation": 2199,
-    "Magnitude": 304.8
-  },
-  "2218": {
-    "expressID": 2218,
-    "type": "IFCCOLUMNTYPE",
-    "GlobalId": "24bKYviez4sfXQ3fRhn$oO",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73",
-    "Description": null,
-    "ApplicableOccurrence": null,
-    "HasPropertySets": [2262],
-    "RepresentationMaps": [2213, 2216],
-    "Tag": "195136",
-    "ElementType": null,
-    "PredefinedType": "COLUMN"
-  },
-  "2234": {
-    "expressID": 2234,
-    "type": "IFCCOLUMN",
-    "GlobalId": "24bKYviez4sfXQ1fRhn$oO",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73:204875",
-    "Description": null,
-    "ObjectType": "M_W Shapes-Column:W250X73",
-    "ObjectPlacement": 2233,
-    "Representation": 2228,
-    "Tag": "204875"
-  },
-  "2237": {
-    "expressID": 2237,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossSurfaceArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 0
-  },
-  "2238": {
-    "expressID": 2238,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "NetVolume",
-    "Description": null,
-    "Unit": null,
-    "VolumeValue": 0.0377894778498902
-  },
-  "2239": {
-    "expressID": 2239,
-    "type": "IFCELEMENTQUANTITY",
-    "GlobalId": "1l40WN1DL0NAD1G3Pjl569",
-    "OwnerHistory": 42,
-    "Name": "BaseQuantities",
-    "Description": null,
-    "MethodOfMeasurement": null,
-    "Quantities": [2237, 2238]
-  },
-  "2241": {
-    "expressID": 2241,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "2IH7lk_S1FbPp8Lrory__1",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2234],
-    "RelatingPropertyDefinition": 2239
-  },
-  "2245": {
-    "expressID": 2245,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Slope",
-    "Description": null,
-    "NominalValue": 75.9011138412773,
-    "Unit": null
-  },
-  "2246": {
-    "expressID": 2246,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2Pcm7DwfnFWBPTaCrZgFAs",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 922, 924, 2245]
-  },
-  "2248": {
-    "expressID": 2248,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2iOjIeNCv5_BCZvWEtYQUt",
-    "OwnerHistory": 42,
-    "Name": "Pset_QuantityTakeOff",
-    "Description": null,
-    "HasProperties": [922]
-  },
-  "2250": {
-    "expressID": 2250,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "W250X73",
-    "Unit": null
-  },
-  "2251": {
-    "expressID": 2251,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2SJU0BMA95rxuBJa8LfPHS",
-    "OwnerHistory": 42,
-    "Name": "Pset_ReinforcementBarPitchOfColumn",
-    "Description": null,
-    "HasProperties": [2250]
-  },
-  "2253": {
-    "expressID": 2253,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "179S5McPTBU8b6H1ybo65w",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2234],
-    "RelatingPropertyDefinition": 2246
-  },
-  "2256": {
-    "expressID": 2256,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1gtVWRk5LD3ueO6TU_zc90",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2234],
-    "RelatingPropertyDefinition": 2248
-  },
-  "2259": {
-    "expressID": 2259,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1hHhDkKZnEfPCDPYk8hWwz",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2234],
-    "RelatingPropertyDefinition": 2251
-  },
-  "2262": {
-    "expressID": 2262,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2q4kHGi1v8aflCWoiHlcma",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 924]
-  },
-  "2266": {
-    "expressID": 2266,
-    "type": "IFCGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fRhn$oU",
-    "OwnerHistory": 42,
-    "Name": "Modellgruppe:Reihengruppe 1:204877",
-    "Description": null,
-    "ObjectType": "Modellgruppe:Reihengruppe 1"
-  },
-  "2421": {
-    "expressID": 2421,
-    "type": "IFCVECTOR",
-    "Orientation": 2419,
-    "Magnitude": 304.8
-  },
-  "2438": {
-    "expressID": 2438,
-    "type": "IFCCOLUMNTYPE",
-    "GlobalId": "24bKYviez4sfXQ3fRhn$oT",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73",
-    "Description": null,
-    "ApplicableOccurrence": null,
-    "HasPropertySets": [2482],
-    "RepresentationMaps": [2433, 2436],
-    "Tag": "195136",
-    "ElementType": null,
-    "PredefinedType": "COLUMN"
-  },
-  "2454": {
-    "expressID": 2454,
-    "type": "IFCCOLUMN",
-    "GlobalId": "24bKYviez4sfXQ1fRhn$oT",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73:204878",
-    "Description": null,
-    "ObjectType": "M_W Shapes-Column:W250X73",
-    "ObjectPlacement": 2453,
-    "Representation": 2448,
-    "Tag": "204878"
-  },
-  "2457": {
-    "expressID": 2457,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossSurfaceArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 0
-  },
-  "2458": {
-    "expressID": 2458,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "NetVolume",
-    "Description": null,
-    "Unit": null,
-    "VolumeValue": 0.0377894778498904
-  },
-  "2459": {
-    "expressID": 2459,
-    "type": "IFCELEMENTQUANTITY",
-    "GlobalId": "3mvw9g6a1EP9NoTI0aZq_K",
-    "OwnerHistory": 42,
-    "Name": "BaseQuantities",
-    "Description": null,
-    "MethodOfMeasurement": null,
-    "Quantities": [2457, 2458]
-  },
-  "2461": {
-    "expressID": 2461,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1P0rH5qmLDgfD2YPlITw6d",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2454],
-    "RelatingPropertyDefinition": 2459
-  },
-  "2465": {
-    "expressID": 2465,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Slope",
-    "Description": null,
-    "NominalValue": 75.9011138412773,
-    "Unit": null
-  },
-  "2466": {
-    "expressID": 2466,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "1llqUSbHD8pRl0FCt2zZj0",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 922, 924, 2465]
-  },
-  "2468": {
-    "expressID": 2468,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "3slr3Sydn5CempZ_jq35Ec",
-    "OwnerHistory": 42,
-    "Name": "Pset_QuantityTakeOff",
-    "Description": null,
-    "HasProperties": [922]
-  },
-  "2470": {
-    "expressID": 2470,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "W250X73",
-    "Unit": null
-  },
-  "2471": {
-    "expressID": 2471,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "3C$IT8HOz2yfvQY64jhhSb",
-    "OwnerHistory": 42,
-    "Name": "Pset_ReinforcementBarPitchOfColumn",
-    "Description": null,
-    "HasProperties": [2470]
-  },
-  "2473": {
-    "expressID": 2473,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "3UGmuQuL9FYANSz99CwTWb",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2454],
-    "RelatingPropertyDefinition": 2466
-  },
-  "2476": {
-    "expressID": 2476,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1luwFlqsvCKfd$qFwXplCW",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2454],
-    "RelatingPropertyDefinition": 2468
-  },
-  "2479": {
-    "expressID": 2479,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1mwazfA0PFaPzzw4kXH6T8",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2454],
-    "RelatingPropertyDefinition": 2471
-  },
-  "2482": {
-    "expressID": 2482,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2jtrB6M_H4TPUscbn5PCpc",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 924]
-  },
-  "2486": {
-    "expressID": 2486,
-    "type": "IFCGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fRhn$o3",
-    "OwnerHistory": 42,
-    "Name": "Modellgruppe:Reihengruppe 1:204880",
-    "Description": null,
-    "ObjectType": "Modellgruppe:Reihengruppe 1"
-  },
-  "2508": {
-    "expressID": 2508,
-    "type": "IFCVECTOR",
-    "Orientation": 2506,
-    "Magnitude": 304.8
-  },
-  "2525": {
-    "expressID": 2525,
-    "type": "IFCCOLUMNTYPE",
-    "GlobalId": "24bKYviez4sfXQ3fRhn$og",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73",
-    "Description": null,
-    "ApplicableOccurrence": null,
-    "HasPropertySets": [2569],
-    "RepresentationMaps": [2520, 2523],
-    "Tag": "195136",
-    "ElementType": null,
-    "PredefinedType": "COLUMN"
-  },
-  "2541": {
-    "expressID": 2541,
-    "type": "IFCCOLUMN",
-    "GlobalId": "24bKYviez4sfXQ1fRhn$og",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73:204921",
-    "Description": null,
-    "ObjectType": "M_W Shapes-Column:W250X73",
-    "ObjectPlacement": 2540,
-    "Representation": 2535,
-    "Tag": "204921"
-  },
-  "2544": {
-    "expressID": 2544,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossSurfaceArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 0
-  },
-  "2545": {
-    "expressID": 2545,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "NetVolume",
-    "Description": null,
-    "Unit": null,
-    "VolumeValue": 0.0377894778498908
-  },
-  "2546": {
-    "expressID": 2546,
-    "type": "IFCELEMENTQUANTITY",
-    "GlobalId": "2lQRHyONTD8es5ykeME1wM",
-    "OwnerHistory": 42,
-    "Name": "BaseQuantities",
-    "Description": null,
-    "MethodOfMeasurement": null,
-    "Quantities": [2544, 2545]
-  },
-  "2548": {
-    "expressID": 2548,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1EkxlUevT6$e6jJLuMMjLq",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2541],
-    "RelatingPropertyDefinition": 2546
-  },
-  "2552": {
-    "expressID": 2552,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Slope",
-    "Description": null,
-    "NominalValue": 75.9011138412773,
-    "Unit": null
-  },
-  "2553": {
-    "expressID": 2553,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "398tr6buL67xnlD5VLR8N1",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 922, 924, 2552]
-  },
-  "2555": {
-    "expressID": 2555,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "3To3N1hsf0K8Tkxe2Rg36Y",
-    "OwnerHistory": 42,
-    "Name": "Pset_QuantityTakeOff",
-    "Description": null,
-    "HasProperties": [922]
-  },
-  "2557": {
-    "expressID": 2557,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "W250X73",
-    "Unit": null
-  },
-  "2558": {
-    "expressID": 2558,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "38SaXTPKv4UuP5dyWmOXX8",
-    "OwnerHistory": 42,
-    "Name": "Pset_ReinforcementBarPitchOfColumn",
-    "Description": null,
-    "HasProperties": [2557]
-  },
-  "2560": {
-    "expressID": 2560,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "3FKZ967o93su0hgsLYJMWy",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2541],
-    "RelatingPropertyDefinition": 2553
-  },
-  "2563": {
-    "expressID": 2563,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "2GjcUygGr2_ubJMBUGE2XZ",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2541],
-    "RelatingPropertyDefinition": 2555
-  },
-  "2566": {
-    "expressID": 2566,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "0OH5IdwlTEExlL7gku83$V",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2541],
-    "RelatingPropertyDefinition": 2558
-  },
-  "2569": {
-    "expressID": 2569,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "01yR4g47r0qf_3c6h$CbK_",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 924]
-  },
-  "2573": {
-    "expressID": 2573,
-    "type": "IFCGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fRhn$oe",
-    "OwnerHistory": 42,
-    "Name": "Modellgruppe:Reihengruppe 1:204923",
-    "Description": null,
-    "ObjectType": "Modellgruppe:Reihengruppe 1"
-  },
-  "2595": {
-    "expressID": 2595,
-    "type": "IFCVECTOR",
-    "Orientation": 2593,
-    "Magnitude": 304.8
-  },
-  "2612": {
-    "expressID": 2612,
-    "type": "IFCCOLUMNTYPE",
-    "GlobalId": "24bKYviez4sfXQ3fRhn$ol",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73",
-    "Description": null,
-    "ApplicableOccurrence": null,
-    "HasPropertySets": [2656],
-    "RepresentationMaps": [2607, 2610],
-    "Tag": "195136",
-    "ElementType": null,
-    "PredefinedType": "COLUMN"
-  },
-  "2628": {
-    "expressID": 2628,
-    "type": "IFCCOLUMN",
-    "GlobalId": "24bKYviez4sfXQ1fRhn$ol",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73:204924",
-    "Description": null,
-    "ObjectType": "M_W Shapes-Column:W250X73",
-    "ObjectPlacement": 2627,
-    "Representation": 2622,
-    "Tag": "204924"
-  },
-  "2631": {
-    "expressID": 2631,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossSurfaceArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 0
-  },
-  "2632": {
-    "expressID": 2632,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "NetVolume",
-    "Description": null,
-    "Unit": null,
-    "VolumeValue": 0.0377894778498903
-  },
-  "2633": {
-    "expressID": 2633,
-    "type": "IFCELEMENTQUANTITY",
-    "GlobalId": "3xzEco3KfESRfdmQv$5Mr0",
-    "OwnerHistory": 42,
-    "Name": "BaseQuantities",
-    "Description": null,
-    "MethodOfMeasurement": null,
-    "Quantities": [2631, 2632]
-  },
-  "2635": {
-    "expressID": 2635,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "14CE0u18597w3ytSmlGWRQ",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2628],
-    "RelatingPropertyDefinition": 2633
-  },
-  "2639": {
-    "expressID": 2639,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Slope",
-    "Description": null,
-    "NominalValue": 75.9011138412773,
-    "Unit": null
-  },
-  "2640": {
-    "expressID": 2640,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "0UjsBGV9L09eepTBsey0Wq",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 922, 924, 2639]
-  },
-  "2642": {
-    "expressID": 2642,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2r5mocAZT1zxsqvCK_D8g2",
-    "OwnerHistory": 42,
-    "Name": "Pset_QuantityTakeOff",
-    "Description": null,
-    "HasProperties": [922]
-  },
-  "2644": {
-    "expressID": 2644,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "W250X73",
-    "Unit": null
-  },
-  "2645": {
-    "expressID": 2645,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2C0ntHGfz7VOx4QfHU5Kyc",
-    "OwnerHistory": 42,
-    "Name": "Pset_ReinforcementBarPitchOfColumn",
-    "Description": null,
-    "HasProperties": [2644]
-  },
-  "2647": {
-    "expressID": 2647,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "2mfnvGjLLF0fVcHNRq2jI_",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2628],
-    "RelatingPropertyDefinition": 2640
-  },
-  "2650": {
-    "expressID": 2650,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "0h$ptO1Hn6SBY08tCbmTba",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2628],
-    "RelatingPropertyDefinition": 2642
-  },
-  "2653": {
-    "expressID": 2653,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "09bLEwDojFNgJU2M_3EuQH",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2628],
-    "RelatingPropertyDefinition": 2645
-  },
-  "2656": {
-    "expressID": 2656,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "3QPxmK4Wv44xqH$mGC5H2r",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 924]
-  },
-  "2660": {
-    "expressID": 2660,
-    "type": "IFCGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fRhn$oj",
-    "OwnerHistory": 42,
-    "Name": "Modellgruppe:Reihengruppe 1:204926",
-    "Description": null,
-    "ObjectType": "Modellgruppe:Reihengruppe 1"
-  },
-  "2682": {
-    "expressID": 2682,
-    "type": "IFCVECTOR",
-    "Orientation": 2680,
-    "Magnitude": 304.8
-  },
-  "2699": {
-    "expressID": 2699,
-    "type": "IFCCOLUMNTYPE",
-    "GlobalId": "24bKYviez4sfXQ3fRhn$oi",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73",
-    "Description": null,
-    "ApplicableOccurrence": null,
-    "HasPropertySets": [2743],
-    "RepresentationMaps": [2694, 2697],
-    "Tag": "195136",
-    "ElementType": null,
-    "PredefinedType": "COLUMN"
-  },
-  "2715": {
-    "expressID": 2715,
-    "type": "IFCCOLUMN",
-    "GlobalId": "24bKYviez4sfXQ1fRhn$oi",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73:204927",
-    "Description": null,
-    "ObjectType": "M_W Shapes-Column:W250X73",
-    "ObjectPlacement": 2714,
-    "Representation": 2709,
-    "Tag": "204927"
-  },
-  "2718": {
-    "expressID": 2718,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossSurfaceArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 0
-  },
-  "2719": {
-    "expressID": 2719,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "NetVolume",
-    "Description": null,
-    "Unit": null,
-    "VolumeValue": 0.0377894778498901
-  },
-  "2720": {
-    "expressID": 2720,
-    "type": "IFCELEMENTQUANTITY",
-    "GlobalId": "1csFEhcrX36eta3$21NcVG",
-    "OwnerHistory": 42,
-    "Name": "BaseQuantities",
-    "Description": null,
-    "MethodOfMeasurement": null,
-    "Quantities": [2718, 2719]
-  },
-  "2722": {
-    "expressID": 2722,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "0CXvyXMuH7Evjqk$ho6n6q",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2715],
-    "RelatingPropertyDefinition": 2720
-  },
-  "2726": {
-    "expressID": 2726,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Slope",
-    "Description": null,
-    "NominalValue": 75.9011138412773,
-    "Unit": null
-  },
-  "2727": {
-    "expressID": 2727,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "3Ov7wLi6vDs9PrlFRvDsm5",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 922, 924, 2726]
-  },
-  "2729": {
-    "expressID": 2729,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "1CvG6B365AZw5Zreaplhpg",
-    "OwnerHistory": 42,
-    "Name": "Pset_QuantityTakeOff",
-    "Description": null,
-    "HasProperties": [922]
-  },
-  "2731": {
-    "expressID": 2731,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "W250X73",
-    "Unit": null
-  },
-  "2732": {
-    "expressID": 2732,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "0GJYDlu4z8guiLNp36JKmR",
-    "OwnerHistory": 42,
-    "Name": "Pset_ReinforcementBarPitchOfColumn",
-    "Description": null,
-    "HasProperties": [2731]
-  },
-  "2734": {
-    "expressID": 2734,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "2xzdaXN7v1uQPwUQOFwmYR",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2715],
-    "RelatingPropertyDefinition": 2727
-  },
-  "2737": {
-    "expressID": 2737,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "0Vcm6YJu184PnZ0TrEMyrq",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2715],
-    "RelatingPropertyDefinition": 2729
-  },
-  "2740": {
-    "expressID": 2740,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "2QTddUV8rB$xFFlMHHEN2q",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2715],
-    "RelatingPropertyDefinition": 2732
-  },
-  "2743": {
-    "expressID": 2743,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2vMoX3pyT9igGPA9px4zfA",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 924]
-  },
-  "2747": {
-    "expressID": 2747,
-    "type": "IFCGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fRhn$nI",
-    "OwnerHistory": 42,
-    "Name": "Modellgruppe:Reihengruppe 1:204929",
-    "Description": null,
-    "ObjectType": "Modellgruppe:Reihengruppe 1"
-  },
-  "2769": {
-    "expressID": 2769,
-    "type": "IFCVECTOR",
-    "Orientation": 2767,
-    "Magnitude": 304.8
-  },
-  "2786": {
-    "expressID": 2786,
-    "type": "IFCCOLUMNTYPE",
-    "GlobalId": "24bKYviez4sfXQ3fRhn$nH",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73",
-    "Description": null,
-    "ApplicableOccurrence": null,
-    "HasPropertySets": [2830],
-    "RepresentationMaps": [2781, 2784],
-    "Tag": "195136",
-    "ElementType": null,
-    "PredefinedType": "COLUMN"
-  },
-  "2802": {
-    "expressID": 2802,
-    "type": "IFCCOLUMN",
-    "GlobalId": "24bKYviez4sfXQ1fRhn$nH",
-    "OwnerHistory": 42,
-    "Name": "M_W Shapes-Column:W250X73:204930",
-    "Description": null,
-    "ObjectType": "M_W Shapes-Column:W250X73",
-    "ObjectPlacement": 2801,
-    "Representation": 2796,
-    "Tag": "204930"
-  },
-  "2805": {
-    "expressID": 2805,
-    "type": "IFCQUANTITYAREA",
-    "Name": "GrossSurfaceArea",
-    "Description": null,
-    "Unit": null,
-    "AreaValue": 0
-  },
-  "2806": {
-    "expressID": 2806,
-    "type": "IFCQUANTITYVOLUME",
-    "Name": "NetVolume",
-    "Description": null,
-    "Unit": null,
-    "VolumeValue": 0.03778947784989
-  },
-  "2807": {
-    "expressID": 2807,
-    "type": "IFCELEMENTQUANTITY",
-    "GlobalId": "0C1YosOzPF$Q2q5qhLBd6N",
-    "OwnerHistory": 42,
-    "Name": "BaseQuantities",
-    "Description": null,
-    "MethodOfMeasurement": null,
-    "Quantities": [2805, 2806]
-  },
-  "2809": {
-    "expressID": 2809,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1LOe0bJxn7$uBmXub$NQvq",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2802],
-    "RelatingPropertyDefinition": 2807
-  },
-  "2813": {
-    "expressID": 2813,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Slope",
-    "Description": null,
-    "NominalValue": 75.9011138412773,
-    "Unit": null
-  },
-  "2814": {
-    "expressID": 2814,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "02ebIgmTDCE85CQEkl2UpN",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 922, 924, 2813]
-  },
-  "2816": {
-    "expressID": 2816,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "1nGCwEinv1qgn7LlflqTKc",
-    "OwnerHistory": 42,
-    "Name": "Pset_QuantityTakeOff",
-    "Description": null,
-    "HasProperties": [922]
-  },
-  "2818": {
-    "expressID": 2818,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Reference",
-    "Description": null,
-    "NominalValue": "W250X73",
-    "Unit": null
-  },
-  "2819": {
-    "expressID": 2819,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "0wVDukTuv0cPQT2Byuzpt9",
-    "OwnerHistory": 42,
-    "Name": "Pset_ReinforcementBarPitchOfColumn",
-    "Description": null,
-    "HasProperties": [2818]
-  },
-  "2821": {
-    "expressID": 2821,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1rQeDEWP16JB73KBZi6h5I",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2802],
-    "RelatingPropertyDefinition": 2814
-  },
-  "2824": {
-    "expressID": 2824,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "3HIRxO3cD1BvcjRcrTVvgp",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2802],
-    "RelatingPropertyDefinition": 2816
-  },
-  "2827": {
-    "expressID": 2827,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "3n_QMuQATEAu$mUqF0VxAO",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2802],
-    "RelatingPropertyDefinition": 2819
-  },
-  "2830": {
-    "expressID": 2830,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "1NSyNQcZj95BdPfgtXVYpP",
-    "OwnerHistory": 42,
-    "Name": "Pset_ColumnCommon",
-    "Description": null,
-    "HasProperties": [288, 924]
-  },
-  "2834": {
-    "expressID": 2834,
-    "type": "IFCGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fRhn$nN",
-    "OwnerHistory": 42,
-    "Name": "Modellgruppe:Reihengruppe 1:204932",
-    "Description": null,
-    "ObjectType": "Modellgruppe:Reihengruppe 1"
-  },
-  "2836": {
-    "expressID": 2836,
-    "type": "IFCRELASSIGNSTOGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fVhnyCo",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [911],
-    "RelatedObjectsType": null,
-    "RelatingGroup": 945
-  },
-  "2840": {
-    "expressID": 2840,
-    "type": "IFCRELASSIGNSTOGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fVhnyCq",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1134],
-    "RelatedObjectsType": null,
-    "RelatingGroup": 1166
-  },
-  "2844": {
-    "expressID": 2844,
-    "type": "IFCRELASSIGNSTOGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fVhnyCh",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1354],
-    "RelatedObjectsType": null,
-    "RelatingGroup": 1386
-  },
-  "2848": {
-    "expressID": 2848,
-    "type": "IFCRELASSIGNSTOGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fVhnyCk",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1574],
-    "RelatedObjectsType": null,
-    "RelatingGroup": 1606
-  },
-  "2852": {
-    "expressID": 2852,
-    "type": "IFCRELASSIGNSTOGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fVhn$p7",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1794],
-    "RelatedObjectsType": null,
-    "RelatingGroup": 1826
-  },
-  "2856": {
-    "expressID": 2856,
-    "type": "IFCRELASSIGNSTOGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fVhn$oP",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2014],
-    "RelatedObjectsType": null,
-    "RelatingGroup": 2046
-  },
-  "2860": {
-    "expressID": 2860,
-    "type": "IFCRELASSIGNSTOGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fVhn$oU",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2234],
-    "RelatedObjectsType": null,
-    "RelatingGroup": 2266
-  },
-  "2864": {
-    "expressID": 2864,
-    "type": "IFCRELASSIGNSTOGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fVhn$o3",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2454],
-    "RelatedObjectsType": null,
-    "RelatingGroup": 2486
-  },
-  "2868": {
-    "expressID": 2868,
-    "type": "IFCRELASSIGNSTOGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fVhn$oe",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2541],
-    "RelatedObjectsType": null,
-    "RelatingGroup": 2573
-  },
-  "2872": {
-    "expressID": 2872,
-    "type": "IFCRELASSIGNSTOGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fVhn$oj",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2628],
-    "RelatedObjectsType": null,
-    "RelatingGroup": 2660
-  },
-  "2876": {
-    "expressID": 2876,
-    "type": "IFCRELASSIGNSTOGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fVhn$nI",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2715],
-    "RelatedObjectsType": null,
-    "RelatingGroup": 2747
-  },
-  "2880": {
-    "expressID": 2880,
-    "type": "IFCRELASSIGNSTOGROUP",
-    "GlobalId": "24bKYviez4sfXQ1fVhn$nN",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2802],
-    "RelatedObjectsType": null,
-    "RelatingGroup": 2834
-  },
-  "2884": {
-    "expressID": 2884,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Name",
-    "Description": null,
-    "NominalValue": "Level 1",
-    "Unit": null
-  },
-  "2885": {
-    "expressID": 2885,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "0XGOoYeb96QOeVJcvcQvgz",
-    "OwnerHistory": 42,
-    "Name": "Pset_AirSideSystemInformation",
-    "Description": null,
-    "HasProperties": [2884]
-  },
-  "2887": {
-    "expressID": 2887,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "AboveGround",
-    "Description": null,
-    "NominalValue": "U",
-    "Unit": null
-  },
-  "2888": {
-    "expressID": 2888,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "1vK3KfqgSHqv5Y2_o6FnIY",
-    "OwnerHistory": 42,
-    "Name": "Pset_BuildingStoreyCommon",
-    "Description": null,
-    "HasProperties": [2887]
-  },
-  "2890": {
-    "expressID": 2890,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Name",
-    "Description": null,
-    "NominalValue": "Level 1",
-    "Unit": null
-  },
-  "2891": {
-    "expressID": 2891,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "2SBjpb9CzAb9YKubYPxuak",
-    "OwnerHistory": 42,
-    "Name": "Pset_ProductRequirements",
-    "Description": null,
-    "HasProperties": [2890]
-  },
-  "2893": {
-    "expressID": 2893,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "3wr$BG_150$xjrfnrOTDCi",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [141],
-    "RelatingPropertyDefinition": 2885
-  },
-  "2897": {
-    "expressID": 2897,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "3mD8nW1DT6BfCKAYms69K$",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [141],
-    "RelatingPropertyDefinition": 2888
-  },
-  "2900": {
-    "expressID": 2900,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "2x7w31On9A4eXWJxBK5zLY",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [141],
-    "RelatingPropertyDefinition": 2891
-  },
-  "2903": {
-    "expressID": 2903,
-    "type": "IFCRELCONTAINEDINSPATIALSTRUCTURE",
-    "GlobalId": "1vK3KfqgSHqv5Y0066FnIY",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedElements": [
-      187, 373, 476, 553, 911, 1134, 1354, 1574, 1794, 2014, 2234, 2454, 2541,
-      2628, 2715, 2802
-    ],
-    "RelatingStructure": 141
-  },
-  "2922": {
-    "expressID": 2922,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Name",
-    "Description": null,
-    "NominalValue": "Level 2",
-    "Unit": null
-  },
-  "2923": {
-    "expressID": 2923,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "1jGOtnbQj3Pu1GmjL3RM9C",
-    "OwnerHistory": 42,
-    "Name": "Pset_AirSideSystemInformation",
-    "Description": null,
-    "HasProperties": [2922]
-  },
-  "2925": {
-    "expressID": 2925,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "14lOI8vZuHqv6B2_o6Fnc4",
-    "OwnerHistory": 42,
-    "Name": "Pset_BuildingStoreyCommon",
-    "Description": null,
-    "HasProperties": [2887]
-  },
-  "2927": {
-    "expressID": 2927,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "Name",
-    "Description": null,
-    "NominalValue": "Level 2",
-    "Unit": null
-  },
-  "2928": {
-    "expressID": 2928,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "0i53IzIr5CWwCj0ozgBM$n",
-    "OwnerHistory": 42,
-    "Name": "Pset_ProductRequirements",
-    "Description": null,
-    "HasProperties": [2927]
-  },
-  "2930": {
-    "expressID": 2930,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "1AkvnMjEHEQQTt6QURrY2x",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [147],
-    "RelatingPropertyDefinition": 2923
-  },
-  "2934": {
-    "expressID": 2934,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "33V_w5Fw51OPTpJQJHrK9o",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [147],
-    "RelatingPropertyDefinition": 2925
-  },
-  "2937": {
-    "expressID": 2937,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "02ymS3jS915RxG9rsJJA0q",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [147],
-    "RelatingPropertyDefinition": 2928
-  },
-  "2940": {
-    "expressID": 2940,
-    "type": "IFCRELCONTAINEDINSPATIALSTRUCTURE",
-    "GlobalId": "14lOI8vZuHqv6B0066Fnc4",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedElements": [621],
-    "RelatingStructure": 147
-  },
-  "2944": {
-    "expressID": 2944,
-    "type": "IFCRELAGGREGATES",
-    "GlobalId": "2NUrbbTZP1Thslj0xPlATY",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatingObject": 121,
-    "RelatedObjects": [151]
-  },
-  "2948": {
-    "expressID": 2948,
-    "type": "IFCRELAGGREGATES",
-    "GlobalId": "29WxQXKE1Cmh8VU4Rn30f0",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatingObject": 151,
-    "RelatedObjects": [132]
-  },
-  "2952": {
-    "expressID": 2952,
-    "type": "IFCRELAGGREGATES",
-    "GlobalId": "3ioAY2VOL1QOEtMGyzl4Rh",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatingObject": 132,
-    "RelatedObjects": [141, 147]
-  },
-  "2957": {
-    "expressID": 2957,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "NumberOfStoreys",
-    "Description": null,
-    "NominalValue": 2,
-    "Unit": null
-  },
-  "2958": {
-    "expressID": 2958,
-    "type": "IFCPROPERTYSINGLEVALUE",
-    "Name": "IsLandmarked",
-    "Description": null,
-    "NominalValue": "U",
-    "Unit": null
-  },
-  "2959": {
-    "expressID": 2959,
-    "type": "IFCPROPERTYSET",
-    "GlobalId": "3ioAY2VOL1QOEtKkSzl4Rh",
-    "OwnerHistory": 42,
-    "Name": "Pset_BuildingCommon",
-    "Description": null,
-    "HasProperties": [2957, 2958]
-  },
-  "2961": {
-    "expressID": 2961,
-    "type": "IFCRELDEFINESBYPROPERTIES",
-    "GlobalId": "25kh7S$ArFCOnddmUgrGBT",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [132],
-    "RelatingPropertyDefinition": 2959
-  },
-  "2965": {
-    "expressID": 2965,
-    "type": "IFCRELASSOCIATESMATERIAL",
-    "GlobalId": "3wMY8Q7gfFTB2rGGORf68o",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [187],
-    "RelatingMaterial": 274
-  },
-  "2968": {
-    "expressID": 2968,
-    "type": "IFCRELASSOCIATESMATERIAL",
-    "GlobalId": "3YNm2K_TTF6xdwo6Fzg0d_",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [373],
-    "RelatingMaterial": 405
-  },
-  "2971": {
-    "expressID": 2971,
-    "type": "IFCRELASSOCIATESMATERIAL",
-    "GlobalId": "0_DnMerff3pwx5G3jCiSnV",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [406],
-    "RelatingMaterial": 402
-  },
-  "2974": {
-    "expressID": 2974,
-    "type": "IFCRELASSOCIATESMATERIAL",
-    "GlobalId": "0poDM2OTP5CxQLcp9T$O88",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [476],
-    "RelatingMaterial": 493
-  },
-  "2977": {
-    "expressID": 2977,
-    "type": "IFCRELASSOCIATESMATERIAL",
-    "GlobalId": "1sWEASqzXADuxAPh4cHeN$",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [553],
-    "RelatingMaterial": 570
-  },
-  "2980": {
-    "expressID": 2980,
-    "type": "IFCRELASSOCIATESMATERIAL",
-    "GlobalId": "3Y6P_fRCD6186L9cm8wuYl",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [621],
-    "RelatingMaterial": 661
-  },
-  "2983": {
-    "expressID": 2983,
-    "type": "IFCRELASSOCIATESMATERIAL",
-    "GlobalId": "302GvchS9AIuBEe9bDvEjS",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [202, 624],
-    "RelatingMaterial": 268
-  },
-  "2987": {
-    "expressID": 2987,
-    "type": "IFCRELASSOCIATESMATERIAL",
-    "GlobalId": "1KtKuKtrj7QPkNyNh99h2V",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [
-      883, 911, 1118, 1134, 1338, 1354, 1558, 1574, 1778, 1794, 1998, 2014,
-      2218, 2234, 2438, 2454, 2525, 2541, 2612, 2628, 2699, 2715, 2786, 2802
-    ],
-    "RelatingMaterial": 885
-  },
-  "3013": {
-    "expressID": 3013,
-    "type": "IFCRELDEFINESBYTYPE",
-    "GlobalId": "1zv93TJav3mAcVoUHeZ_pQ",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [187],
-    "RelatingType": 202
-  },
-  "3016": {
-    "expressID": 3016,
-    "type": "IFCRELDEFINESBYTYPE",
-    "GlobalId": "2cvtdtZs5BZBjBTp9zqIPX",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [373, 476, 553],
-    "RelatingType": 406
-  },
-  "3019": {
-    "expressID": 3019,
-    "type": "IFCRELDEFINESBYTYPE",
-    "GlobalId": "2_JJJDzWX5mPjJL9gCbyp6",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [621],
-    "RelatingType": 624
-  },
-  "3022": {
-    "expressID": 3022,
-    "type": "IFCRELDEFINESBYTYPE",
-    "GlobalId": "0Wpzm2FLT6ReB57sAzjuB_",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [911],
-    "RelatingType": 883
-  },
-  "3025": {
-    "expressID": 3025,
-    "type": "IFCRELDEFINESBYTYPE",
-    "GlobalId": "2ib9DW$Dv9YgteQfVoe0gw",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1134],
-    "RelatingType": 1118
-  },
-  "3028": {
-    "expressID": 3028,
-    "type": "IFCRELDEFINESBYTYPE",
-    "GlobalId": "3fhMSiZUDCrh7dUmqzV5Sm",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1354],
-    "RelatingType": 1338
-  },
-  "3031": {
-    "expressID": 3031,
-    "type": "IFCRELDEFINESBYTYPE",
-    "GlobalId": "3iR5$q0mfAVgutS5_D2zfm",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1574],
-    "RelatingType": 1558
-  },
-  "3034": {
-    "expressID": 3034,
-    "type": "IFCRELDEFINESBYTYPE",
-    "GlobalId": "2vcxaruJTB1ukkYPz_qQiI",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [1794],
-    "RelatingType": 1778
-  },
-  "3037": {
-    "expressID": 3037,
-    "type": "IFCRELDEFINESBYTYPE",
-    "GlobalId": "15YskedkfDtQDt3_$AxdaN",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2014],
-    "RelatingType": 1998
-  },
-  "3040": {
-    "expressID": 3040,
-    "type": "IFCRELDEFINESBYTYPE",
-    "GlobalId": "1NzyO_v0v4RfbXYnKXoW5P",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2234],
-    "RelatingType": 2218
-  },
-  "3043": {
-    "expressID": 3043,
-    "type": "IFCRELDEFINESBYTYPE",
-    "GlobalId": "3V$UMRQrrDCg1DGS6ciiQ1",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2454],
-    "RelatingType": 2438
-  },
-  "3046": {
-    "expressID": 3046,
-    "type": "IFCRELDEFINESBYTYPE",
-    "GlobalId": "3MxrRGYUDF4P9YD2IMM$uh",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2541],
-    "RelatingType": 2525
-  },
-  "3049": {
-    "expressID": 3049,
-    "type": "IFCRELDEFINESBYTYPE",
-    "GlobalId": "1KM7dfQb12T9$fXfvtMW2q",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2628],
-    "RelatingType": 2612
-  },
-  "3052": {
-    "expressID": 3052,
-    "type": "IFCRELDEFINESBYTYPE",
-    "GlobalId": "3KW5LiGXPDL9eTs7Qz4vEn",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2715],
-    "RelatingType": 2699
-  },
-  "3055": {
-    "expressID": 3055,
-    "type": "IFCRELDEFINESBYTYPE",
-    "GlobalId": "0I2IJxO4D6E9lU2yxMeSS$",
-    "OwnerHistory": 42,
-    "Name": null,
-    "Description": null,
-    "RelatedObjects": [2802],
-    "RelatingType": 2786
-  },
-  "3058": {
-    "expressID": 3058,
-    "type": "IFCRELCONNECTSPATHELEMENTS",
-    "GlobalId": "0Aizq_eVL4XwgUz84zCsQn",
-    "OwnerHistory": 42,
-    "Name": "24bKYviez4sfXQ1fRhnyTy|24bKYviez4sfXQ1fRhnyTd",
-    "Description": "Structural",
-    "ConnectionGeometry": null,
-    "RelatingElement": 373,
-    "RelatedElement": 476,
-    "RelatingPriorities": [],
-    "RelatedPriorities": [],
-    "RelatedConnectionType": "ATSTART",
-    "RelatingConnectionType": "ATEND"
-  },
-  "3063": {
-    "expressID": 3063,
-    "type": "IFCRELCONNECTSPATHELEMENTS",
-    "GlobalId": "1sPkCu7Nr4shdOPB2DKGK1",
-    "OwnerHistory": 42,
-    "Name": "24bKYviez4sfXQ1fRhnyTd|24bKYviez4sfXQ1fRhnyTg",
-    "Description": "Structural",
-    "ConnectionGeometry": null,
-    "RelatingElement": 476,
-    "RelatedElement": 553,
-    "RelatingPriorities": [],
-    "RelatedPriorities": [],
-    "RelatedConnectionType": "ATSTART",
-    "RelatingConnectionType": "ATEND"
-  },
-  "3068": {
-    "expressID": 3068,
-    "type": "IFCPRESENTATIONLAYERASSIGNMENT",
-    "Name": "A-FLOR-____-OTLN",
-    "Description": null,
-    "AssignedItems": [175, 616, 634],
-    "Identifier": null
-  },
-  "3073": {
-    "expressID": 3073,
-    "type": "IFCPRESENTATIONLAYERASSIGNMENT",
-    "Name": "L-SITE-WALL-OTLN",
-    "Description": null,
-    "AssignedItems": [330, 367, 440, 470, 519, 547],
-    "Identifier": null
-  },
-  "3081": {
-    "expressID": 3081,
-    "type": "IFCPRESENTATIONLAYERASSIGNMENT",
-    "Name": "S-COLS-____-OTLN",
-    "Description": null,
-    "AssignedItems": [
-      859, 874, 899, 903, 1095, 1110, 1122, 1126, 1315, 1330, 1342, 1346, 1535,
-      1550, 1562, 1566, 1755, 1770, 1782, 1786, 1975, 1990, 2002, 2006, 2195,
-      2210, 2222, 2226, 2415, 2430, 2442, 2446, 2502, 2517, 2529, 2533, 2589,
-      2604, 2616, 2620, 2676, 2691, 2703, 2707, 2763, 2778, 2790, 2794
-    ],
-    "Identifier": null
-  },
-  "coordinationMatrix": [
-    1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 9.725692290658442, -4.027477646536262,
-    -11.900045046993156, 1
-  ],
-  "globalHeight": 0
-};
-
-// import { data1 } from "./01.js";
-
-// const data = {
-//   "01": data1,
-//   "02": data2,
-//   "03": data3,
-//   "04": data4,
-//   "05": data5,
-//   "06": data6,
-//   "07": data7,
-//   // '08': data8,
-//   "09": data9,
-//   10: data10,
-//   11: data11,
-// };
-
-function getData(id) {
-  switch (id) {
-    // case "01":
-    //   return data1;
-    //   break;
-    // case "02":
-    //   return data2;
-    //   break;
-    // case "03":
-    //   return data3;
-    //   break;
-    // case "04":
-    //   return data4;
-    //   break;
-    // case "05":
-    //   return data5;
-    //   break;
-    // case "06":
-    //   return data6;
-    //   break;
-    // case "07":
-    //   return data7;
-    //   break;
-    // case '08':
-    //     return data8;
-    case "09":
-      return data9;
-    case "10":
-      return data10;
-    case "11":
-      return data11;
-    default:
-      return null;
-  }
-}
-
-function getMaterialsProperties(dataFile, elementid) {
-  const materials = [];
-  const mdata = getData(dataFile);
-  if (mdata) {
-    for (const [key, value] of Object.entries(mdata)) {
-      if (value.type === "IFCRELASSOCIATESMATERIAL") {
-        if (value.RelatedObjects.includes(elementid)) {
-          // materials.push(mdata[value.RelatingMaterial].Name);
-          if (mdata[value.RelatingMaterial].type === "IFCMATERIAL") {
-            materials.push(DecodeIFCString(mdata[value.RelatingMaterial].Name));
-          } else if (
-            mdata[value.RelatingMaterial].type === "IFCMATERIALLAYERSETUSAGE"
-          ) {
-            for (const matLayer of mdata[
-              mdata[value.RelatingMaterial].ForLayerSet
-            ].MaterialLayers) {
-              materials.push(
-                DecodeIFCString(mdata[mdata[matLayer].Material].Name)
-              );
-            }
-          } else if (
-            mdata[value.RelatingMaterial].type === "IFCMATERIALLAYERSET"
-          ) {
-            for (const matLayer of mdata[value.RelatingMaterial]
-              .MaterialLayers) {
-              materials.push(
-                DecodeIFCString(mdata[mdata[matLayer].Material].Name)
-              );
-            }
-          } else ;
-        }
-      }
-    }
-  }
-  return materials;
-}
-
-function getMaterial(ifcLoader, model, selectedElementId) {
-  const materials = getMaterialsProperties(model, selectedElementId);
-  return materials;
-}
-
-// This set of controls performs orbiting, dollying (zooming), and panning.
-// Unlike TrackballControls, it maintains the "up" direction object.up (+Y by default).
-//
-//    Orbit - left mouse / touch: one-finger move
-//    Zoom - middle mouse, or mousewheel / touch: two-finger spread or squish
-//    Pan - right mouse, or left mouse + ctrl/meta/shiftKey, or arrow keys / touch: two-finger move
-
-const _changeEvent = { type: 'change' };
-const _startEvent = { type: 'start' };
-const _endEvent = { type: 'end' };
-
-class OrbitControls extends EventDispatcher$1 {
-
-	constructor( object, domElement ) {
-
-		super();
-
-		if ( domElement === undefined ) console.warn( 'THREE.OrbitControls: The second parameter "domElement" is now mandatory.' );
-		if ( domElement === document ) console.error( 'THREE.OrbitControls: "document" should not be used as the target "domElement". Please use "renderer.domElement" instead.' );
-
-		this.object = object;
-		this.domElement = domElement;
-		this.domElement.style.touchAction = 'none'; // disable touch scroll
-
-		// Set to false to disable this control
-		this.enabled = true;
-
-		// "target" sets the location of focus, where the object orbits around
-		this.target = new Vector3$1();
-
-		// How far you can dolly in and out ( PerspectiveCamera only )
-		this.minDistance = 0;
-		this.maxDistance = Infinity;
-
-		// How far you can zoom in and out ( OrthographicCamera only )
-		this.minZoom = 0;
-		this.maxZoom = Infinity;
-
-		// How far you can orbit vertically, upper and lower limits.
-		// Range is 0 to Math.PI radians.
-		this.minPolarAngle = 0; // radians
-		this.maxPolarAngle = Math.PI; // radians
-
-		// How far you can orbit horizontally, upper and lower limits.
-		// If set, the interval [ min, max ] must be a sub-interval of [ - 2 PI, 2 PI ], with ( max - min < 2 PI )
-		this.minAzimuthAngle = - Infinity; // radians
-		this.maxAzimuthAngle = Infinity; // radians
-
-		// Set to true to enable damping (inertia)
-		// If damping is enabled, you must call controls.update() in your animation loop
-		this.enableDamping = false;
-		this.dampingFactor = 0.05;
-
-		// This option actually enables dollying in and out; left as "zoom" for backwards compatibility.
-		// Set to false to disable zooming
-		this.enableZoom = true;
-		this.zoomSpeed = 1.0;
-
-		// Set to false to disable rotating
-		this.enableRotate = true;
-		this.rotateSpeed = 1.0;
-
-		// Set to false to disable panning
-		this.enablePan = true;
-		this.panSpeed = 1.0;
-		this.screenSpacePanning = true; // if false, pan orthogonal to world-space direction camera.up
-		this.keyPanSpeed = 7.0;	// pixels moved per arrow key push
-
-		// Set to true to automatically rotate around the target
-		// If auto-rotate is enabled, you must call controls.update() in your animation loop
-		this.autoRotate = false;
-		this.autoRotateSpeed = 2.0; // 30 seconds per orbit when fps is 60
-
-		// The four arrow keys
-		this.keys = { LEFT: 'ArrowLeft', UP: 'ArrowUp', RIGHT: 'ArrowRight', BOTTOM: 'ArrowDown' };
-
-		// Mouse buttons
-		this.mouseButtons = { LEFT: MOUSE.ROTATE, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.PAN };
-
-		// Touch fingers
-		this.touches = { ONE: TOUCH.ROTATE, TWO: TOUCH.DOLLY_PAN };
-
-		// for reset
-		this.target0 = this.target.clone();
-		this.position0 = this.object.position.clone();
-		this.zoom0 = this.object.zoom;
-
-		// the target DOM element for key events
-		this._domElementKeyEvents = null;
-
-		//
-		// public methods
-		//
-
-		this.getPolarAngle = function () {
-
-			return spherical.phi;
-
-		};
-
-		this.getAzimuthalAngle = function () {
-
-			return spherical.theta;
-
-		};
-
-		this.getDistance = function () {
-
-			return this.object.position.distanceTo( this.target );
-
-		};
-
-		this.listenToKeyEvents = function ( domElement ) {
-
-			domElement.addEventListener( 'keydown', onKeyDown );
-			this._domElementKeyEvents = domElement;
-
-		};
-
-		this.saveState = function () {
-
-			scope.target0.copy( scope.target );
-			scope.position0.copy( scope.object.position );
-			scope.zoom0 = scope.object.zoom;
-
-		};
-
-		this.reset = function () {
-
-			scope.target.copy( scope.target0 );
-			scope.object.position.copy( scope.position0 );
-			scope.object.zoom = scope.zoom0;
-
-			scope.object.updateProjectionMatrix();
-			scope.dispatchEvent( _changeEvent );
-
-			scope.update();
-
-			state = STATE.NONE;
-
-		};
-
-		// this method is exposed, but perhaps it would be better if we can make it private...
-		this.update = function () {
-
-			const offset = new Vector3$1();
-
-			// so camera.up is the orbit axis
-			const quat = new Quaternion$1().setFromUnitVectors( object.up, new Vector3$1( 0, 1, 0 ) );
-			const quatInverse = quat.clone().invert();
-
-			const lastPosition = new Vector3$1();
-			const lastQuaternion = new Quaternion$1();
-
-			const twoPI = 2 * Math.PI;
-
-			return function update() {
-
-				const position = scope.object.position;
-
-				offset.copy( position ).sub( scope.target );
-
-				// rotate offset to "y-axis-is-up" space
-				offset.applyQuaternion( quat );
-
-				// angle from z-axis around y-axis
-				spherical.setFromVector3( offset );
-
-				if ( scope.autoRotate && state === STATE.NONE ) {
-
-					rotateLeft( getAutoRotationAngle() );
-
-				}
-
-				if ( scope.enableDamping ) {
-
-					spherical.theta += sphericalDelta.theta * scope.dampingFactor;
-					spherical.phi += sphericalDelta.phi * scope.dampingFactor;
-
-				} else {
-
-					spherical.theta += sphericalDelta.theta;
-					spherical.phi += sphericalDelta.phi;
-
-				}
-
-				// restrict theta to be between desired limits
-
-				let min = scope.minAzimuthAngle;
-				let max = scope.maxAzimuthAngle;
-
-				if ( isFinite( min ) && isFinite( max ) ) {
-
-					if ( min < - Math.PI ) min += twoPI; else if ( min > Math.PI ) min -= twoPI;
-
-					if ( max < - Math.PI ) max += twoPI; else if ( max > Math.PI ) max -= twoPI;
-
-					if ( min <= max ) {
-
-						spherical.theta = Math.max( min, Math.min( max, spherical.theta ) );
-
-					} else {
-
-						spherical.theta = ( spherical.theta > ( min + max ) / 2 ) ?
-							Math.max( min, spherical.theta ) :
-							Math.min( max, spherical.theta );
-
-					}
-
-				}
-
-				// restrict phi to be between desired limits
-				spherical.phi = Math.max( scope.minPolarAngle, Math.min( scope.maxPolarAngle, spherical.phi ) );
-
-				spherical.makeSafe();
-
-
-				spherical.radius *= scale;
-
-				// restrict radius to be between desired limits
-				spherical.radius = Math.max( scope.minDistance, Math.min( scope.maxDistance, spherical.radius ) );
-
-				// move target to panned location
-
-				if ( scope.enableDamping === true ) {
-
-					scope.target.addScaledVector( panOffset, scope.dampingFactor );
-
-				} else {
-
-					scope.target.add( panOffset );
-
-				}
-
-				offset.setFromSpherical( spherical );
-
-				// rotate offset back to "camera-up-vector-is-up" space
-				offset.applyQuaternion( quatInverse );
-
-				position.copy( scope.target ).add( offset );
-
-				scope.object.lookAt( scope.target );
-
-				if ( scope.enableDamping === true ) {
-
-					sphericalDelta.theta *= ( 1 - scope.dampingFactor );
-					sphericalDelta.phi *= ( 1 - scope.dampingFactor );
-
-					panOffset.multiplyScalar( 1 - scope.dampingFactor );
-
-				} else {
-
-					sphericalDelta.set( 0, 0, 0 );
-
-					panOffset.set( 0, 0, 0 );
-
-				}
-
-				scale = 1;
-
-				// update condition is:
-				// min(camera displacement, camera rotation in radians)^2 > EPS
-				// using small-angle approximation cos(x/2) = 1 - x^2 / 8
-
-				if ( zoomChanged ||
-					lastPosition.distanceToSquared( scope.object.position ) > EPS ||
-					8 * ( 1 - lastQuaternion.dot( scope.object.quaternion ) ) > EPS ) {
-
-					scope.dispatchEvent( _changeEvent );
-
-					lastPosition.copy( scope.object.position );
-					lastQuaternion.copy( scope.object.quaternion );
-					zoomChanged = false;
-
-					return true;
-
-				}
-
-				return false;
-
-			};
-
-		}();
-
-		this.dispose = function () {
-
-			scope.domElement.removeEventListener( 'contextmenu', onContextMenu );
-
-			scope.domElement.removeEventListener( 'pointerdown', onPointerDown );
-			scope.domElement.removeEventListener( 'pointercancel', onPointerCancel );
-			scope.domElement.removeEventListener( 'wheel', onMouseWheel );
-
-			scope.domElement.removeEventListener( 'pointermove', onPointerMove );
-			scope.domElement.removeEventListener( 'pointerup', onPointerUp );
-
-
-			if ( scope._domElementKeyEvents !== null ) {
-
-				scope._domElementKeyEvents.removeEventListener( 'keydown', onKeyDown );
-
-			}
-
-			//scope.dispatchEvent( { type: 'dispose' } ); // should this be added here?
-
-		};
-
-		//
-		// internals
-		//
-
-		const scope = this;
-
-		const STATE = {
-			NONE: - 1,
-			ROTATE: 0,
-			DOLLY: 1,
-			PAN: 2,
-			TOUCH_ROTATE: 3,
-			TOUCH_PAN: 4,
-			TOUCH_DOLLY_PAN: 5,
-			TOUCH_DOLLY_ROTATE: 6
-		};
-
-		let state = STATE.NONE;
-
-		const EPS = 0.000001;
-
-		// current position in spherical coordinates
-		const spherical = new Spherical();
-		const sphericalDelta = new Spherical();
-
-		let scale = 1;
-		const panOffset = new Vector3$1();
-		let zoomChanged = false;
-
-		const rotateStart = new Vector2$1();
-		const rotateEnd = new Vector2$1();
-		const rotateDelta = new Vector2$1();
-
-		const panStart = new Vector2$1();
-		const panEnd = new Vector2$1();
-		const panDelta = new Vector2$1();
-
-		const dollyStart = new Vector2$1();
-		const dollyEnd = new Vector2$1();
-		const dollyDelta = new Vector2$1();
-
-		const pointers = [];
-		const pointerPositions = {};
-
-		function getAutoRotationAngle() {
-
-			return 2 * Math.PI / 60 / 60 * scope.autoRotateSpeed;
-
-		}
-
-		function getZoomScale() {
-
-			return Math.pow( 0.95, scope.zoomSpeed );
-
-		}
-
-		function rotateLeft( angle ) {
-
-			sphericalDelta.theta -= angle;
-
-		}
-
-		function rotateUp( angle ) {
-
-			sphericalDelta.phi -= angle;
-
-		}
-
-		const panLeft = function () {
-
-			const v = new Vector3$1();
-
-			return function panLeft( distance, objectMatrix ) {
-
-				v.setFromMatrixColumn( objectMatrix, 0 ); // get X column of objectMatrix
-				v.multiplyScalar( - distance );
-
-				panOffset.add( v );
-
-			};
-
-		}();
-
-		const panUp = function () {
-
-			const v = new Vector3$1();
-
-			return function panUp( distance, objectMatrix ) {
-
-				if ( scope.screenSpacePanning === true ) {
-
-					v.setFromMatrixColumn( objectMatrix, 1 );
-
-				} else {
-
-					v.setFromMatrixColumn( objectMatrix, 0 );
-					v.crossVectors( scope.object.up, v );
-
-				}
-
-				v.multiplyScalar( distance );
-
-				panOffset.add( v );
-
-			};
-
-		}();
-
-		// deltaX and deltaY are in pixels; right and down are positive
-		const pan = function () {
-
-			const offset = new Vector3$1();
-
-			return function pan( deltaX, deltaY ) {
-
-				const element = scope.domElement;
-
-				if ( scope.object.isPerspectiveCamera ) {
-
-					// perspective
-					const position = scope.object.position;
-					offset.copy( position ).sub( scope.target );
-					let targetDistance = offset.length();
-
-					// half of the fov is center to top of screen
-					targetDistance *= Math.tan( ( scope.object.fov / 2 ) * Math.PI / 180.0 );
-
-					// we use only clientHeight here so aspect ratio does not distort speed
-					panLeft( 2 * deltaX * targetDistance / element.clientHeight, scope.object.matrix );
-					panUp( 2 * deltaY * targetDistance / element.clientHeight, scope.object.matrix );
-
-				} else if ( scope.object.isOrthographicCamera ) {
-
-					// orthographic
-					panLeft( deltaX * ( scope.object.right - scope.object.left ) / scope.object.zoom / element.clientWidth, scope.object.matrix );
-					panUp( deltaY * ( scope.object.top - scope.object.bottom ) / scope.object.zoom / element.clientHeight, scope.object.matrix );
-
-				} else {
-
-					// camera neither orthographic nor perspective
-					console.warn( 'WARNING: OrbitControls.js encountered an unknown camera type - pan disabled.' );
-					scope.enablePan = false;
-
-				}
-
-			};
-
-		}();
-
-		function dollyOut( dollyScale ) {
-
-			if ( scope.object.isPerspectiveCamera ) {
-
-				scale /= dollyScale;
-
-			} else if ( scope.object.isOrthographicCamera ) {
-
-				scope.object.zoom = Math.max( scope.minZoom, Math.min( scope.maxZoom, scope.object.zoom * dollyScale ) );
-				scope.object.updateProjectionMatrix();
-				zoomChanged = true;
-
-			} else {
-
-				console.warn( 'WARNING: OrbitControls.js encountered an unknown camera type - dolly/zoom disabled.' );
-				scope.enableZoom = false;
-
-			}
-
-		}
-
-		function dollyIn( dollyScale ) {
-
-			if ( scope.object.isPerspectiveCamera ) {
-
-				scale *= dollyScale;
-
-			} else if ( scope.object.isOrthographicCamera ) {
-
-				scope.object.zoom = Math.max( scope.minZoom, Math.min( scope.maxZoom, scope.object.zoom / dollyScale ) );
-				scope.object.updateProjectionMatrix();
-				zoomChanged = true;
-
-			} else {
-
-				console.warn( 'WARNING: OrbitControls.js encountered an unknown camera type - dolly/zoom disabled.' );
-				scope.enableZoom = false;
-
-			}
-
-		}
-
-		//
-		// event callbacks - update the object state
-		//
-
-		function handleMouseDownRotate( event ) {
-
-			rotateStart.set( event.clientX, event.clientY );
-
-		}
-
-		function handleMouseDownDolly( event ) {
-
-			dollyStart.set( event.clientX, event.clientY );
-
-		}
-
-		function handleMouseDownPan( event ) {
-
-			panStart.set( event.clientX, event.clientY );
-
-		}
-
-		function handleMouseMoveRotate( event ) {
-
-			rotateEnd.set( event.clientX, event.clientY );
-
-			rotateDelta.subVectors( rotateEnd, rotateStart ).multiplyScalar( scope.rotateSpeed );
-
-			const element = scope.domElement;
-
-			rotateLeft( 2 * Math.PI * rotateDelta.x / element.clientHeight ); // yes, height
-
-			rotateUp( 2 * Math.PI * rotateDelta.y / element.clientHeight );
-
-			rotateStart.copy( rotateEnd );
-
-			scope.update();
-
-		}
-
-		function handleMouseMoveDolly( event ) {
-
-			dollyEnd.set( event.clientX, event.clientY );
-
-			dollyDelta.subVectors( dollyEnd, dollyStart );
-
-			if ( dollyDelta.y > 0 ) {
-
-				dollyOut( getZoomScale() );
-
-			} else if ( dollyDelta.y < 0 ) {
-
-				dollyIn( getZoomScale() );
-
-			}
-
-			dollyStart.copy( dollyEnd );
-
-			scope.update();
-
-		}
-
-		function handleMouseMovePan( event ) {
-
-			panEnd.set( event.clientX, event.clientY );
-
-			panDelta.subVectors( panEnd, panStart ).multiplyScalar( scope.panSpeed );
-
-			pan( panDelta.x, panDelta.y );
-
-			panStart.copy( panEnd );
-
-			scope.update();
-
-		}
-
-		function handleMouseWheel( event ) {
-
-			if ( event.deltaY < 0 ) {
-
-				dollyIn( getZoomScale() );
-
-			} else if ( event.deltaY > 0 ) {
-
-				dollyOut( getZoomScale() );
-
-			}
-
-			scope.update();
-
-		}
-
-		function handleKeyDown( event ) {
-
-			let needsUpdate = false;
-
-			switch ( event.code ) {
-
-				case scope.keys.UP:
-					pan( 0, scope.keyPanSpeed );
-					needsUpdate = true;
-					break;
-
-				case scope.keys.BOTTOM:
-					pan( 0, - scope.keyPanSpeed );
-					needsUpdate = true;
-					break;
-
-				case scope.keys.LEFT:
-					pan( scope.keyPanSpeed, 0 );
-					needsUpdate = true;
-					break;
-
-				case scope.keys.RIGHT:
-					pan( - scope.keyPanSpeed, 0 );
-					needsUpdate = true;
-					break;
-
-			}
-
-			if ( needsUpdate ) {
-
-				// prevent the browser from scrolling on cursor keys
-				event.preventDefault();
-
-				scope.update();
-
-			}
-
-
-		}
-
-		function handleTouchStartRotate() {
-
-			if ( pointers.length === 1 ) {
-
-				rotateStart.set( pointers[ 0 ].pageX, pointers[ 0 ].pageY );
-
-			} else {
-
-				const x = 0.5 * ( pointers[ 0 ].pageX + pointers[ 1 ].pageX );
-				const y = 0.5 * ( pointers[ 0 ].pageY + pointers[ 1 ].pageY );
-
-				rotateStart.set( x, y );
-
-			}
-
-		}
-
-		function handleTouchStartPan() {
-
-			if ( pointers.length === 1 ) {
-
-				panStart.set( pointers[ 0 ].pageX, pointers[ 0 ].pageY );
-
-			} else {
-
-				const x = 0.5 * ( pointers[ 0 ].pageX + pointers[ 1 ].pageX );
-				const y = 0.5 * ( pointers[ 0 ].pageY + pointers[ 1 ].pageY );
-
-				panStart.set( x, y );
-
-			}
-
-		}
-
-		function handleTouchStartDolly() {
-
-			const dx = pointers[ 0 ].pageX - pointers[ 1 ].pageX;
-			const dy = pointers[ 0 ].pageY - pointers[ 1 ].pageY;
-
-			const distance = Math.sqrt( dx * dx + dy * dy );
-
-			dollyStart.set( 0, distance );
-
-		}
-
-		function handleTouchStartDollyPan() {
-
-			if ( scope.enableZoom ) handleTouchStartDolly();
-
-			if ( scope.enablePan ) handleTouchStartPan();
-
-		}
-
-		function handleTouchStartDollyRotate() {
-
-			if ( scope.enableZoom ) handleTouchStartDolly();
-
-			if ( scope.enableRotate ) handleTouchStartRotate();
-
-		}
-
-		function handleTouchMoveRotate( event ) {
-
-			if ( pointers.length == 1 ) {
-
-				rotateEnd.set( event.pageX, event.pageY );
-
-			} else {
-
-				const position = getSecondPointerPosition( event );
-
-				const x = 0.5 * ( event.pageX + position.x );
-				const y = 0.5 * ( event.pageY + position.y );
-
-				rotateEnd.set( x, y );
-
-			}
-
-			rotateDelta.subVectors( rotateEnd, rotateStart ).multiplyScalar( scope.rotateSpeed );
-
-			const element = scope.domElement;
-
-			rotateLeft( 2 * Math.PI * rotateDelta.x / element.clientHeight ); // yes, height
-
-			rotateUp( 2 * Math.PI * rotateDelta.y / element.clientHeight );
-
-			rotateStart.copy( rotateEnd );
-
-		}
-
-		function handleTouchMovePan( event ) {
-
-			if ( pointers.length === 1 ) {
-
-				panEnd.set( event.pageX, event.pageY );
-
-			} else {
-
-				const position = getSecondPointerPosition( event );
-
-				const x = 0.5 * ( event.pageX + position.x );
-				const y = 0.5 * ( event.pageY + position.y );
-
-				panEnd.set( x, y );
-
-			}
-
-			panDelta.subVectors( panEnd, panStart ).multiplyScalar( scope.panSpeed );
-
-			pan( panDelta.x, panDelta.y );
-
-			panStart.copy( panEnd );
-
-		}
-
-		function handleTouchMoveDolly( event ) {
-
-			const position = getSecondPointerPosition( event );
-
-			const dx = event.pageX - position.x;
-			const dy = event.pageY - position.y;
-
-			const distance = Math.sqrt( dx * dx + dy * dy );
-
-			dollyEnd.set( 0, distance );
-
-			dollyDelta.set( 0, Math.pow( dollyEnd.y / dollyStart.y, scope.zoomSpeed ) );
-
-			dollyOut( dollyDelta.y );
-
-			dollyStart.copy( dollyEnd );
-
-		}
-
-		function handleTouchMoveDollyPan( event ) {
-
-			if ( scope.enableZoom ) handleTouchMoveDolly( event );
-
-			if ( scope.enablePan ) handleTouchMovePan( event );
-
-		}
-
-		function handleTouchMoveDollyRotate( event ) {
-
-			if ( scope.enableZoom ) handleTouchMoveDolly( event );
-
-			if ( scope.enableRotate ) handleTouchMoveRotate( event );
-
-		}
-
-		//
-		// event handlers - FSM: listen for events and reset state
-		//
-
-		function onPointerDown( event ) {
-
-			if ( scope.enabled === false ) return;
-
-			if ( pointers.length === 0 ) {
-
-				scope.domElement.setPointerCapture( event.pointerId );
-
-				scope.domElement.addEventListener( 'pointermove', onPointerMove );
-				scope.domElement.addEventListener( 'pointerup', onPointerUp );
-
-			}
-
-			//
-
-			addPointer( event );
-
-			if ( event.pointerType === 'touch' ) {
-
-				onTouchStart( event );
-
-			} else {
-
-				onMouseDown( event );
-
-			}
-
-		}
-
-		function onPointerMove( event ) {
-
-			if ( scope.enabled === false ) return;
-
-			if ( event.pointerType === 'touch' ) {
-
-				onTouchMove( event );
-
-			} else {
-
-				onMouseMove( event );
-
-			}
-
-		}
-
-		function onPointerUp( event ) {
-
-		    removePointer( event );
-
-		    if ( pointers.length === 0 ) {
-
-		        scope.domElement.releasePointerCapture( event.pointerId );
-
-		        scope.domElement.removeEventListener( 'pointermove', onPointerMove );
-		        scope.domElement.removeEventListener( 'pointerup', onPointerUp );
-
-		    }
-
-		    scope.dispatchEvent( _endEvent );
-
-		    state = STATE.NONE;
-
-		}
-
-		function onPointerCancel( event ) {
-
-			removePointer( event );
-
-		}
-
-		function onMouseDown( event ) {
-
-			let mouseAction;
-
-			switch ( event.button ) {
-
-				case 0:
-
-					mouseAction = scope.mouseButtons.LEFT;
-					break;
-
-				case 1:
-
-					mouseAction = scope.mouseButtons.MIDDLE;
-					break;
-
-				case 2:
-
-					mouseAction = scope.mouseButtons.RIGHT;
-					break;
-
-				default:
-
-					mouseAction = - 1;
-
-			}
-
-			switch ( mouseAction ) {
-
-				case MOUSE.DOLLY:
-
-					if ( scope.enableZoom === false ) return;
-
-					handleMouseDownDolly( event );
-
-					state = STATE.DOLLY;
-
-					break;
-
-				case MOUSE.ROTATE:
-
-					if ( event.ctrlKey || event.metaKey || event.shiftKey ) {
-
-						if ( scope.enablePan === false ) return;
-
-						handleMouseDownPan( event );
-
-						state = STATE.PAN;
-
-					} else {
-
-						if ( scope.enableRotate === false ) return;
-
-						handleMouseDownRotate( event );
-
-						state = STATE.ROTATE;
-
-					}
-
-					break;
-
-				case MOUSE.PAN:
-
-					if ( event.ctrlKey || event.metaKey || event.shiftKey ) {
-
-						if ( scope.enableRotate === false ) return;
-
-						handleMouseDownRotate( event );
-
-						state = STATE.ROTATE;
-
-					} else {
-
-						if ( scope.enablePan === false ) return;
-
-						handleMouseDownPan( event );
-
-						state = STATE.PAN;
-
-					}
-
-					break;
-
-				default:
-
-					state = STATE.NONE;
-
-			}
-
-			if ( state !== STATE.NONE ) {
-
-				scope.dispatchEvent( _startEvent );
-
-			}
-
-		}
-
-		function onMouseMove( event ) {
-
-			if ( scope.enabled === false ) return;
-
-			switch ( state ) {
-
-				case STATE.ROTATE:
-
-					if ( scope.enableRotate === false ) return;
-
-					handleMouseMoveRotate( event );
-
-					break;
-
-				case STATE.DOLLY:
-
-					if ( scope.enableZoom === false ) return;
-
-					handleMouseMoveDolly( event );
-
-					break;
-
-				case STATE.PAN:
-
-					if ( scope.enablePan === false ) return;
-
-					handleMouseMovePan( event );
-
-					break;
-
-			}
-
-		}
-
-		function onMouseWheel( event ) {
-
-			if ( scope.enabled === false || scope.enableZoom === false || state !== STATE.NONE ) return;
-
-			event.preventDefault();
-
-			scope.dispatchEvent( _startEvent );
-
-			handleMouseWheel( event );
-
-			scope.dispatchEvent( _endEvent );
-
-		}
-
-		function onKeyDown( event ) {
-
-			if ( scope.enabled === false || scope.enablePan === false ) return;
-
-			handleKeyDown( event );
-
-		}
-
-		function onTouchStart( event ) {
-
-			trackPointer( event );
-
-			switch ( pointers.length ) {
-
-				case 1:
-
-					switch ( scope.touches.ONE ) {
-
-						case TOUCH.ROTATE:
-
-							if ( scope.enableRotate === false ) return;
-
-							handleTouchStartRotate();
-
-							state = STATE.TOUCH_ROTATE;
-
-							break;
-
-						case TOUCH.PAN:
-
-							if ( scope.enablePan === false ) return;
-
-							handleTouchStartPan();
-
-							state = STATE.TOUCH_PAN;
-
-							break;
-
-						default:
-
-							state = STATE.NONE;
-
-					}
-
-					break;
-
-				case 2:
-
-					switch ( scope.touches.TWO ) {
-
-						case TOUCH.DOLLY_PAN:
-
-							if ( scope.enableZoom === false && scope.enablePan === false ) return;
-
-							handleTouchStartDollyPan();
-
-							state = STATE.TOUCH_DOLLY_PAN;
-
-							break;
-
-						case TOUCH.DOLLY_ROTATE:
-
-							if ( scope.enableZoom === false && scope.enableRotate === false ) return;
-
-							handleTouchStartDollyRotate();
-
-							state = STATE.TOUCH_DOLLY_ROTATE;
-
-							break;
-
-						default:
-
-							state = STATE.NONE;
-
-					}
-
-					break;
-
-				default:
-
-					state = STATE.NONE;
-
-			}
-
-			if ( state !== STATE.NONE ) {
-
-				scope.dispatchEvent( _startEvent );
-
-			}
-
-		}
-
-		function onTouchMove( event ) {
-
-			trackPointer( event );
-
-			switch ( state ) {
-
-				case STATE.TOUCH_ROTATE:
-
-					if ( scope.enableRotate === false ) return;
-
-					handleTouchMoveRotate( event );
-
-					scope.update();
-
-					break;
-
-				case STATE.TOUCH_PAN:
-
-					if ( scope.enablePan === false ) return;
-
-					handleTouchMovePan( event );
-
-					scope.update();
-
-					break;
-
-				case STATE.TOUCH_DOLLY_PAN:
-
-					if ( scope.enableZoom === false && scope.enablePan === false ) return;
-
-					handleTouchMoveDollyPan( event );
-
-					scope.update();
-
-					break;
-
-				case STATE.TOUCH_DOLLY_ROTATE:
-
-					if ( scope.enableZoom === false && scope.enableRotate === false ) return;
-
-					handleTouchMoveDollyRotate( event );
-
-					scope.update();
-
-					break;
-
-				default:
-
-					state = STATE.NONE;
-
-			}
-
-		}
-
-		function onContextMenu( event ) {
-
-			if ( scope.enabled === false ) return;
-
-			event.preventDefault();
-
-		}
-
-		function addPointer( event ) {
-
-			pointers.push( event );
-
-		}
-
-		function removePointer( event ) {
-
-			delete pointerPositions[ event.pointerId ];
-
-			for ( let i = 0; i < pointers.length; i ++ ) {
-
-				if ( pointers[ i ].pointerId == event.pointerId ) {
-
-					pointers.splice( i, 1 );
-					return;
-
-				}
-
-			}
-
-		}
-
-		function trackPointer( event ) {
-
-			let position = pointerPositions[ event.pointerId ];
-
-			if ( position === undefined ) {
-
-				position = new Vector2$1();
-				pointerPositions[ event.pointerId ] = position;
-
-			}
-
-			position.set( event.pageX, event.pageY );
-
-		}
-
-		function getSecondPointerPosition( event ) {
-
-			const pointer = ( event.pointerId === pointers[ 0 ].pointerId ) ? pointers[ 1 ] : pointers[ 0 ];
-
-			return pointerPositions[ pointer.pointerId ];
-
-		}
-
-		//
-
-		scope.domElement.addEventListener( 'contextmenu', onContextMenu );
-
-		scope.domElement.addEventListener( 'pointerdown', onPointerDown );
-		scope.domElement.addEventListener( 'pointercancel', onPointerCancel );
-		scope.domElement.addEventListener( 'wheel', onMouseWheel, { passive: false } );
-
-		// force an update at start
-
-		this.update();
-
-	}
-
-}
-
-/*!
- * camera-controls
- * https://github.com/yomotsu/camera-controls
- * (c) 2017 @yomotsu
- * Released under the MIT License.
- */
-// see https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/buttons#value
-const MOUSE_BUTTON = {
-    LEFT: 1,
-    RIGHT: 2,
-    MIDDLE: 4,
-};
-const ACTION = Object.freeze({
-    NONE: 0,
-    ROTATE: 1,
-    TRUCK: 2,
-    OFFSET: 4,
-    DOLLY: 8,
-    ZOOM: 16,
-    TOUCH_ROTATE: 32,
-    TOUCH_TRUCK: 64,
-    TOUCH_OFFSET: 128,
-    TOUCH_DOLLY: 256,
-    TOUCH_ZOOM: 512,
-    TOUCH_DOLLY_TRUCK: 1024,
-    TOUCH_DOLLY_OFFSET: 2048,
-    TOUCH_ZOOM_TRUCK: 4096,
-    TOUCH_ZOOM_OFFSET: 8192,
-});
-function isPerspectiveCamera(camera) {
-    return camera.isPerspectiveCamera;
-}
-function isOrthographicCamera(camera) {
-    return camera.isOrthographicCamera;
-}
-
-const PI_2 = Math.PI * 2;
-const PI_HALF = Math.PI / 2;
-
-const EPSILON = 1e-5;
-function approxZero(number, error = EPSILON) {
-    return Math.abs(number) < error;
-}
-function approxEquals(a, b, error = EPSILON) {
-    return approxZero(a - b, error);
-}
-function roundToStep(value, step) {
-    return Math.round(value / step) * step;
-}
-function infinityToMaxNumber(value) {
-    if (isFinite(value))
-        return value;
-    if (value < 0)
-        return -Number.MAX_VALUE;
-    return Number.MAX_VALUE;
-}
-function maxNumberToInfinity(value) {
-    if (Math.abs(value) < Number.MAX_VALUE)
-        return value;
-    return value * Infinity;
-}
-
-function extractClientCoordFromEvent(pointers, out) {
-    out.set(0, 0);
-    pointers.forEach((pointer) => {
-        out.x += pointer.clientX;
-        out.y += pointer.clientY;
-    });
-    out.x /= pointers.length;
-    out.y /= pointers.length;
-}
-
-function notSupportedInOrthographicCamera(camera, message) {
-    if (isOrthographicCamera(camera)) {
-        console.warn(`${message} is not supported in OrthographicCamera`);
-        return true;
-    }
-    return false;
-}
-
-/**
- * A compat function for `Quaternion.invert()` / `Quaternion.inverse()`.
- * `Quaternion.invert()` is introduced in r123 and `Quaternion.inverse()` emits a warning.
- * We are going to use this compat for a while.
- * @param target A target quaternion
- */
-function quatInvertCompat(target) {
-    if (target.invert) {
-        target.invert();
-    }
-    else {
-        target.inverse();
-    }
-    return target;
-}
-
-class EventDispatcher {
-    constructor() {
-        this._listeners = {};
-    }
-    /**
-     * Adds the specified event listener.
-     * @param type event name
-     * @param listener handler function
-     * @category Methods
-     */
-    addEventListener(type, listener) {
-        const listeners = this._listeners;
-        if (listeners[type] === undefined)
-            listeners[type] = [];
-        if (listeners[type].indexOf(listener) === -1)
-            listeners[type].push(listener);
-    }
-    // hasEventListener( type: string, listener: Listener ): boolean {
-    // 	const listeners = this._listeners;
-    // 	return listeners[ type ] !== undefined && listeners[ type ].indexOf( listener ) !== - 1;
-    // }
-    /**
-     * Removes the specified event listener
-     * @param type event name
-     * @param listener handler function
-     * @category Methods
-     */
-    removeEventListener(type, listener) {
-        const listeners = this._listeners;
-        const listenerArray = listeners[type];
-        if (listenerArray !== undefined) {
-            const index = listenerArray.indexOf(listener);
-            if (index !== -1)
-                listenerArray.splice(index, 1);
-        }
-    }
-    /**
-     * Removes all event listeners
-     * @param type event name
-     * @category Methods
-     */
-    removeAllEventListeners(type) {
-        if (!type) {
-            this._listeners = {};
-            return;
-        }
-        if (Array.isArray(this._listeners[type]))
-            this._listeners[type].length = 0;
-    }
-    /**
-     * Fire an event type.
-     * @param event DispatcherEvent
-     * @category Methods
-     */
-    dispatchEvent(event) {
-        const listeners = this._listeners;
-        const listenerArray = listeners[event.type];
-        if (listenerArray !== undefined) {
-            event.target = this;
-            const array = listenerArray.slice(0);
-            for (let i = 0, l = array.length; i < l; i++) {
-                array[i].call(this, event);
-            }
-        }
-    }
-}
-
-const isBrowser = typeof window !== 'undefined';
-const isMac = isBrowser && /Mac/.test(navigator.platform);
-const isPointerEventsNotSupported = !(isBrowser && 'PointerEvent' in window); // Safari 12 does not support PointerEvents API
-const TOUCH_DOLLY_FACTOR = 1 / 8;
-let THREE;
-let _ORIGIN;
-let _AXIS_Y;
-let _AXIS_Z;
-let _v2;
-let _v3A;
-let _v3B;
-let _v3C;
-let _xColumn;
-let _yColumn;
-let _zColumn;
-let _deltaTarget;
-let _deltaOffset;
-let _sphericalA;
-let _sphericalB;
-let _box3A;
-let _box3B;
-let _sphere;
-let _quaternionA;
-let _quaternionB;
-let _rotationMatrix;
-let _raycaster;
-class CameraControls extends EventDispatcher {
-    /**
-     * Creates a `CameraControls` instance.
-     *
-     * Note:
-     * You **must install** three.js before using camera-controls. see [#install](#install)
-     * Not doing so will lead to runtime errors (`undefined` references to THREE).
-     *
-     * e.g.
-     * ```
-     * CameraControls.install( { THREE } );
-     * const cameraControls = new CameraControls( camera, domElement );
-     * ```
-     *
-     * @param camera A `THREE.PerspectiveCamera` or `THREE.OrthographicCamera` to be controlled.
-     * @param domElement A `HTMLElement` for the draggable area, usually `renderer.domElement`.
-     * @category Constructor
-     */
-    constructor(camera, domElement) {
-        super();
-        /**
-         * Minimum vertical angle in radians.
-         * The angle has to be between `0` and `.maxPolarAngle` inclusive.
-         * The default value is `0`.
-         *
-         * e.g.
-         * ```
-         * cameraControls.maxPolarAngle = 0;
-         * ```
-         * @category Properties
-         */
-        this.minPolarAngle = 0; // radians
-        /**
-         * Maximum vertical angle in radians.
-         * The angle has to be between `.maxPolarAngle` and `Math.PI` inclusive.
-         * The default value is `Math.PI`.
-         *
-         * e.g.
-         * ```
-         * cameraControls.maxPolarAngle = Math.PI;
-         * ```
-         * @category Properties
-         */
-        this.maxPolarAngle = Math.PI; // radians
-        /**
-         * Minimum horizontal angle in radians.
-         * The angle has to be less than `.maxAzimuthAngle`.
-         * The default value is `- Infinity`.
-         *
-         * e.g.
-         * ```
-         * cameraControls.minAzimuthAngle = - Infinity;
-         * ```
-         * @category Properties
-         */
-        this.minAzimuthAngle = -Infinity; // radians
-        /**
-         * Maximum horizontal angle in radians.
-         * The angle has to be greater than `.minAzimuthAngle`.
-         * The default value is `Infinity`.
-         *
-         * e.g.
-         * ```
-         * cameraControls.maxAzimuthAngle = Infinity;
-         * ```
-         * @category Properties
-         */
-        this.maxAzimuthAngle = Infinity; // radians
-        // How far you can dolly in and out ( PerspectiveCamera only )
-        /**
-         * Minimum distance for dolly. The value must be higher than `0`.
-         * PerspectiveCamera only.
-         * @category Properties
-         */
-        this.minDistance = 0;
-        /**
-         * Maximum distance for dolly. The value must be higher than `minDistance`.
-         * PerspectiveCamera only.
-         * @category Properties
-         */
-        this.maxDistance = Infinity;
-        /**
-         * `true` to enable Infinity Dolly.
-         * When the Dolly distance is less than the `minDistance`, radius of the sphere will be set `minDistance` automatically.
-         * @category Properties
-         */
-        this.infinityDolly = false;
-        /**
-         * Minimum camera zoom.
-         * @category Properties
-         */
-        this.minZoom = 0.01;
-        /**
-         * Maximum camera zoom.
-         * @category Properties
-         */
-        this.maxZoom = Infinity;
-        /**
-         * The damping inertia.
-         * The value must be between `Math.EPSILON` to `1` inclusive.
-         * Setting `1` to disable smooth transitions.
-         * @category Properties
-         */
-        this.dampingFactor = 0.05;
-        /**
-         * The damping inertia while dragging.
-         * The value must be between `Math.EPSILON` to `1` inclusive.
-         * Setting `1` to disable smooth transitions.
-         * @category Properties
-         */
-        this.draggingDampingFactor = 0.25;
-        /**
-         * Speed of azimuth (horizontal) rotation.
-         * @category Properties
-         */
-        this.azimuthRotateSpeed = 1.0;
-        /**
-         * Speed of polar (vertical) rotation.
-         * @category Properties
-         */
-        this.polarRotateSpeed = 1.0;
-        /**
-         * Speed of mouse-wheel dollying.
-         * @category Properties
-         */
-        this.dollySpeed = 1.0;
-        /**
-         * Speed of drag for truck and pedestal.
-         * @category Properties
-         */
-        this.truckSpeed = 2.0;
-        /**
-         * `true` to enable Dolly-in to the mouse cursor coords.
-         * @category Properties
-         */
-        this.dollyToCursor = false;
-        /**
-         * @category Properties
-         */
-        this.dragToOffset = false;
-        /**
-         * The same as `.screenSpacePanning` in three.js's OrbitControls.
-         * @category Properties
-         */
-        this.verticalDragToForward = false;
-        /**
-         * Friction ratio of the boundary.
-         * @category Properties
-         */
-        this.boundaryFriction = 0.0;
-        /**
-         * Controls how soon the `rest` event fires as the camera slows.
-         * @category Properties
-         */
-        this.restThreshold = 0.01;
-        /**
-         * An array of Meshes to collide with camera.
-         * Be aware colliderMeshes may decrease performance. The collision test uses 4 raycasters from the camera since the near plane has 4 corners.
-         * @category Properties
-         */
-        this.colliderMeshes = [];
-        /**
-         * Force cancel user dragging.
-         * @category Methods
-         */
-        // cancel will be overwritten in the constructor.
-        this.cancel = () => { };
-        this._enabled = true;
-        this._state = ACTION.NONE;
-        this._viewport = null;
-        this._dollyControlAmount = 0;
-        this._hasRested = true;
-        this._boundaryEnclosesCamera = false;
-        this._needsUpdate = true;
-        this._updatedLastTime = false;
-        this._elementRect = new DOMRect();
-        this._activePointers = [];
-        this._truckInternal = (deltaX, deltaY, dragToOffset) => {
-            if (isPerspectiveCamera(this._camera)) {
-                const offset = _v3A.copy(this._camera.position).sub(this._target);
-                // half of the fov is center to top of screen
-                const fov = this._camera.getEffectiveFOV() * THREE.MathUtils.DEG2RAD;
-                const targetDistance = offset.length() * Math.tan(fov * 0.5);
-                const truckX = (this.truckSpeed * deltaX * targetDistance / this._elementRect.height);
-                const pedestalY = (this.truckSpeed * deltaY * targetDistance / this._elementRect.height);
-                if (this.verticalDragToForward) {
-                    dragToOffset ?
-                        this.setFocalOffset(this._focalOffsetEnd.x + truckX, this._focalOffsetEnd.y, this._focalOffsetEnd.z, true) :
-                        this.truck(truckX, 0, true);
-                    this.forward(-pedestalY, true);
-                }
-                else {
-                    dragToOffset ?
-                        this.setFocalOffset(this._focalOffsetEnd.x + truckX, this._focalOffsetEnd.y + pedestalY, this._focalOffsetEnd.z, true) :
-                        this.truck(truckX, pedestalY, true);
-                }
-            }
-            else if (isOrthographicCamera(this._camera)) {
-                // orthographic
-                const camera = this._camera;
-                const truckX = deltaX * (camera.right - camera.left) / camera.zoom / this._elementRect.width;
-                const pedestalY = deltaY * (camera.top - camera.bottom) / camera.zoom / this._elementRect.height;
-                dragToOffset ?
-                    this.setFocalOffset(this._focalOffsetEnd.x + truckX, this._focalOffsetEnd.y + pedestalY, this._focalOffsetEnd.z, true) :
-                    this.truck(truckX, pedestalY, true);
-            }
-        };
-        this._rotateInternal = (deltaX, deltaY) => {
-            const theta = PI_2 * this.azimuthRotateSpeed * deltaX / this._elementRect.height; // divide by *height* to refer the resolution
-            const phi = PI_2 * this.polarRotateSpeed * deltaY / this._elementRect.height;
-            this.rotate(theta, phi, true);
-        };
-        this._dollyInternal = (delta, x, y) => {
-            const dollyScale = Math.pow(0.95, -delta * this.dollySpeed);
-            const distance = this._sphericalEnd.radius * dollyScale;
-            const prevRadius = this._sphericalEnd.radius;
-            const signedPrevRadius = prevRadius * (delta >= 0 ? -1 : 1);
-            this.dollyTo(distance);
-            if (this.infinityDolly && (distance < this.minDistance || this.maxDistance === this.minDistance)) {
-                this._camera.getWorldDirection(_v3A);
-                this._targetEnd.add(_v3A.normalize().multiplyScalar(signedPrevRadius));
-                this._target.add(_v3A.normalize().multiplyScalar(signedPrevRadius));
-            }
-            if (this.dollyToCursor) {
-                this._dollyControlAmount += this._sphericalEnd.radius - prevRadius;
-                if (this.infinityDolly && (distance < this.minDistance || this.maxDistance === this.minDistance)) {
-                    this._dollyControlAmount -= signedPrevRadius;
-                }
-                this._dollyControlCoord.set(x, y);
-            }
-            return;
-        };
-        this._zoomInternal = (delta, x, y) => {
-            const zoomScale = Math.pow(0.95, delta * this.dollySpeed);
-            // for both PerspectiveCamera and OrthographicCamera
-            this.zoomTo(this._zoom * zoomScale);
-            if (this.dollyToCursor) {
-                this._dollyControlAmount = this._zoomEnd;
-                this._dollyControlCoord.set(x, y);
-            }
-            return;
-        };
-        // Check if the user has installed THREE
-        if (typeof THREE === 'undefined') {
-            console.error('camera-controls: `THREE` is undefined. You must first run `CameraControls.install( { THREE: THREE } )`. Check the docs for further information.');
-        }
-        this._camera = camera;
-        this._yAxisUpSpace = new THREE.Quaternion().setFromUnitVectors(this._camera.up, _AXIS_Y);
-        this._yAxisUpSpaceInverse = quatInvertCompat(this._yAxisUpSpace.clone());
-        this._state = ACTION.NONE;
-        this._domElement = domElement;
-        this._domElement.style.touchAction = 'none';
-        this._domElement.style.userSelect = 'none';
-        this._domElement.style.webkitUserSelect = 'none';
-        // the location
-        this._target = new THREE.Vector3();
-        this._targetEnd = this._target.clone();
-        this._focalOffset = new THREE.Vector3();
-        this._focalOffsetEnd = this._focalOffset.clone();
-        // rotation
-        this._spherical = new THREE.Spherical().setFromVector3(_v3A.copy(this._camera.position).applyQuaternion(this._yAxisUpSpace));
-        this._sphericalEnd = this._spherical.clone();
-        this._zoom = this._camera.zoom;
-        this._zoomEnd = this._zoom;
-        // collisionTest uses nearPlane.s
-        this._nearPlaneCorners = [
-            new THREE.Vector3(),
-            new THREE.Vector3(),
-            new THREE.Vector3(),
-            new THREE.Vector3(),
-        ];
-        this._updateNearPlaneCorners();
-        // Target cannot move outside of this box
-        this._boundary = new THREE.Box3(new THREE.Vector3(-Infinity, -Infinity, -Infinity), new THREE.Vector3(Infinity, Infinity, Infinity));
-        // reset
-        this._target0 = this._target.clone();
-        this._position0 = this._camera.position.clone();
-        this._zoom0 = this._zoom;
-        this._focalOffset0 = this._focalOffset.clone();
-        this._dollyControlAmount = 0;
-        this._dollyControlCoord = new THREE.Vector2();
-        // configs
-        this.mouseButtons = {
-            left: ACTION.ROTATE,
-            middle: ACTION.DOLLY,
-            right: ACTION.TRUCK,
-            wheel: isPerspectiveCamera(this._camera) ? ACTION.DOLLY :
-                isOrthographicCamera(this._camera) ? ACTION.ZOOM :
-                    ACTION.NONE,
-        };
-        this.touches = {
-            one: ACTION.TOUCH_ROTATE,
-            two: isPerspectiveCamera(this._camera) ? ACTION.TOUCH_DOLLY_TRUCK :
-                isOrthographicCamera(this._camera) ? ACTION.TOUCH_ZOOM_TRUCK :
-                    ACTION.NONE,
-            three: ACTION.TOUCH_TRUCK,
-        };
-        if (this._domElement) {
-            const dragStartPosition = new THREE.Vector2();
-            const lastDragPosition = new THREE.Vector2();
-            const dollyStart = new THREE.Vector2();
-            const onPointerDown = (event) => {
-                if (!this._enabled)
-                    return;
-                // Don't call `event.preventDefault()` on the pointerdown event
-                // to keep receiving pointermove evens outside dragging iframe
-                // https://taye.me/blog/tips/2015/11/16/mouse-drag-outside-iframe/
-                const pointer = {
-                    pointerId: event.pointerId,
-                    clientX: event.clientX,
-                    clientY: event.clientY,
-                    deltaX: 0,
-                    deltaY: 0,
-                };
-                this._activePointers.push(pointer);
-                // eslint-disable-next-line no-undef
-                this._domElement.ownerDocument.removeEventListener('pointermove', onPointerMove, { passive: false });
-                this._domElement.ownerDocument.removeEventListener('pointerup', onPointerUp);
-                this._domElement.ownerDocument.addEventListener('pointermove', onPointerMove, { passive: false });
-                this._domElement.ownerDocument.addEventListener('pointerup', onPointerUp);
-                startDragging(event);
-            };
-            const onMouseDown = (event) => {
-                if (!this._enabled)
-                    return;
-                const pointer = {
-                    pointerId: 0,
-                    clientX: event.clientX,
-                    clientY: event.clientY,
-                    deltaX: 0,
-                    deltaY: 0,
-                };
-                this._activePointers.push(pointer);
-                // see https://github.com/microsoft/TypeScript/issues/32912#issuecomment-522142969
-                // eslint-disable-next-line no-undef
-                this._domElement.ownerDocument.removeEventListener('mousemove', onMouseMove);
-                this._domElement.ownerDocument.removeEventListener('mouseup', onMouseUp);
-                this._domElement.ownerDocument.addEventListener('mousemove', onMouseMove);
-                this._domElement.ownerDocument.addEventListener('mouseup', onMouseUp);
-                startDragging(event);
-            };
-            const onTouchStart = (event) => {
-                if (!this._enabled)
-                    return;
-                event.preventDefault();
-                Array.prototype.forEach.call(event.changedTouches, (touch) => {
-                    const pointer = {
-                        pointerId: touch.identifier,
-                        clientX: touch.clientX,
-                        clientY: touch.clientY,
-                        deltaX: 0,
-                        deltaY: 0,
-                    };
-                    this._activePointers.push(pointer);
-                });
-                // eslint-disable-next-line no-undef
-                this._domElement.ownerDocument.removeEventListener('touchmove', onTouchMove, { passive: false });
-                this._domElement.ownerDocument.removeEventListener('touchend', onTouchEnd);
-                this._domElement.ownerDocument.addEventListener('touchmove', onTouchMove, { passive: false });
-                this._domElement.ownerDocument.addEventListener('touchend', onTouchEnd);
-                startDragging(event);
-            };
-            const onPointerMove = (event) => {
-                if (event.cancelable)
-                    event.preventDefault();
-                const pointerId = event.pointerId;
-                const pointer = this._findPointerById(pointerId);
-                if (!pointer)
-                    return;
-                pointer.clientX = event.clientX;
-                pointer.clientY = event.clientY;
-                pointer.deltaX = event.movementX;
-                pointer.deltaY = event.movementY;
-                if (event.pointerType === 'touch') {
-                    switch (this._activePointers.length) {
-                        case 1:
-                            this._state = this.touches.one;
-                            break;
-                        case 2:
-                            this._state = this.touches.two;
-                            break;
-                        case 3:
-                            this._state = this.touches.three;
-                            break;
-                    }
-                }
-                else {
-                    this._state = 0;
-                    if ((event.buttons & MOUSE_BUTTON.LEFT) === MOUSE_BUTTON.LEFT) {
-                        this._state = this._state | this.mouseButtons.left;
-                    }
-                    if ((event.buttons & MOUSE_BUTTON.MIDDLE) === MOUSE_BUTTON.MIDDLE) {
-                        this._state = this._state | this.mouseButtons.middle;
-                    }
-                    if ((event.buttons & MOUSE_BUTTON.RIGHT) === MOUSE_BUTTON.RIGHT) {
-                        this._state = this._state | this.mouseButtons.right;
-                    }
-                }
-                dragging();
-            };
-            const onMouseMove = (event) => {
-                const pointer = this._findPointerById(0);
-                if (!pointer)
-                    return;
-                pointer.clientX = event.clientX;
-                pointer.clientY = event.clientY;
-                pointer.deltaX = event.movementX;
-                pointer.deltaY = event.movementY;
-                this._state = 0;
-                if ((event.buttons & MOUSE_BUTTON.LEFT) === MOUSE_BUTTON.LEFT) {
-                    this._state = this._state | this.mouseButtons.left;
-                }
-                if ((event.buttons & MOUSE_BUTTON.MIDDLE) === MOUSE_BUTTON.MIDDLE) {
-                    this._state = this._state | this.mouseButtons.middle;
-                }
-                if ((event.buttons & MOUSE_BUTTON.RIGHT) === MOUSE_BUTTON.RIGHT) {
-                    this._state = this._state | this.mouseButtons.right;
-                }
-                dragging();
-            };
-            const onTouchMove = (event) => {
-                if (event.cancelable)
-                    event.preventDefault();
-                Array.prototype.forEach.call(event.changedTouches, (touch) => {
-                    const pointerId = touch.identifier;
-                    const pointer = this._findPointerById(pointerId);
-                    if (!pointer)
-                        return;
-                    pointer.clientX = touch.clientX;
-                    pointer.clientY = touch.clientY;
-                    // touch event does not have movementX and movementY.
-                });
-                dragging();
-            };
-            const onPointerUp = (event) => {
-                const pointerId = event.pointerId;
-                const pointer = this._findPointerById(pointerId);
-                pointer && this._activePointers.splice(this._activePointers.indexOf(pointer), 1);
-                if (event.pointerType === 'touch') {
-                    switch (this._activePointers.length) {
-                        case 0:
-                            this._state = ACTION.NONE;
-                            break;
-                        case 1:
-                            this._state = this.touches.one;
-                            break;
-                        case 2:
-                            this._state = this.touches.two;
-                            break;
-                        case 3:
-                            this._state = this.touches.three;
-                            break;
-                    }
-                }
-                else {
-                    this._state = ACTION.NONE;
-                }
-                endDragging();
-            };
-            const onMouseUp = () => {
-                const pointer = this._findPointerById(0);
-                pointer && this._activePointers.splice(this._activePointers.indexOf(pointer), 1);
-                this._state = ACTION.NONE;
-                endDragging();
-            };
-            const onTouchEnd = (event) => {
-                Array.prototype.forEach.call(event.changedTouches, (touch) => {
-                    const pointerId = touch.identifier;
-                    const pointer = this._findPointerById(pointerId);
-                    pointer && this._activePointers.splice(this._activePointers.indexOf(pointer), 1);
-                });
-                switch (this._activePointers.length) {
-                    case 0:
-                        this._state = ACTION.NONE;
-                        break;
-                    case 1:
-                        this._state = this.touches.one;
-                        break;
-                    case 2:
-                        this._state = this.touches.two;
-                        break;
-                    case 3:
-                        this._state = this.touches.three;
-                        break;
-                }
-                endDragging();
-            };
-            let lastScrollTimeStamp = -1;
-            const onMouseWheel = (event) => {
-                if (!this._enabled || this.mouseButtons.wheel === ACTION.NONE)
-                    return;
-                event.preventDefault();
-                if (this.dollyToCursor ||
-                    this.mouseButtons.wheel === ACTION.ROTATE ||
-                    this.mouseButtons.wheel === ACTION.TRUCK) {
-                    const now = performance.now();
-                    // only need to fire this at scroll start.
-                    if (lastScrollTimeStamp - now < 1000)
-                        this._getClientRect(this._elementRect);
-                    lastScrollTimeStamp = now;
-                }
-                // Ref: https://github.com/cedricpinson/osgjs/blob/00e5a7e9d9206c06fdde0436e1d62ab7cb5ce853/sources/osgViewer/input/source/InputSourceMouse.js#L89-L103
-                const deltaYFactor = isMac ? -1 : -3;
-                const delta = (event.deltaMode === 1) ? event.deltaY / deltaYFactor : event.deltaY / (deltaYFactor * 10);
-                const x = this.dollyToCursor ? (event.clientX - this._elementRect.x) / this._elementRect.width * 2 - 1 : 0;
-                const y = this.dollyToCursor ? (event.clientY - this._elementRect.y) / this._elementRect.height * -2 + 1 : 0;
-                switch (this.mouseButtons.wheel) {
-                    case ACTION.ROTATE: {
-                        this._rotateInternal(event.deltaX, event.deltaY);
-                        break;
-                    }
-                    case ACTION.TRUCK: {
-                        this._truckInternal(event.deltaX, event.deltaY, false);
-                        break;
-                    }
-                    case ACTION.OFFSET: {
-                        this._truckInternal(event.deltaX, event.deltaY, true);
-                        break;
-                    }
-                    case ACTION.DOLLY: {
-                        this._dollyInternal(-delta, x, y);
-                        break;
-                    }
-                    case ACTION.ZOOM: {
-                        this._zoomInternal(-delta, x, y);
-                        break;
-                    }
-                }
-                this.dispatchEvent({ type: 'control' });
-            };
-            const onContextMenu = (event) => {
-                if (!this._enabled)
-                    return;
-                event.preventDefault();
-            };
-            const startDragging = (event) => {
-                if (!this._enabled)
-                    return;
-                extractClientCoordFromEvent(this._activePointers, _v2);
-                this._getClientRect(this._elementRect);
-                dragStartPosition.copy(_v2);
-                lastDragPosition.copy(_v2);
-                const isMultiTouch = this._activePointers.length >= 2;
-                if (isMultiTouch) {
-                    // 2 finger pinch
-                    const dx = _v2.x - this._activePointers[1].clientX;
-                    const dy = _v2.y - this._activePointers[1].clientY;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    dollyStart.set(0, distance);
-                    // center coords of 2 finger truck
-                    const x = (this._activePointers[0].clientX + this._activePointers[1].clientX) * 0.5;
-                    const y = (this._activePointers[0].clientY + this._activePointers[1].clientY) * 0.5;
-                    lastDragPosition.set(x, y);
-                }
-                if ('touches' in event ||
-                    'pointerType' in event && event.pointerType === 'touch') {
-                    switch (this._activePointers.length) {
-                        case 1:
-                            this._state = this.touches.one;
-                            break;
-                        case 2:
-                            this._state = this.touches.two;
-                            break;
-                        case 3:
-                            this._state = this.touches.three;
-                            break;
-                    }
-                }
-                else {
-                    this._state = 0;
-                    if ((event.buttons & MOUSE_BUTTON.LEFT) === MOUSE_BUTTON.LEFT) {
-                        this._state = this._state | this.mouseButtons.left;
-                    }
-                    if ((event.buttons & MOUSE_BUTTON.MIDDLE) === MOUSE_BUTTON.MIDDLE) {
-                        this._state = this._state | this.mouseButtons.middle;
-                    }
-                    if ((event.buttons & MOUSE_BUTTON.RIGHT) === MOUSE_BUTTON.RIGHT) {
-                        this._state = this._state | this.mouseButtons.right;
-                    }
-                }
-                this.dispatchEvent({ type: 'controlstart' });
-            };
-            const dragging = () => {
-                if (!this._enabled)
-                    return;
-                extractClientCoordFromEvent(this._activePointers, _v2);
-                // When pointer lock is enabled clientX, clientY, screenX, and screenY remain 0.
-                // If pointer lock is enabled, use the Delta directory, and assume active-pointer is not multiple.
-                const isPointerLockActive = this._domElement && document.pointerLockElement === this._domElement;
-                const deltaX = isPointerLockActive ? -this._activePointers[0].deltaX : lastDragPosition.x - _v2.x;
-                const deltaY = isPointerLockActive ? -this._activePointers[0].deltaY : lastDragPosition.y - _v2.y;
-                lastDragPosition.copy(_v2);
-                if ((this._state & ACTION.ROTATE) === ACTION.ROTATE ||
-                    (this._state & ACTION.TOUCH_ROTATE) === ACTION.TOUCH_ROTATE) {
-                    this._rotateInternal(deltaX, deltaY);
-                }
-                if ((this._state & ACTION.DOLLY) === ACTION.DOLLY ||
-                    (this._state & ACTION.ZOOM) === ACTION.ZOOM) {
-                    const dollyX = this.dollyToCursor ? (dragStartPosition.x - this._elementRect.x) / this._elementRect.width * 2 - 1 : 0;
-                    const dollyY = this.dollyToCursor ? (dragStartPosition.y - this._elementRect.y) / this._elementRect.height * -2 + 1 : 0;
-                    this._state === ACTION.DOLLY ?
-                        this._dollyInternal(deltaY * TOUCH_DOLLY_FACTOR, dollyX, dollyY) :
-                        this._zoomInternal(deltaY * TOUCH_DOLLY_FACTOR, dollyX, dollyY);
-                }
-                if ((this._state & ACTION.TOUCH_DOLLY) === ACTION.TOUCH_DOLLY ||
-                    (this._state & ACTION.TOUCH_ZOOM) === ACTION.TOUCH_ZOOM ||
-                    (this._state & ACTION.TOUCH_DOLLY_TRUCK) === ACTION.TOUCH_DOLLY_TRUCK ||
-                    (this._state & ACTION.TOUCH_ZOOM_TRUCK) === ACTION.TOUCH_ZOOM_TRUCK ||
-                    (this._state & ACTION.TOUCH_DOLLY_OFFSET) === ACTION.TOUCH_DOLLY_OFFSET ||
-                    (this._state & ACTION.TOUCH_ZOOM_OFFSET) === ACTION.TOUCH_ZOOM_OFFSET) {
-                    const dx = _v2.x - this._activePointers[1].clientX;
-                    const dy = _v2.y - this._activePointers[1].clientY;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    const dollyDelta = dollyStart.y - distance;
-                    dollyStart.set(0, distance);
-                    const dollyX = this.dollyToCursor ? (lastDragPosition.x - this._elementRect.x) / this._elementRect.width * 2 - 1 : 0;
-                    const dollyY = this.dollyToCursor ? (lastDragPosition.y - this._elementRect.y) / this._elementRect.height * -2 + 1 : 0;
-                    this._state === ACTION.TOUCH_DOLLY ||
-                        this._state === ACTION.TOUCH_DOLLY_TRUCK ||
-                        this._state === ACTION.TOUCH_DOLLY_OFFSET ?
-                        this._dollyInternal(dollyDelta * TOUCH_DOLLY_FACTOR, dollyX, dollyY) :
-                        this._zoomInternal(dollyDelta * TOUCH_DOLLY_FACTOR, dollyX, dollyY);
-                }
-                if ((this._state & ACTION.TRUCK) === ACTION.TRUCK ||
-                    (this._state & ACTION.TOUCH_TRUCK) === ACTION.TOUCH_TRUCK ||
-                    (this._state & ACTION.TOUCH_DOLLY_TRUCK) === ACTION.TOUCH_DOLLY_TRUCK ||
-                    (this._state & ACTION.TOUCH_ZOOM_TRUCK) === ACTION.TOUCH_ZOOM_TRUCK) {
-                    this._truckInternal(deltaX, deltaY, false);
-                }
-                if ((this._state & ACTION.OFFSET) === ACTION.OFFSET ||
-                    (this._state & ACTION.TOUCH_OFFSET) === ACTION.TOUCH_OFFSET ||
-                    (this._state & ACTION.TOUCH_DOLLY_OFFSET) === ACTION.TOUCH_DOLLY_OFFSET ||
-                    (this._state & ACTION.TOUCH_ZOOM_OFFSET) === ACTION.TOUCH_ZOOM_OFFSET) {
-                    this._truckInternal(deltaX, deltaY, true);
-                }
-                this.dispatchEvent({ type: 'control' });
-            };
-            const endDragging = () => {
-                extractClientCoordFromEvent(this._activePointers, _v2);
-                lastDragPosition.copy(_v2);
-                if (this._activePointers.length === 0) {
-                    // eslint-disable-next-line no-undef
-                    this._domElement.ownerDocument.removeEventListener('pointermove', onPointerMove, { passive: false });
-                    this._domElement.ownerDocument.removeEventListener('pointerup', onPointerUp);
-                    // eslint-disable-next-line no-undef
-                    this._domElement.ownerDocument.removeEventListener('touchmove', onTouchMove, { passive: false });
-                    this._domElement.ownerDocument.removeEventListener('touchend', onTouchEnd);
-                    this.dispatchEvent({ type: 'controlend' });
-                }
-            };
-            this._domElement.addEventListener('pointerdown', onPointerDown);
-            isPointerEventsNotSupported && this._domElement.addEventListener('mousedown', onMouseDown);
-            isPointerEventsNotSupported && this._domElement.addEventListener('touchstart', onTouchStart);
-            this._domElement.addEventListener('pointercancel', onPointerUp);
-            this._domElement.addEventListener('wheel', onMouseWheel, { passive: false });
-            this._domElement.addEventListener('contextmenu', onContextMenu);
-            this._removeAllEventListeners = () => {
-                this._domElement.removeEventListener('pointerdown', onPointerDown);
-                this._domElement.removeEventListener('mousedown', onMouseDown);
-                this._domElement.removeEventListener('touchstart', onTouchStart);
-                this._domElement.removeEventListener('pointercancel', onPointerUp);
-                // https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/removeEventListener#matching_event_listeners_for_removal
-                // > it's probably wise to use the same values used for the call to `addEventListener()` when calling `removeEventListener()`
-                // see https://github.com/microsoft/TypeScript/issues/32912#issuecomment-522142969
-                // eslint-disable-next-line no-undef
-                this._domElement.removeEventListener('wheel', onMouseWheel, { passive: false });
-                this._domElement.removeEventListener('contextmenu', onContextMenu);
-                // eslint-disable-next-line no-undef
-                this._domElement.ownerDocument.removeEventListener('pointermove', onPointerMove, { passive: false });
-                this._domElement.ownerDocument.removeEventListener('mousemove', onMouseMove);
-                // eslint-disable-next-line no-undef
-                this._domElement.ownerDocument.removeEventListener('touchmove', onTouchMove, { passive: false });
-                this._domElement.ownerDocument.removeEventListener('pointerup', onPointerUp);
-                this._domElement.ownerDocument.removeEventListener('mouseup', onMouseUp);
-                this._domElement.ownerDocument.removeEventListener('touchend', onTouchEnd);
-            };
-            this.cancel = () => {
-                if (this._state === ACTION.NONE)
-                    return;
-                this._state = ACTION.NONE;
-                this._activePointers.length = 0;
-                endDragging();
-            };
-        }
-        this.update(0);
-    }
-    /**
-     * Injects THREE as the dependency. You can then proceed to use CameraControls.
-     *
-     * e.g
-     * ```javascript
-     * CameraControls.install( { THREE: THREE } );
-     * ```
-     *
-     * Note: If you do not wish to use enter three.js to reduce file size(tree-shaking for example), make a subset to install.
-     *
-     * ```js
-     * import {
-     * 	Vector2,
-     * 	Vector3,
-     * 	Vector4,
-     * 	Quaternion,
-     * 	Matrix4,
-     * 	Spherical,
-     * 	Box3,
-     * 	Sphere,
-     * 	Raycaster,
-     * 	MathUtils,
-     * } from 'three';
-     *
-     * const subsetOfTHREE = {
-     * 	Vector2   : Vector2,
-     * 	Vector3   : Vector3,
-     * 	Vector4   : Vector4,
-     * 	Quaternion: Quaternion,
-     * 	Matrix4   : Matrix4,
-     * 	Spherical : Spherical,
-     * 	Box3      : Box3,
-     * 	Sphere    : Sphere,
-     * 	Raycaster : Raycaster,
-     * 	MathUtils : {
-     * 		DEG2RAD: MathUtils.DEG2RAD,
-     * 		clamp: MathUtils.clamp,
-     * 	},
-     * };
-
-     * CameraControls.install( { THREE: subsetOfTHREE } );
-     * ```
-     * @category Statics
-     */
-    static install(libs) {
-        THREE = libs.THREE;
-        _ORIGIN = Object.freeze(new THREE.Vector3(0, 0, 0));
-        _AXIS_Y = Object.freeze(new THREE.Vector3(0, 1, 0));
-        _AXIS_Z = Object.freeze(new THREE.Vector3(0, 0, 1));
-        _v2 = new THREE.Vector2();
-        _v3A = new THREE.Vector3();
-        _v3B = new THREE.Vector3();
-        _v3C = new THREE.Vector3();
-        _xColumn = new THREE.Vector3();
-        _yColumn = new THREE.Vector3();
-        _zColumn = new THREE.Vector3();
-        _deltaTarget = new THREE.Vector3();
-        _deltaOffset = new THREE.Vector3();
-        _sphericalA = new THREE.Spherical();
-        _sphericalB = new THREE.Spherical();
-        _box3A = new THREE.Box3();
-        _box3B = new THREE.Box3();
-        _sphere = new THREE.Sphere();
-        _quaternionA = new THREE.Quaternion();
-        _quaternionB = new THREE.Quaternion();
-        _rotationMatrix = new THREE.Matrix4();
-        _raycaster = new THREE.Raycaster();
-    }
-    /**
-     * list all ACTIONs
-     * @category Statics
-     */
-    static get ACTION() {
-        return ACTION;
-    }
-    /**
-     * The camera to be controlled
-     * @category Properties
-     */
-    get camera() {
-        return this._camera;
-    }
-    set camera(camera) {
-        this._camera = camera;
-        this.updateCameraUp();
-        this._camera.updateProjectionMatrix();
-        this._updateNearPlaneCorners();
-        this._needsUpdate = true;
-    }
-    /**
-     * Whether or not the controls are enabled.
-     * `false` to disable user dragging/touch-move, but all methods works.
-     * @category Properties
-     */
-    get enabled() {
-        return this._enabled;
-    }
-    set enabled(enabled) {
-        this._enabled = enabled;
-        if (enabled) {
-            this._domElement.style.touchAction = 'none';
-            this._domElement.style.userSelect = 'none';
-            this._domElement.style.webkitUserSelect = 'none';
-        }
-        else {
-            this.cancel();
-            this._domElement.style.touchAction = '';
-            this._domElement.style.userSelect = '';
-            this._domElement.style.webkitUserSelect = '';
-        }
-    }
-    /**
-     * Returns `true` if the controls are active updating.
-     * readonly value.
-     * @category Properties
-     */
-    get active() {
-        return !this._hasRested;
-    }
-    /**
-     * Getter for the current `ACTION`.
-     * readonly value.
-     * @category Properties
-     */
-    get currentAction() {
-        return this._state;
-    }
-    /**
-     * get/set Current distance.
-     * @category Properties
-     */
-    get distance() {
-        return this._spherical.radius;
-    }
-    set distance(distance) {
-        if (this._spherical.radius === distance &&
-            this._sphericalEnd.radius === distance)
-            return;
-        this._spherical.radius = distance;
-        this._sphericalEnd.radius = distance;
-        this._needsUpdate = true;
-    }
-    // horizontal angle
-    /**
-     * get/set the azimuth angle (horizontal) in radians.
-     * Every 360 degrees turn is added to `.azimuthAngle` value, which is accumulative.
-     * @category Properties
-     */
-    get azimuthAngle() {
-        return this._spherical.theta;
-    }
-    set azimuthAngle(azimuthAngle) {
-        if (this._spherical.theta === azimuthAngle &&
-            this._sphericalEnd.theta === azimuthAngle)
-            return;
-        this._spherical.theta = azimuthAngle;
-        this._sphericalEnd.theta = azimuthAngle;
-        this._needsUpdate = true;
-    }
-    // vertical angle
-    /**
-     * get/set the polar angle (vertical) in radians.
-     * @category Properties
-     */
-    get polarAngle() {
-        return this._spherical.phi;
-    }
-    set polarAngle(polarAngle) {
-        if (this._spherical.phi === polarAngle &&
-            this._sphericalEnd.phi === polarAngle)
-            return;
-        this._spherical.phi = polarAngle;
-        this._sphericalEnd.phi = polarAngle;
-        this._needsUpdate = true;
-    }
-    /**
-     * Whether camera position should be enclosed in the boundary or not.
-     * @category Properties
-     */
-    get boundaryEnclosesCamera() {
-        return this._boundaryEnclosesCamera;
-    }
-    set boundaryEnclosesCamera(boundaryEnclosesCamera) {
-        this._boundaryEnclosesCamera = boundaryEnclosesCamera;
-        this._needsUpdate = true;
-    }
-    /**
-     * Adds the specified event listener.
-     * Applicable event types (which is `K`) are:
-     * | Event name          | Timing |
-     * | ------------------- | ------ |
-     * | `'controlstart'`    | When the user starts to control the camera via mouse / touches. ¹ |
-     * | `'control'`         | When the user controls the camera (dragging). |
-     * | `'controlend'`      | When the user ends to control the camera. ¹ |
-     * | `'transitionstart'` | When any kind of transition starts, either user control or using a method with `enableTransition = true` |
-     * | `'update'`          | When the camera position is updated. |
-     * | `'wake'`            | When the camera starts moving. |
-     * | `'rest'`            | When the camera movement is below `.restThreshold` ². |
-     * | `'sleep'`           | When the camera end moving. |
-     *
-     * 1. `mouseButtons.wheel` (Mouse wheel control) does not emit `'controlstart'` and `'controlend'`. `mouseButtons.wheel` uses scroll-event internally, and scroll-event happens intermittently. That means "start" and "end" cannot be detected.
-     * 2. Due to damping, `sleep` will usually fire a few seconds after the camera _appears_ to have stopped moving. If you want to do something (e.g. enable UI, perform another transition) at the point when the camera has stopped, you probably want the `rest` event. This can be fine tuned using the `.restThreshold` parameter. See the [Rest and Sleep Example](https://yomotsu.github.io/camera-controls/examples/rest-and-sleep.html).
-     *
-     * e.g.
-     * ```
-     * cameraControl.addEventListener( 'controlstart', myCallbackFunction );
-     * ```
-     * @param type event name
-     * @param listener handler function
-     * @category Methods
-     */
-    addEventListener(type, listener) {
-        super.addEventListener(type, listener);
-    }
-    /**
-     * Removes the specified event listener
-     * e.g.
-     * ```
-     * cameraControl.addEventListener( 'controlstart', myCallbackFunction );
-     * ```
-     * @param type event name
-     * @param listener handler function
-     * @category Methods
-     */
-    removeEventListener(type, listener) {
-        super.removeEventListener(type, listener);
-    }
-    /**
-     * Rotate azimuthal angle(horizontal) and polar angle(vertical).
-     * Every value is added to the current value.
-     * @param azimuthAngle Azimuth rotate angle. In radian.
-     * @param polarAngle Polar rotate angle. In radian.
-     * @param enableTransition Whether to move smoothly or immediately
-     * @category Methods
-     */
-    rotate(azimuthAngle, polarAngle, enableTransition = false) {
-        return this.rotateTo(this._sphericalEnd.theta + azimuthAngle, this._sphericalEnd.phi + polarAngle, enableTransition);
-    }
-    /**
-     * Rotate azimuthal angle(horizontal) to the given angle and keep the same polar angle(vertical) target.
-     *
-     * e.g.
-     * ```
-     * cameraControls.rotateAzimuthTo( 30 * THREE.MathUtils.DEG2RAD, true );
-     * ```
-     * @param azimuthAngle Azimuth rotate angle. In radian.
-     * @param enableTransition Whether to move smoothly or immediately
-     * @category Methods
-     */
-    rotateAzimuthTo(azimuthAngle, enableTransition = false) {
-        return this.rotateTo(azimuthAngle, this._sphericalEnd.phi, enableTransition);
-    }
-    /**
-     * Rotate polar angle(vertical) to the given angle and keep the same azimuthal angle(horizontal) target.
-     *
-     * e.g.
-     * ```
-     * cameraControls.rotatePolarTo( 30 * THREE.MathUtils.DEG2RAD, true );
-     * ```
-     * @param polarAngle Polar rotate angle. In radian.
-     * @param enableTransition Whether to move smoothly or immediately
-     * @category Methods
-     */
-    rotatePolarTo(polarAngle, enableTransition = false) {
-        return this.rotateTo(this._sphericalEnd.theta, polarAngle, enableTransition);
-    }
-    /**
-     * Rotate azimuthal angle(horizontal) and polar angle(vertical) to the given angle.
-     * Camera view will rotate over the orbit pivot absolutely:
-     *
-     * azimuthAngle
-     * ```
-     *       0º
-     *         \
-     * 90º -----+----- -90º
-     *           \
-     *           180º
-     * ```
-     * | direction | angle                  |
-     * | --------- | ---------------------- |
-     * | front     | 0º                     |
-     * | left      | 90º (`Math.PI / 2`)    |
-     * | right     | -90º (`- Math.PI / 2`) |
-     * | back      | 180º (`Math.PI`)       |
-     *
-     * polarAngle
-     * ```
-     *     180º
-     *      |
-     *      90º
-     *      |
-     *      0º
-     * ```
-     * | direction            | angle                  |
-     * | -------------------- | ---------------------- |
-     * | top/sky              | 180º (`Math.PI`)       |
-     * | horizontal from view | 90º (`Math.PI / 2`)    |
-     * | bottom/floor         | 0º                     |
-     *
-     * @param azimuthAngle Azimuth rotate angle to. In radian.
-     * @param polarAngle Polar rotate angle to. In radian.
-     * @param enableTransition  Whether to move smoothly or immediately
-     * @category Methods
-     */
-    rotateTo(azimuthAngle, polarAngle, enableTransition = false) {
-        const theta = THREE.MathUtils.clamp(azimuthAngle, this.minAzimuthAngle, this.maxAzimuthAngle);
-        const phi = THREE.MathUtils.clamp(polarAngle, this.minPolarAngle, this.maxPolarAngle);
-        this._sphericalEnd.theta = theta;
-        this._sphericalEnd.phi = phi;
-        this._sphericalEnd.makeSafe();
-        this._needsUpdate = true;
-        if (!enableTransition) {
-            this._spherical.theta = this._sphericalEnd.theta;
-            this._spherical.phi = this._sphericalEnd.phi;
-        }
-        const resolveImmediately = !enableTransition ||
-            approxEquals(this._spherical.theta, this._sphericalEnd.theta, this.restThreshold) &&
-                approxEquals(this._spherical.phi, this._sphericalEnd.phi, this.restThreshold);
-        return this._createOnRestPromise(resolveImmediately);
-    }
-    /**
-     * Dolly in/out camera position.
-     * @param distance Distance of dollyIn. Negative number for dollyOut.
-     * @param enableTransition Whether to move smoothly or immediately.
-     * @category Methods
-     */
-    dolly(distance, enableTransition = false) {
-        return this.dollyTo(this._sphericalEnd.radius - distance, enableTransition);
-    }
-    /**
-     * Dolly in/out camera position to given distance.
-     * @param distance Distance of dolly.
-     * @param enableTransition Whether to move smoothly or immediately.
-     * @category Methods
-     */
-    dollyTo(distance, enableTransition = false) {
-        const lastRadius = this._sphericalEnd.radius;
-        const newRadius = THREE.MathUtils.clamp(distance, this.minDistance, this.maxDistance);
-        const hasCollider = this.colliderMeshes.length >= 1;
-        if (hasCollider) {
-            const maxDistanceByCollisionTest = this._collisionTest();
-            const isCollided = approxEquals(maxDistanceByCollisionTest, this._spherical.radius);
-            const isDollyIn = lastRadius > newRadius;
-            if (!isDollyIn && isCollided)
-                return Promise.resolve();
-            this._sphericalEnd.radius = Math.min(newRadius, maxDistanceByCollisionTest);
-        }
-        else {
-            this._sphericalEnd.radius = newRadius;
-        }
-        this._needsUpdate = true;
-        if (!enableTransition) {
-            this._spherical.radius = this._sphericalEnd.radius;
-        }
-        const resolveImmediately = !enableTransition || approxEquals(this._spherical.radius, this._sphericalEnd.radius, this.restThreshold);
-        return this._createOnRestPromise(resolveImmediately);
-    }
-    /**
-     * Zoom in/out camera. The value is added to camera zoom.
-     * Limits set with `.minZoom` and `.maxZoom`
-     * @param zoomStep zoom scale
-     * @param enableTransition Whether to move smoothly or immediately
-     * @category Methods
-     */
-    zoom(zoomStep, enableTransition = false) {
-        return this.zoomTo(this._zoomEnd + zoomStep, enableTransition);
-    }
-    /**
-     * Zoom in/out camera to given scale. The value overwrites camera zoom.
-     * Limits set with .minZoom and .maxZoom
-     * @param zoom
-     * @param enableTransition
-     * @category Methods
-     */
-    zoomTo(zoom, enableTransition = false) {
-        this._zoomEnd = THREE.MathUtils.clamp(zoom, this.minZoom, this.maxZoom);
-        this._needsUpdate = true;
-        if (!enableTransition) {
-            this._zoom = this._zoomEnd;
-        }
-        const resolveImmediately = !enableTransition || approxEquals(this._zoom, this._zoomEnd, this.restThreshold);
-        return this._createOnRestPromise(resolveImmediately);
-    }
-    /**
-     * @deprecated `pan()` has been renamed to `truck()`
-     * @category Methods
-     */
-    pan(x, y, enableTransition = false) {
-        console.warn('`pan` has been renamed to `truck`');
-        return this.truck(x, y, enableTransition);
-    }
-    /**
-     * Truck and pedestal camera using current azimuthal angle
-     * @param x Horizontal translate amount
-     * @param y Vertical translate amount
-     * @param enableTransition Whether to move smoothly or immediately
-     * @category Methods
-     */
-    truck(x, y, enableTransition = false) {
-        this._camera.updateMatrix();
-        _xColumn.setFromMatrixColumn(this._camera.matrix, 0);
-        _yColumn.setFromMatrixColumn(this._camera.matrix, 1);
-        _xColumn.multiplyScalar(x);
-        _yColumn.multiplyScalar(-y);
-        const offset = _v3A.copy(_xColumn).add(_yColumn);
-        const to = _v3B.copy(this._targetEnd).add(offset);
-        return this.moveTo(to.x, to.y, to.z, enableTransition);
-    }
-    /**
-     * Move forward / backward.
-     * @param distance Amount to move forward / backward. Negative value to move backward
-     * @param enableTransition Whether to move smoothly or immediately
-     * @category Methods
-     */
-    forward(distance, enableTransition = false) {
-        _v3A.setFromMatrixColumn(this._camera.matrix, 0);
-        _v3A.crossVectors(this._camera.up, _v3A);
-        _v3A.multiplyScalar(distance);
-        const to = _v3B.copy(this._targetEnd).add(_v3A);
-        return this.moveTo(to.x, to.y, to.z, enableTransition);
-    }
-    /**
-     * Move target position to given point.
-     * @param x x coord to move center position
-     * @param y y coord to move center position
-     * @param z z coord to move center position
-     * @param enableTransition Whether to move smoothly or immediately
-     * @category Methods
-     */
-    moveTo(x, y, z, enableTransition = false) {
-        const offset = _v3A.set(x, y, z).sub(this._targetEnd);
-        this._encloseToBoundary(this._targetEnd, offset, this.boundaryFriction);
-        this._needsUpdate = true;
-        if (!enableTransition) {
-            this._target.copy(this._targetEnd);
-        }
-        const resolveImmediately = !enableTransition ||
-            approxEquals(this._target.x, this._targetEnd.x, this.restThreshold) &&
-                approxEquals(this._target.y, this._targetEnd.y, this.restThreshold) &&
-                approxEquals(this._target.z, this._targetEnd.z, this.restThreshold);
-        return this._createOnRestPromise(resolveImmediately);
-    }
-    /**
-     * Fit the viewport to the box or the bounding box of the object, using the nearest axis. paddings are in unit.
-     * set `cover: true` to fill enter screen.
-     * e.g.
-     * ```
-     * cameraControls.fitToBox( myMesh );
-     * ```
-     * @param box3OrObject Axis aligned bounding box to fit the view.
-     * @param enableTransition Whether to move smoothly or immediately.
-     * @param options | `<object>` { cover: boolean, paddingTop: number, paddingLeft: number, paddingBottom: number, paddingRight: number }
-     * @returns Transition end promise
-     * @category Methods
-     */
-    fitToBox(box3OrObject, enableTransition, { cover = false, paddingLeft = 0, paddingRight = 0, paddingBottom = 0, paddingTop = 0 } = {}) {
-        const promises = [];
-        const aabb = box3OrObject.isBox3
-            ? _box3A.copy(box3OrObject)
-            : _box3A.setFromObject(box3OrObject);
-        if (aabb.isEmpty()) {
-            console.warn('camera-controls: fitTo() cannot be used with an empty box. Aborting');
-            Promise.resolve();
-        }
-        // round to closest axis ( forward | backward | right | left | top | bottom )
-        const theta = roundToStep(this._sphericalEnd.theta, PI_HALF);
-        const phi = roundToStep(this._sphericalEnd.phi, PI_HALF);
-        promises.push(this.rotateTo(theta, phi, enableTransition));
-        const normal = _v3A.setFromSpherical(this._sphericalEnd).normalize();
-        const rotation = _quaternionA.setFromUnitVectors(normal, _AXIS_Z);
-        const viewFromPolar = approxEquals(Math.abs(normal.y), 1);
-        if (viewFromPolar) {
-            rotation.multiply(_quaternionB.setFromAxisAngle(_AXIS_Y, theta));
-        }
-        rotation.multiply(this._yAxisUpSpaceInverse);
-        // make oriented bounding box
-        const bb = _box3B.makeEmpty();
-        // left bottom back corner
-        _v3B.copy(aabb.min).applyQuaternion(rotation);
-        bb.expandByPoint(_v3B);
-        // right bottom back corner
-        _v3B.copy(aabb.min).setX(aabb.max.x).applyQuaternion(rotation);
-        bb.expandByPoint(_v3B);
-        // left top back corner
-        _v3B.copy(aabb.min).setY(aabb.max.y).applyQuaternion(rotation);
-        bb.expandByPoint(_v3B);
-        // right top back corner
-        _v3B.copy(aabb.max).setZ(aabb.min.z).applyQuaternion(rotation);
-        bb.expandByPoint(_v3B);
-        // left bottom front corner
-        _v3B.copy(aabb.min).setZ(aabb.max.z).applyQuaternion(rotation);
-        bb.expandByPoint(_v3B);
-        // right bottom front corner
-        _v3B.copy(aabb.max).setY(aabb.min.y).applyQuaternion(rotation);
-        bb.expandByPoint(_v3B);
-        // left top front corner
-        _v3B.copy(aabb.max).setX(aabb.min.x).applyQuaternion(rotation);
-        bb.expandByPoint(_v3B);
-        // right top front corner
-        _v3B.copy(aabb.max).applyQuaternion(rotation);
-        bb.expandByPoint(_v3B);
-        // add padding
-        bb.min.x -= paddingLeft;
-        bb.min.y -= paddingBottom;
-        bb.max.x += paddingRight;
-        bb.max.y += paddingTop;
-        rotation.setFromUnitVectors(_AXIS_Z, normal);
-        if (viewFromPolar) {
-            rotation.premultiply(_quaternionB.invert());
-        }
-        rotation.premultiply(this._yAxisUpSpace);
-        const bbSize = bb.getSize(_v3A);
-        const center = bb.getCenter(_v3B).applyQuaternion(rotation);
-        if (isPerspectiveCamera(this._camera)) {
-            const distance = this.getDistanceToFitBox(bbSize.x, bbSize.y, bbSize.z, cover);
-            promises.push(this.moveTo(center.x, center.y, center.z, enableTransition));
-            promises.push(this.dollyTo(distance, enableTransition));
-            promises.push(this.setFocalOffset(0, 0, 0, enableTransition));
-        }
-        else if (isOrthographicCamera(this._camera)) {
-            const camera = this._camera;
-            const width = camera.right - camera.left;
-            const height = camera.top - camera.bottom;
-            const zoom = cover ? Math.max(width / bbSize.x, height / bbSize.y) : Math.min(width / bbSize.x, height / bbSize.y);
-            promises.push(this.moveTo(center.x, center.y, center.z, enableTransition));
-            promises.push(this.zoomTo(zoom, enableTransition));
-            promises.push(this.setFocalOffset(0, 0, 0, enableTransition));
-        }
-        return Promise.all(promises);
-    }
-    /**
-     * Fit the viewport to the sphere or the bounding sphere of the object.
-     * @param sphereOrMesh
-     * @param enableTransition
-     * @category Methods
-     */
-    fitToSphere(sphereOrMesh, enableTransition) {
-        const promises = [];
-        const isSphere = sphereOrMesh instanceof THREE.Sphere;
-        const boundingSphere = isSphere ?
-            _sphere.copy(sphereOrMesh) :
-            createBoundingSphere(sphereOrMesh, _sphere);
-        promises.push(this.moveTo(boundingSphere.center.x, boundingSphere.center.y, boundingSphere.center.z, enableTransition));
-        if (isPerspectiveCamera(this._camera)) {
-            const distanceToFit = this.getDistanceToFitSphere(boundingSphere.radius);
-            promises.push(this.dollyTo(distanceToFit, enableTransition));
-        }
-        else if (isOrthographicCamera(this._camera)) {
-            const width = this._camera.right - this._camera.left;
-            const height = this._camera.top - this._camera.bottom;
-            const diameter = 2 * boundingSphere.radius;
-            const zoom = Math.min(width / diameter, height / diameter);
-            promises.push(this.zoomTo(zoom, enableTransition));
-        }
-        promises.push(this.setFocalOffset(0, 0, 0, enableTransition));
-        return Promise.all(promises);
-    }
-    /**
-     * Make an orbit with given points.
-     * @param positionX
-     * @param positionY
-     * @param positionZ
-     * @param targetX
-     * @param targetY
-     * @param targetZ
-     * @param enableTransition
-     * @category Methods
-     */
-    setLookAt(positionX, positionY, positionZ, targetX, targetY, targetZ, enableTransition = false) {
-        const target = _v3B.set(targetX, targetY, targetZ);
-        const position = _v3A.set(positionX, positionY, positionZ);
-        this._targetEnd.copy(target);
-        this._sphericalEnd.setFromVector3(position.sub(target).applyQuaternion(this._yAxisUpSpace));
-        this.normalizeRotations();
-        this._needsUpdate = true;
-        if (!enableTransition) {
-            this._target.copy(this._targetEnd);
-            this._spherical.copy(this._sphericalEnd);
-        }
-        const resolveImmediately = !enableTransition ||
-            approxEquals(this._target.x, this._targetEnd.x, this.restThreshold) &&
-                approxEquals(this._target.y, this._targetEnd.y, this.restThreshold) &&
-                approxEquals(this._target.z, this._targetEnd.z, this.restThreshold) &&
-                approxEquals(this._spherical.theta, this._sphericalEnd.theta, this.restThreshold) &&
-                approxEquals(this._spherical.phi, this._sphericalEnd.phi, this.restThreshold) &&
-                approxEquals(this._spherical.radius, this._sphericalEnd.radius, this.restThreshold);
-        return this._createOnRestPromise(resolveImmediately);
-    }
-    /**
-     * Similar to setLookAt, but it interpolates between two states.
-     * @param positionAX
-     * @param positionAY
-     * @param positionAZ
-     * @param targetAX
-     * @param targetAY
-     * @param targetAZ
-     * @param positionBX
-     * @param positionBY
-     * @param positionBZ
-     * @param targetBX
-     * @param targetBY
-     * @param targetBZ
-     * @param t
-     * @param enableTransition
-     * @category Methods
-     */
-    lerpLookAt(positionAX, positionAY, positionAZ, targetAX, targetAY, targetAZ, positionBX, positionBY, positionBZ, targetBX, targetBY, targetBZ, t, enableTransition = false) {
-        const targetA = _v3A.set(targetAX, targetAY, targetAZ);
-        const positionA = _v3B.set(positionAX, positionAY, positionAZ);
-        _sphericalA.setFromVector3(positionA.sub(targetA).applyQuaternion(this._yAxisUpSpace));
-        const targetB = _v3C.set(targetBX, targetBY, targetBZ);
-        const positionB = _v3B.set(positionBX, positionBY, positionBZ);
-        _sphericalB.setFromVector3(positionB.sub(targetB).applyQuaternion(this._yAxisUpSpace));
-        this._targetEnd.copy(targetA.lerp(targetB, t)); // tricky
-        const deltaTheta = _sphericalB.theta - _sphericalA.theta;
-        const deltaPhi = _sphericalB.phi - _sphericalA.phi;
-        const deltaRadius = _sphericalB.radius - _sphericalA.radius;
-        this._sphericalEnd.set(_sphericalA.radius + deltaRadius * t, _sphericalA.phi + deltaPhi * t, _sphericalA.theta + deltaTheta * t);
-        this.normalizeRotations();
-        this._needsUpdate = true;
-        if (!enableTransition) {
-            this._target.copy(this._targetEnd);
-            this._spherical.copy(this._sphericalEnd);
-        }
-        const resolveImmediately = !enableTransition ||
-            approxEquals(this._target.x, this._targetEnd.x, this.restThreshold) &&
-                approxEquals(this._target.y, this._targetEnd.y, this.restThreshold) &&
-                approxEquals(this._target.z, this._targetEnd.z, this.restThreshold) &&
-                approxEquals(this._spherical.theta, this._sphericalEnd.theta, this.restThreshold) &&
-                approxEquals(this._spherical.phi, this._sphericalEnd.phi, this.restThreshold) &&
-                approxEquals(this._spherical.radius, this._sphericalEnd.radius, this.restThreshold);
-        return this._createOnRestPromise(resolveImmediately);
-    }
-    /**
-     * setLookAt without target, keep gazing at the current target
-     * @param positionX
-     * @param positionY
-     * @param positionZ
-     * @param enableTransition
-     * @category Methods
-     */
-    setPosition(positionX, positionY, positionZ, enableTransition = false) {
-        return this.setLookAt(positionX, positionY, positionZ, this._targetEnd.x, this._targetEnd.y, this._targetEnd.z, enableTransition);
-    }
-    /**
-     * setLookAt without position, Stay still at the position.
-     * @param targetX
-     * @param targetY
-     * @param targetZ
-     * @param enableTransition
-     * @category Methods
-     */
-    setTarget(targetX, targetY, targetZ, enableTransition = false) {
-        const pos = this.getPosition(_v3A);
-        return this.setLookAt(pos.x, pos.y, pos.z, targetX, targetY, targetZ, enableTransition);
-    }
-    /**
-     * Set focal offset using the screen parallel coordinates. z doesn't affect in Orthographic as with Dolly.
-     * @param x
-     * @param y
-     * @param z
-     * @param enableTransition
-     * @category Methods
-     */
-    setFocalOffset(x, y, z, enableTransition = false) {
-        this._focalOffsetEnd.set(x, y, z);
-        this._needsUpdate = true;
-        if (!enableTransition) {
-            this._focalOffset.copy(this._focalOffsetEnd);
-        }
-        const resolveImmediately = !enableTransition ||
-            approxEquals(this._focalOffset.x, this._focalOffsetEnd.x, this.restThreshold) &&
-                approxEquals(this._focalOffset.y, this._focalOffsetEnd.y, this.restThreshold) &&
-                approxEquals(this._focalOffset.z, this._focalOffsetEnd.z, this.restThreshold);
-        return this._createOnRestPromise(resolveImmediately);
-    }
-    /**
-     * Set orbit point without moving the camera.
-     * @param targetX
-     * @param targetY
-     * @param targetZ
-     * @category Methods
-     */
-    setOrbitPoint(targetX, targetY, targetZ) {
-        _xColumn.setFromMatrixColumn(this._camera.matrixWorldInverse, 0);
-        _yColumn.setFromMatrixColumn(this._camera.matrixWorldInverse, 1);
-        _zColumn.setFromMatrixColumn(this._camera.matrixWorldInverse, 2);
-        const position = _v3A.set(targetX, targetY, targetZ);
-        const distance = position.distanceTo(this._camera.position);
-        const cameraToPoint = position.sub(this._camera.position);
-        _xColumn.multiplyScalar(cameraToPoint.x);
-        _yColumn.multiplyScalar(cameraToPoint.y);
-        _zColumn.multiplyScalar(cameraToPoint.z);
-        _v3A.copy(_xColumn).add(_yColumn).add(_zColumn);
-        _v3A.z = _v3A.z + distance;
-        this.dollyTo(distance, false);
-        this.setFocalOffset(-_v3A.x, _v3A.y, -_v3A.z, false);
-        this.moveTo(targetX, targetY, targetZ, false);
-    }
-    /**
-     * Set the boundary box that encloses the target of the camera. box3 is in THREE.Box3
-     * @param box3
-     * @category Methods
-     */
-    setBoundary(box3) {
-        if (!box3) {
-            this._boundary.min.set(-Infinity, -Infinity, -Infinity);
-            this._boundary.max.set(Infinity, Infinity, Infinity);
-            this._needsUpdate = true;
-            return;
-        }
-        this._boundary.copy(box3);
-        this._boundary.clampPoint(this._targetEnd, this._targetEnd);
-        this._needsUpdate = true;
-    }
-    /**
-     * Set (or unset) the current viewport.
-     * Set this when you want to use renderer viewport and .dollyToCursor feature at the same time.
-     * @param viewportOrX
-     * @param y
-     * @param width
-     * @param height
-     * @category Methods
-     */
-    setViewport(viewportOrX, y, width, height) {
-        if (viewportOrX === null) { // null
-            this._viewport = null;
-            return;
-        }
-        this._viewport = this._viewport || new THREE.Vector4();
-        if (typeof viewportOrX === 'number') { // number
-            this._viewport.set(viewportOrX, y, width, height);
-        }
-        else { // Vector4
-            this._viewport.copy(viewportOrX);
-        }
-    }
-    /**
-     * Calculate the distance to fit the box.
-     * @param width box width
-     * @param height box height
-     * @param depth box depth
-     * @returns distance
-     * @category Methods
-     */
-    getDistanceToFitBox(width, height, depth, cover = false) {
-        if (notSupportedInOrthographicCamera(this._camera, 'getDistanceToFitBox'))
-            return this._spherical.radius;
-        const boundingRectAspect = width / height;
-        const fov = this._camera.getEffectiveFOV() * THREE.MathUtils.DEG2RAD;
-        const aspect = this._camera.aspect;
-        const heightToFit = (cover ? boundingRectAspect > aspect : boundingRectAspect < aspect) ? height : width / aspect;
-        return heightToFit * 0.5 / Math.tan(fov * 0.5) + depth * 0.5;
-    }
-    /**
-     * Calculate the distance to fit the sphere.
-     * @param radius sphere radius
-     * @returns distance
-     * @category Methods
-     */
-    getDistanceToFitSphere(radius) {
-        if (notSupportedInOrthographicCamera(this._camera, 'getDistanceToFitSphere'))
-            return this._spherical.radius;
-        // https://stackoverflow.com/a/44849975
-        const vFOV = this._camera.getEffectiveFOV() * THREE.MathUtils.DEG2RAD;
-        const hFOV = Math.atan(Math.tan(vFOV * 0.5) * this._camera.aspect) * 2;
-        const fov = 1 < this._camera.aspect ? vFOV : hFOV;
-        return radius / (Math.sin(fov * 0.5));
-    }
-    /**
-     * Returns its current gazing target, which is the center position of the orbit.
-     * @param out current gazing target
-     * @category Methods
-     */
-    getTarget(out) {
-        const _out = !!out && out.isVector3 ? out : new THREE.Vector3();
-        return _out.copy(this._targetEnd);
-    }
-    /**
-     * Returns its current position.
-     * @param out current position
-     * @category Methods
-     */
-    getPosition(out) {
-        const _out = !!out && out.isVector3 ? out : new THREE.Vector3();
-        return _out.setFromSpherical(this._sphericalEnd).applyQuaternion(this._yAxisUpSpaceInverse).add(this._targetEnd);
-    }
-    /**
-     * Returns its current focal offset, which is how much the camera appears to be translated in screen parallel coordinates.
-     * @param out current focal offset
-     * @category Methods
-     */
-    getFocalOffset(out) {
-        const _out = !!out && out.isVector3 ? out : new THREE.Vector3();
-        return _out.copy(this._focalOffsetEnd);
-    }
-    /**
-     * Normalize camera azimuth angle rotation between 0 and 360 degrees.
-     * @category Methods
-     */
-    normalizeRotations() {
-        this._sphericalEnd.theta = this._sphericalEnd.theta % PI_2;
-        if (this._sphericalEnd.theta < 0)
-            this._sphericalEnd.theta += PI_2;
-        this._spherical.theta += PI_2 * Math.round((this._sphericalEnd.theta - this._spherical.theta) / PI_2);
-    }
-    /**
-     * Reset all rotation and position to defaults.
-     * @param enableTransition
-     * @category Methods
-     */
-    reset(enableTransition = false) {
-        const promises = [
-            this.setLookAt(this._position0.x, this._position0.y, this._position0.z, this._target0.x, this._target0.y, this._target0.z, enableTransition),
-            this.setFocalOffset(this._focalOffset0.x, this._focalOffset0.y, this._focalOffset0.z, enableTransition),
-            this.zoomTo(this._zoom0, enableTransition),
-        ];
-        return Promise.all(promises);
-    }
-    /**
-     * Set current camera position as the default position.
-     * @category Methods
-     */
-    saveState() {
-        this._target0.copy(this._target);
-        this._position0.copy(this._camera.position);
-        this._zoom0 = this._zoom;
-    }
-    /**
-     * Sync camera-up direction.
-     * When camera-up vector is changed, `.updateCameraUp()` must be called.
-     * @category Methods
-     */
-    updateCameraUp() {
-        this._yAxisUpSpace.setFromUnitVectors(this._camera.up, _AXIS_Y);
-        quatInvertCompat(this._yAxisUpSpaceInverse.copy(this._yAxisUpSpace));
-    }
-    /**
-     * Update camera position and directions.
-     * This should be called in your tick loop every time, and returns true if re-rendering is needed.
-     * @param delta
-     * @returns updated
-     * @category Methods
-     */
-    update(delta) {
-        const dampingFactor = this._state === ACTION.NONE ? this.dampingFactor : this.draggingDampingFactor;
-        // The original THREE.OrbitControls assume 60 FPS fixed and does NOT rely on delta time.
-        // (that must be a problem of the original one though)
-        // To to emulate the speed of the original one under 60 FPS, multiply `60` to delta,
-        // but ours are more flexible to any FPS unlike the original.
-        const lerpRatio = Math.min(dampingFactor * delta * 60, 1);
-        const deltaTheta = this._sphericalEnd.theta - this._spherical.theta;
-        const deltaPhi = this._sphericalEnd.phi - this._spherical.phi;
-        const deltaRadius = this._sphericalEnd.radius - this._spherical.radius;
-        const deltaTarget = _deltaTarget.subVectors(this._targetEnd, this._target);
-        const deltaOffset = _deltaOffset.subVectors(this._focalOffsetEnd, this._focalOffset);
-        if (!approxZero(deltaTheta) ||
-            !approxZero(deltaPhi) ||
-            !approxZero(deltaRadius) ||
-            !approxZero(deltaTarget.x) ||
-            !approxZero(deltaTarget.y) ||
-            !approxZero(deltaTarget.z) ||
-            !approxZero(deltaOffset.x) ||
-            !approxZero(deltaOffset.y) ||
-            !approxZero(deltaOffset.z)) {
-            this._spherical.set(this._spherical.radius + deltaRadius * lerpRatio, this._spherical.phi + deltaPhi * lerpRatio, this._spherical.theta + deltaTheta * lerpRatio);
-            this._target.add(deltaTarget.multiplyScalar(lerpRatio));
-            this._focalOffset.add(deltaOffset.multiplyScalar(lerpRatio));
-            this._needsUpdate = true;
-        }
-        else {
-            this._spherical.copy(this._sphericalEnd);
-            this._target.copy(this._targetEnd);
-            this._focalOffset.copy(this._focalOffsetEnd);
-        }
-        if (this._dollyControlAmount !== 0) {
-            if (isPerspectiveCamera(this._camera)) {
-                const camera = this._camera;
-                const direction = _v3A.setFromSpherical(this._sphericalEnd).applyQuaternion(this._yAxisUpSpaceInverse).normalize().negate();
-                const planeX = _v3B.copy(direction).cross(camera.up).normalize();
-                if (planeX.lengthSq() === 0)
-                    planeX.x = 1.0;
-                const planeY = _v3C.crossVectors(planeX, direction);
-                const worldToScreen = this._sphericalEnd.radius * Math.tan(camera.getEffectiveFOV() * THREE.MathUtils.DEG2RAD * 0.5);
-                const prevRadius = this._sphericalEnd.radius - this._dollyControlAmount;
-                const lerpRatio = (prevRadius - this._sphericalEnd.radius) / this._sphericalEnd.radius;
-                const cursor = _v3A.copy(this._targetEnd)
-                    .add(planeX.multiplyScalar(this._dollyControlCoord.x * worldToScreen * camera.aspect))
-                    .add(planeY.multiplyScalar(this._dollyControlCoord.y * worldToScreen));
-                this._targetEnd.lerp(cursor, lerpRatio);
-                this._target.copy(this._targetEnd);
-            }
-            else if (isOrthographicCamera(this._camera)) {
-                const camera = this._camera;
-                const worldPosition = _v3A.set(this._dollyControlCoord.x, this._dollyControlCoord.y, (camera.near + camera.far) / (camera.near - camera.far)).unproject(camera);
-                const quaternion = _v3B.set(0, 0, -1).applyQuaternion(camera.quaternion);
-                const divisor = quaternion.dot(camera.up);
-                const distance = approxZero(divisor) ? -worldPosition.dot(camera.up) : -worldPosition.dot(camera.up) / divisor;
-                const cursor = _v3C.copy(worldPosition).add(quaternion.multiplyScalar(distance));
-                this._targetEnd.lerp(cursor, 1 - camera.zoom / this._dollyControlAmount);
-                this._target.copy(this._targetEnd);
-            }
-            this._dollyControlAmount = 0;
-        }
-        const maxDistance = this._collisionTest();
-        this._spherical.radius = Math.min(this._spherical.radius, maxDistance);
-        // decompose spherical to the camera position
-        this._spherical.makeSafe();
-        this._camera.position.setFromSpherical(this._spherical).applyQuaternion(this._yAxisUpSpaceInverse).add(this._target);
-        this._camera.lookAt(this._target);
-        // set offset after the orbit movement
-        const affectOffset = !approxZero(this._focalOffset.x) ||
-            !approxZero(this._focalOffset.y) ||
-            !approxZero(this._focalOffset.z);
-        if (affectOffset) {
-            this._camera.updateMatrix();
-            _xColumn.setFromMatrixColumn(this._camera.matrix, 0);
-            _yColumn.setFromMatrixColumn(this._camera.matrix, 1);
-            _zColumn.setFromMatrixColumn(this._camera.matrix, 2);
-            _xColumn.multiplyScalar(this._focalOffset.x);
-            _yColumn.multiplyScalar(-this._focalOffset.y);
-            _zColumn.multiplyScalar(this._focalOffset.z); // notice: z-offset will not affect in Orthographic.
-            _v3A.copy(_xColumn).add(_yColumn).add(_zColumn);
-            this._camera.position.add(_v3A);
-        }
-        if (this._boundaryEnclosesCamera) {
-            this._encloseToBoundary(this._camera.position.copy(this._target), _v3A.setFromSpherical(this._spherical).applyQuaternion(this._yAxisUpSpaceInverse), 1.0);
-        }
-        // zoom
-        const deltaZoom = this._zoomEnd - this._zoom;
-        this._zoom += deltaZoom * lerpRatio;
-        if (this._camera.zoom !== this._zoom) {
-            if (approxZero(deltaZoom))
-                this._zoom = this._zoomEnd;
-            this._camera.zoom = this._zoom;
-            this._camera.updateProjectionMatrix();
-            this._updateNearPlaneCorners();
-            this._needsUpdate = true;
-        }
-        const updated = this._needsUpdate;
-        if (updated && !this._updatedLastTime) {
-            this._hasRested = false;
-            this.dispatchEvent({ type: 'wake' });
-            this.dispatchEvent({ type: 'update' });
-        }
-        else if (updated) {
-            this.dispatchEvent({ type: 'update' });
-            if (approxZero(deltaTheta, this.restThreshold) &&
-                approxZero(deltaPhi, this.restThreshold) &&
-                approxZero(deltaRadius, this.restThreshold) &&
-                approxZero(deltaTarget.x, this.restThreshold) &&
-                approxZero(deltaTarget.y, this.restThreshold) &&
-                approxZero(deltaTarget.z, this.restThreshold) &&
-                approxZero(deltaOffset.x, this.restThreshold) &&
-                approxZero(deltaOffset.y, this.restThreshold) &&
-                approxZero(deltaOffset.z, this.restThreshold) &&
-                approxZero(deltaZoom, this.restThreshold) &&
-                !this._hasRested) {
-                this._hasRested = true;
-                this.dispatchEvent({ type: 'rest' });
-            }
-        }
-        else if (!updated && this._updatedLastTime) {
-            this.dispatchEvent({ type: 'sleep' });
-        }
-        this._updatedLastTime = updated;
-        this._needsUpdate = false;
-        return updated;
-    }
-    /**
-     * Get all state in JSON string
-     * @category Methods
-     */
-    toJSON() {
-        return JSON.stringify({
-            enabled: this._enabled,
-            minDistance: this.minDistance,
-            maxDistance: infinityToMaxNumber(this.maxDistance),
-            minZoom: this.minZoom,
-            maxZoom: infinityToMaxNumber(this.maxZoom),
-            minPolarAngle: this.minPolarAngle,
-            maxPolarAngle: infinityToMaxNumber(this.maxPolarAngle),
-            minAzimuthAngle: infinityToMaxNumber(this.minAzimuthAngle),
-            maxAzimuthAngle: infinityToMaxNumber(this.maxAzimuthAngle),
-            dampingFactor: this.dampingFactor,
-            draggingDampingFactor: this.draggingDampingFactor,
-            dollySpeed: this.dollySpeed,
-            truckSpeed: this.truckSpeed,
-            dollyToCursor: this.dollyToCursor,
-            verticalDragToForward: this.verticalDragToForward,
-            target: this._targetEnd.toArray(),
-            position: _v3A.setFromSpherical(this._sphericalEnd).add(this._targetEnd).toArray(),
-            zoom: this._zoomEnd,
-            focalOffset: this._focalOffsetEnd.toArray(),
-            target0: this._target0.toArray(),
-            position0: this._position0.toArray(),
-            zoom0: this._zoom0,
-            focalOffset0: this._focalOffset0.toArray(),
-        });
-    }
-    /**
-     * Reproduce the control state with JSON. enableTransition is where anim or not in a boolean.
-     * @param json
-     * @param enableTransition
-     * @category Methods
-     */
-    fromJSON(json, enableTransition = false) {
-        const obj = JSON.parse(json);
-        const position = _v3A.fromArray(obj.position);
-        this.enabled = obj.enabled;
-        this.minDistance = obj.minDistance;
-        this.maxDistance = maxNumberToInfinity(obj.maxDistance);
-        this.minZoom = obj.minZoom;
-        this.maxZoom = maxNumberToInfinity(obj.maxZoom);
-        this.minPolarAngle = obj.minPolarAngle;
-        this.maxPolarAngle = maxNumberToInfinity(obj.maxPolarAngle);
-        this.minAzimuthAngle = maxNumberToInfinity(obj.minAzimuthAngle);
-        this.maxAzimuthAngle = maxNumberToInfinity(obj.maxAzimuthAngle);
-        this.dampingFactor = obj.dampingFactor;
-        this.draggingDampingFactor = obj.draggingDampingFactor;
-        this.dollySpeed = obj.dollySpeed;
-        this.truckSpeed = obj.truckSpeed;
-        this.dollyToCursor = obj.dollyToCursor;
-        this.verticalDragToForward = obj.verticalDragToForward;
-        this._target0.fromArray(obj.target0);
-        this._position0.fromArray(obj.position0);
-        this._zoom0 = obj.zoom0;
-        this._focalOffset0.fromArray(obj.focalOffset0);
-        this.moveTo(obj.target[0], obj.target[1], obj.target[2], enableTransition);
-        _sphericalA.setFromVector3(position.sub(this._targetEnd).applyQuaternion(this._yAxisUpSpace));
-        this.rotateTo(_sphericalA.theta, _sphericalA.phi, enableTransition);
-        this.zoomTo(obj.zoom, enableTransition);
-        this.setFocalOffset(obj.focalOffset[0], obj.focalOffset[1], obj.focalOffset[2], enableTransition);
-        this._needsUpdate = true;
-    }
-    /**
-     * Dispose the cameraControls instance itself, remove all eventListeners.
-     * @category Methods
-     */
-    dispose() {
-        this._removeAllEventListeners();
-    }
-    _findPointerById(pointerId) {
-        // to support IE11 use some instead of Array#find (will be removed when IE11 is deprecated)
-        let pointer = null;
-        this._activePointers.some((activePointer) => {
-            if (activePointer.pointerId === pointerId) {
-                pointer = activePointer;
-                return true;
-            }
-            return false;
-        });
-        return pointer;
-    }
-    _encloseToBoundary(position, offset, friction) {
-        const offsetLength2 = offset.lengthSq();
-        if (offsetLength2 === 0.0) { // sanity check
-            return position;
-        }
-        // See: https://twitter.com/FMS_Cat/status/1106508958640988161
-        const newTarget = _v3B.copy(offset).add(position); // target
-        const clampedTarget = this._boundary.clampPoint(newTarget, _v3C); // clamped target
-        const deltaClampedTarget = clampedTarget.sub(newTarget); // newTarget -> clampedTarget
-        const deltaClampedTargetLength2 = deltaClampedTarget.lengthSq(); // squared length of deltaClampedTarget
-        if (deltaClampedTargetLength2 === 0.0) { // when the position doesn't have to be clamped
-            return position.add(offset);
-        }
-        else if (deltaClampedTargetLength2 === offsetLength2) { // when the position is completely stuck
-            return position;
-        }
-        else if (friction === 0.0) {
-            return position.add(offset).add(deltaClampedTarget);
-        }
-        else {
-            const offsetFactor = 1.0 + friction * deltaClampedTargetLength2 / offset.dot(deltaClampedTarget);
-            return position
-                .add(_v3B.copy(offset).multiplyScalar(offsetFactor))
-                .add(deltaClampedTarget.multiplyScalar(1.0 - friction));
-        }
-    }
-    _updateNearPlaneCorners() {
-        if (isPerspectiveCamera(this._camera)) {
-            const camera = this._camera;
-            const near = camera.near;
-            const fov = camera.getEffectiveFOV() * THREE.MathUtils.DEG2RAD;
-            const heightHalf = Math.tan(fov * 0.5) * near; // near plain half height
-            const widthHalf = heightHalf * camera.aspect; // near plain half width
-            this._nearPlaneCorners[0].set(-widthHalf, -heightHalf, 0);
-            this._nearPlaneCorners[1].set(widthHalf, -heightHalf, 0);
-            this._nearPlaneCorners[2].set(widthHalf, heightHalf, 0);
-            this._nearPlaneCorners[3].set(-widthHalf, heightHalf, 0);
-        }
-        else if (isOrthographicCamera(this._camera)) {
-            const camera = this._camera;
-            const zoomInv = 1 / camera.zoom;
-            const left = camera.left * zoomInv;
-            const right = camera.right * zoomInv;
-            const top = camera.top * zoomInv;
-            const bottom = camera.bottom * zoomInv;
-            this._nearPlaneCorners[0].set(left, top, 0);
-            this._nearPlaneCorners[1].set(right, top, 0);
-            this._nearPlaneCorners[2].set(right, bottom, 0);
-            this._nearPlaneCorners[3].set(left, bottom, 0);
-        }
-    }
-    // lateUpdate
-    _collisionTest() {
-        let distance = Infinity;
-        const hasCollider = this.colliderMeshes.length >= 1;
-        if (!hasCollider)
-            return distance;
-        if (notSupportedInOrthographicCamera(this._camera, '_collisionTest'))
-            return distance;
-        // divide by distance to normalize, lighter than `Vector3.prototype.normalize()`
-        const direction = _v3A.setFromSpherical(this._spherical).divideScalar(this._spherical.radius);
-        _rotationMatrix.lookAt(_ORIGIN, direction, this._camera.up);
-        for (let i = 0; i < 4; i++) {
-            const nearPlaneCorner = _v3B.copy(this._nearPlaneCorners[i]);
-            nearPlaneCorner.applyMatrix4(_rotationMatrix);
-            const origin = _v3C.addVectors(this._target, nearPlaneCorner);
-            _raycaster.set(origin, direction);
-            _raycaster.far = this._spherical.radius + 1;
-            const intersects = _raycaster.intersectObjects(this.colliderMeshes);
-            if (intersects.length !== 0 && intersects[0].distance < distance) {
-                distance = intersects[0].distance;
-            }
-        }
-        return distance;
-    }
-    /**
-     * Get its client rect and package into given `DOMRect` .
-     */
-    _getClientRect(target) {
-        const rect = this._domElement.getBoundingClientRect();
-        target.x = rect.left;
-        target.y = rect.top;
-        if (this._viewport) {
-            target.x += this._viewport.x;
-            target.y += rect.height - this._viewport.w - this._viewport.y;
-            target.width = this._viewport.z;
-            target.height = this._viewport.w;
-        }
-        else {
-            target.width = rect.width;
-            target.height = rect.height;
-        }
-        return target;
-    }
-    _createOnRestPromise(resolveImmediately) {
-        if (resolveImmediately)
-            return Promise.resolve();
-        this._hasRested = false;
-        this.dispatchEvent({ type: 'transitionstart' });
-        return new Promise((resolve) => {
-            const onResolve = () => {
-                this.removeEventListener('rest', onResolve);
-                resolve();
-            };
-            this.addEventListener('rest', onResolve);
-        });
-    }
-    _removeAllEventListeners() { }
-}
-function createBoundingSphere(object3d, out) {
-    const boundingSphere = out;
-    const center = boundingSphere.center;
-    _box3A.makeEmpty();
-    // find the center
-    object3d.traverseVisible((object) => {
-        if (!object.isMesh)
-            return;
-        _box3A.expandByObject(object);
-    });
-    _box3A.getCenter(center);
-    // find the radius
-    let maxRadiusSq = 0;
-    object3d.traverseVisible((object) => {
-        if (!object.isMesh)
-            return;
-        const mesh = object;
-        const geometry = mesh.geometry.clone();
-        geometry.applyMatrix4(mesh.matrixWorld);
-        if (geometry.isBufferGeometry) {
-            const bufferGeometry = geometry;
-            const position = bufferGeometry.attributes.position;
-            for (let i = 0, l = position.count; i < l; i++) {
-                _v3A.fromBufferAttribute(position, i);
-                maxRadiusSq = Math.max(maxRadiusSq, center.distanceToSquared(_v3A));
-            }
-        }
-        else {
-            // for old three.js, which supports both BufferGeometry and Geometry
-            // this condition block will be removed in the near future.
-            const position = geometry.attributes.position;
-            const vector = new THREE.Vector3();
-            for (let i = 0, l = position.count; i < l; i++) {
-                vector.fromBufferAttribute(position, i);
-                maxRadiusSq = Math.max(maxRadiusSq, center.distanceToSquared(vector));
-            }
-        }
-    });
-    boundingSphere.radius = Math.sqrt(maxRadiusSq);
-    return boundingSphere;
-}
-
 /**
 	 * @param  {Array<BufferGeometry>} geometries
 	 * @param  {Boolean} useGroups
@@ -122355,108 +105771,111 @@ new MeshLambertMaterial({
 let psetsObject = {};
 let objMap = {};
 let generated = false;
-let data$1;
 
-function getAllItemsOfType$1(data, type) {
-  let items = [];
-  for (const [key, value] of Object.entries(data)) {
-    if (value.type === type) {
-      items.push(value);
-    }
-  }
-  return items;
-}
-function fillData(model, ifcLoader) {
+async function fillData(model, ifcLoader) {
+  const ifc = ifcLoader.ifcManager;
   const obj = {};
-  data$1 = getData(model);
-  const relations = getAllItemsOfType$1(data$1, "IFCRELDEFINESBYPROPERTIES");
+  const relations = await ifc.getAllItemsOfType(
+    model.modelID,
+    IFCRELDEFINESBYPROPERTIES
+  );
 
   //relating objects are mapped here
   for (const rel of relations) {
-    const rel1 = rel;
-    const pset = data$1[rel1.RelatingPropertyDefinition];
+    const rel1 = await ifc.byId(model.modelID, rel);
+    const pset = await ifc.byId(
+      model.modelID,
+      rel1.RelatingPropertyDefinition.value
+    );
     for (const lobj of rel1.RelatedObjects) {
-      if (!objMap[lobj]) {
-        objMap[lobj] = [];
+      if (!objMap[lobj.value]) {
+        objMap[lobj.value] = [];
       }
-      const found = objMap[lobj].some((el) => {
-      });
+      const found = objMap[lobj.value].some(
+        (el) => el.expressID === pset.expressID
+      );
       if (!found) {
-        objMap[lobj].push(pset);
+        objMap[lobj.value].push(pset);
       }
     }
-    if (!obj[pset.Name]) {
-      obj[pset.Name] = {};
+
+    if (!obj[pset.Name.value]) {
+      obj[pset.Name.value] = {};
     }
     let pobj = {};
     if (pset.HasProperties) {
       for (const prop of pset.HasProperties) {
-        const propObj = data$1[prop];
-        if (!obj[pset.Name][propObj.Name]) {
-          pobj[propObj.Name] = {};
-          pobj[propObj.Name] = propObj;
-          pobj[propObj.Name]["ids"] = [];
-          pobj[propObj.Name]["ids"].push(propObj.expressID);
+        const propObj = await ifc.byId(model.modelID, prop.value);
+        if (!obj[pset.Name.value][propObj.Name.value]) {
+          pobj[propObj.Name.value] = {};
+          pobj[propObj.Name.value] = propObj;
+          pobj[propObj.Name.value]["ids"] = [];
+          pobj[propObj.Name.value]["ids"].push(propObj.expressID);
         } else {
-          pobj[propObj.Name] = obj[pset.Name][propObj.Name];
-          obj[pset.Name][propObj.Name]["ids"].push(propObj.expressID);
+          pobj[propObj.Name.value] = obj[pset.Name.value][propObj.Name.value];
+          obj[pset.Name.value][propObj.Name.value]["ids"].push(
+            propObj.expressID
+          );
         }
       }
     } else if (pset.Quantities) {
       for (const quantity of pset.Quantities) {
-        const quantityObj = data$1[quantity];
-        if (!obj[pset.Name]) {
-          if (!obj[pset.Name][quantityObj.Name]) {
-            pobj[quantityObj.Name] = {};
-            pobj[quantityObj.Name] = quantityObj;
-            pobj[quantityObj.Name]["ids"] = [];
-            pobj[quantityObj.Name]["ids"].push(quantityObj.expressID);
+        const quantityObj = await ifc.byId(model.modelID, quantity.value);
+        if (!obj[pset.Name.value]) {
+          if (!obj[pset.Name.value][quantityObj.Name.value]) {
+            pobj[quantityObj.Name.value] = {};
+            pobj[quantityObj.Name.value] = quantityObj;
+            pobj[quantityObj.Name.value]["ids"] = [];
+            pobj[quantityObj.Name.value]["ids"].push(quantityObj.expressID);
           } else {
-            pobj[quantityObj.Name] = obj[pset.Name][quantityObj.Name];
-            obj[pset.Name][quantityObj.Name]["ids"].push(quantityObj.expressID);
+            pobj[quantityObj.Name.value] =
+              obj[pset.Name.value][quantityObj.Name.value];
+            obj[pset.Name.value][quantityObj.Name.value]["ids"].push(
+              quantityObj.expressID
+            );
           }
         } else {
-          pobj = obj[pset.Name];
-          if (pobj[quantityObj.Name]) {
-            pobj[quantityObj.Name]["ids"].push(quantityObj.expressID);
+          pobj = obj[pset.Name.value];
+          if (pobj[quantityObj.Name.value]) {
+            pobj[quantityObj.Name.value]["ids"].push(quantityObj.expressID);
           } else {
-            pobj[quantityObj.Name] = {};
-            pobj[quantityObj.Name] = quantityObj;
-            pobj[quantityObj.Name]["ids"] = [];
-            pobj[quantityObj.Name]["ids"].push(quantityObj.expressID);
+            pobj[quantityObj.Name.value] = {};
+            pobj[quantityObj.Name.value] = quantityObj;
+            pobj[quantityObj.Name.value]["ids"] = [];
+            pobj[quantityObj.Name.value]["ids"].push(quantityObj.expressID);
           }
-          // obj[pset.Name][quantityObj.Name]["ids"].push(
+          // obj[pset.Name.value][quantityObj.Name.value]["ids"].push(
           //   quantityObj.expressID
           // );
         }
       }
     }
 
-    obj[pset.Name] = pobj;
+    obj[pset.Name.value] = pobj;
   }
   psetsObject = obj;
   return obj;
 }
 
-function getAllPropertyNames(model, ifcLoader) {
+async function getAllPropertyNames(model, ifcLoader) {
   if (!generated) {
-    fillData(model);
+    await fillData(model, ifcLoader);
     generated = true;
   }
   return psetsObject;
 }
 
-function getElementProperties(model, ifcLoader, id) {
+async function getElementProperties(model, ifcLoader, id) {
   if (!generated) {
-    fillData(model);
+    await fillData(model, ifcLoader);
     generated = true;
   }
   return objMap[id];
 }
 
-function createPropertySelection(model, ifcLoader) {
+async function createPropertySelection(model, ifcLoader) {
   if (!generated) {
-    fillData(model);
+    await fillData(model, ifcLoader);
     generated = true;
   }
   const selection = document.createElement("select");
@@ -122474,39 +105893,42 @@ function createPropertySelection(model, ifcLoader) {
   return selection;
 }
 
-function getQuantityByElement(ifcLoader, model, elementId) {
+async function getQuantityByElement(ifcLoader, model, elementId) {
   if (!generated) {
-    fillData(model);
+    await fillData(model, ifcLoader);
     generated = true;
   }
   const tmpObj1 = objMap[elementId];
-  const tmpObj = tmpObj1?.filter((el) => el.type === "IFCELEMENTQUANTITY")[0];
+  const tmpObj = tmpObj1?.filter((el) => el.type === IFCELEMENTQUANTITY)[0];
   const qtyRet = {};
   if (tmpObj && tmpObj["Quantities"]) {
     for (const quantity of tmpObj["Quantities"]) {
-      if (quantity) {
-        const qtyObj = data$1[quantity];
+      if (quantity.value) {
+        const qtyObj = await ifcLoader.ifcManager.byId(
+          model.modelID,
+          quantity.value
+        );
         switch (qtyObj.type) {
-          case "IFCQUANTITYAREA":
-            qtyRet[qtyObj.Name] = {
-              value: qtyObj.AreaValue,
+          case IFCQUANTITYAREA:
+            qtyRet[qtyObj.Name.value] = {
+              value: qtyObj.AreaValue.value,
               type: "area",
             };
             break;
-          case "IFCQUANTITYLENGTH":
-            qtyRet[qtyObj.Name] = {
-              value: qtyObj.LengthValue,
+          case IFCQUANTITYLENGTH:
+            qtyRet[qtyObj.Name.value] = {
+              value: qtyObj.LengthValue.value,
               type: "length",
             };
             break;
-          case "IFCQUANTITYVOLUME":
-            qtyRet[qtyObj.Name] = {
-              value: qtyObj.VolumeValue,
+          case IFCQUANTITYVOLUME:
+            qtyRet[qtyObj.Name.value] = {
+              value: qtyObj.VolumeValue.value,
               type: "volume",
             };
             break;
           default:
-            qtyRet[qtyObj.Name] = 0;
+            qtyRet[qtyObj.Name.value] = 0;
         }
       }
     }
@@ -122754,32 +106176,24 @@ const units = {
 };
 
 const uomObj = {};
-let data;
 
-function getAllItemsOfType(data, type) {
-  let items = [];
-  for (const [key, value] of Object.entries(data)) {
-    if (value.type === type) {
-      items.push(value);
-    }
-  }
-  return items;
-}
-
-function fillUoM(ifcLoader, model) {
-  data = getData(model);
-  const uom = getAllItemsOfType(data, "IFCUNITASSIGNMENT");
-  const uomObject = uom[0];
-  console.log("uomObject", uomObject, uom);
+async function fillUoM(ifcLoader, model) {
+  const uom = await ifcLoader.ifcManager.getAllItemsOfType(
+    model.modelID,
+    IFCUNITASSIGNMENT
+  );
+  const uomObject = await ifcLoader.ifcManager.byId(model.modelID, uom[0]);
   for (const unit of uomObject.Units) {
-    const unitObject = data[unit];
+    const unitObject = await ifcLoader.ifcManager.byId(
+      model.modelID,
+      unit.value
+    );
 
-    const pstrUoM = unitObject.Prefix ? unitObject.Prefix + " " : "";
-    const strUoM = pstrUoM + unitObject.Name;
-    console.log("strUoM", strUoM, unitObject.UnitType);
+    const pstrUoM = unitObject.Prefix ? unitObject.Prefix.value + " " : "";
+    const strUoM = pstrUoM + unitObject.Name?.value;
     let mType = "";
     if (unitObject.UnitType) {
-      switch (unitObject.UnitType) {
+      switch (unitObject.UnitType.value) {
         case "MASSUNIT":
           mType = "mass";
           break;
@@ -122799,12 +106213,10 @@ function fillUoM(ifcLoader, model) {
     }
     uomObj[mType] = units[strUoM];
   }
-  console.log("uomObj", uomObj);
   return uomObj;
 }
 
-function getUoM(type) {
-  console.log("type", type);
+function getUoM(ifcLoader, model, type) {
   //   if (!filled) {
   //     fillUoM(ifcLoader, model).then((res) => {
   //       return res[type];
@@ -122814,21 +106226,25 @@ function getUoM(type) {
 }
 
 // import { ifcLoader, model } from "./loadIfc";
-let ifcLoader$1;
-let projectID;
 
-function createTreeTable(
-  ifcProject,
-  modelObj,
-  ifcloader,
-  currentProjectID
-) {
-  projectID = currentProjectID;
+let model$1;
+let ifcLoader$1;
+let scene$1;
+
+const preselectMat$1 = new MeshLambertMaterial({
+  transparent: true,
+  opacity: 1,
+  color: 0x0396a6,
+  depthTest: true,
+});
+
+async function createTreeTable(ifcProject, modelObj, ifcloader) {
   const tableRoot = document.getElementById("boq");
+  model$1 = modelObj;
   ifcLoader$1 = ifcloader;
-  fillUoM(ifcLoader$1, currentProjectID);
+  await fillUoM(ifcLoader$1, model$1);
   removeAllChildren(tableRoot);
-  populateIfcTable(tableRoot, ifcProject);
+  await populateIfcTable(tableRoot, ifcProject);
   implementTreeLogic();
 
   document.getElementsByClassName("quantity-type");
@@ -122847,9 +106263,14 @@ function createTreeTable(
       const tdUoM =
         event.target.parentElement.nextElementSibling.nextElementSibling;
       tdUoM.textContent = uom;
+
       const factor = tdUoM.nextElementSibling.nextElementSibling;
+      factor.nextElementSibling.textContent;
+
       const emission = factor.textContent * quants;
       factor.nextElementSibling.textContent = emission.toFixed(2);
+      document.getElementById("emissionsTotal");
+      // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
     }
   });
 }
@@ -122858,13 +106279,13 @@ function getUom(type) {
   let uom = "";
   switch (type) {
     case "length":
-      uom = getUoM("length");
+      uom = getUoM(ifcLoader$1, model$1, "length");
       break;
     case "area":
-      uom = getUoM("area");
+      uom = getUoM(ifcLoader$1, model$1, "area");
       break;
     case "volume":
-      uom = getUoM("volume");
+      uom = getUoM(ifcLoader$1, model$1, "volume");
       break;
     default:
       uom = "";
@@ -122873,10 +106294,19 @@ function getUom(type) {
   return uom;
 }
 
-function populateIfcTable(table, ifcProject) {
+async function populateIfcTable(table, ifcProject) {
   const initialDepth = 0;
-  createHeader(table);
-  createNode(table, ifcProject, initialDepth, ifcProject.children);
+  const header = document.createElement("thead");
+  createHeader(header);
+  table.appendChild(header);
+
+  const body = document.createElement("tbody");
+  await createNode(body, ifcProject, initialDepth, ifcProject.children);
+  table.appendChild(body);
+
+  const footer = document.createElement("tfoot");
+  // createTotal(table);
+  table.appendChild(footer);
 }
 
 function createHeader(table) {
@@ -122906,17 +106336,17 @@ function createHeader(table) {
   table.appendChild(row);
 }
 
-function createNode(table, node, depth, children) {
+async function createNode(table, node, depth, children) {
   if (children.length === 0) {
-    createLeafRow(table, node, depth);
+    await createLeafRow(table, node, depth);
   } else {
     // If there are multiple categories, group them together
     const grouped = groupCategories(children);
-    createBranchRow(table, node, depth, grouped);
+    await createBranchRow(table, node, depth, grouped);
   }
 }
 
-function createBranchRow(table, node, depth, children) {
+async function createBranchRow(table, node, depth, children) {
   const row = document.createElement("tr");
   const className = "level" + depth;
   row.classList.add(className);
@@ -122937,38 +106367,112 @@ function createBranchRow(table, node, depth, children) {
   table.appendChild(row);
 
   depth++;
-
-  children.forEach((child) => {
+  for (const child of children) {
     if (child.children.length > 0) {
-      createNode(table, child, depth, child.children);
+      await createNode(table, child, depth, child.children);
     } else {
-      createLeafRow(table, child, depth);
+      await createLeafRow(row, table, child, depth);
     }
-  });
+  }
 }
 
-function createLeafRow(table, node, depth) {
-  const quants = getQuantityByElement(ifcLoader$1, projectID, node.expressID);
-  const materials = getMaterial(ifcLoader$1, projectID, node.expressID);
-  console.log(quants);
+async function createLeafRow(parentRow, table, node, depth) {
+  const quants = await getQuantityByElement(ifcLoader$1, model$1, node.expressID);
+  const materials = await getMaterial(ifcLoader$1, model$1, node.expressID);
   let count = 0;
-  for (const mat of materials) {
-    const row = document.createElement("tr");
-    table.appendChild(row);
-    // row.classList.add(className);
-    row.classList.add("table-collapse");
-    row.setAttribute("data-depth", depth);
-    let element;
-    if (count === 0) {
-      element = document.createElement("td");
-      element.classList.add("data-ifc-element");
-      element.textContent = node.type;
-      element.setAttribute("rowspan", materials.length);
-      element.style.paddingLeft = 1 + "rem";
-      row.appendChild(element);
+  if (materials?.length > 0) {
+    for (const mat of materials) {
+      const row = document.createElement("tr");
+      parentRow.insertAdjacentElement("afterend", row);
+      const className = "level" + depth;
+      row.classList.add(className);
+      row.classList.add("table-collapse");
+      let element;
+      if (count === 0) {
+        row.setAttribute("data-depth", depth);
+        element = document.createElement("td");
+        element.classList.add("data-ifc-element");
+        element.textContent = node.type;
+        element.setAttribute("rowspan", materials.length);
+        row.appendChild(element);
+      }
+      count++;
+      const quantityType = document.createElement("td");
+      quantityType.classList.add("quantity-type-container");
+      const qtyTypeSelector = document.createElement("select");
+      let options = "";
+      let fkey = null;
+      for (const [key, value] of Object.entries(quants)) {
+        if (!fkey) {
+          fkey = key;
+        }
+        options += `<option value="${key}">${key}</option>`;
+      }
+      qtyTypeSelector.classList.add("quantity-type");
+      qtyTypeSelector.style.padding = "0px";
+      qtyTypeSelector.innerHTML = options;
+      quantityType.appendChild(qtyTypeSelector);
+      row.appendChild(quantityType);
+
+      const dataQuantity = document.createElement("td");
+      dataQuantity.quants = quants;
+      const quantity = quants[fkey] ? quants[fkey].value.toFixed(2) : 0;
+      dataQuantity.textContent = quantity;
+      row.appendChild(dataQuantity);
+
+      const unit = document.createElement("td");
+      unit.textContent = getUom(quants[fkey]?.type);
+      row.appendChild(unit);
+      const material = document.createElement("td");
+      material.textContent = mat;
+      row.appendChild(material);
+      const emmisionsPerUnit = getEmission(mat);
+      const dataEmissionsPerUnit = document.createElement("td");
+      dataEmissionsPerUnit.textContent = emmisionsPerUnit.toFixed(2);
+      row.appendChild(dataEmissionsPerUnit);
+
+      const emissions = quantity * emmisionsPerUnit;
+      document.getElementById("emissionsTotal");
+      // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
+
+      const dataEmissions = document.createElement("td");
+      dataEmissions.textContent = emissions.toFixed(2);
+      row.appendChild(dataEmissions);
+
+      row.style.fontWeight = "normal";
+
+      row.onmouseenter = function () {
+        removeTmpHighlights();
+
+        row.classList.add("tmphighlight");
+        highlightFromSpatial(node.expressID);
+      };
+
+      row.onclick = function () {
+        removeHighlights();
+        row.classList.add("highlight");
+        highlightFromSpatial(node.expressID);
+        node.expressID;
+      };
+
+      parentRow = row;
     }
-    count++;
+  } else {
+    const row = document.createElement("tr");
+    parentRow.insertAdjacentElement("afterend", row);
+    const className = "level" + depth;
+    row.classList.add(className);
+    row.classList.add("table-collapse");
+    let element;
+
+    row.setAttribute("data-depth", depth);
+    element = document.createElement("td");
+    element.classList.add("data-ifc-element");
+    element.textContent = node.type;
+    row.appendChild(element);
+
     const quantityType = document.createElement("td");
+    quantityType.classList.add("quantity-type-container");
     const qtyTypeSelector = document.createElement("select");
     let options = "";
     let fkey = null;
@@ -122986,28 +106490,75 @@ function createLeafRow(table, node, depth) {
 
     const dataQuantity = document.createElement("td");
     dataQuantity.quants = quants;
-    const quantity = quants[fkey]?.value.toFixed(2); //Add quantity function here
+    const quantity = quants[fkey] ? quants[fkey].value.toFixed(2) : 0;
     dataQuantity.textContent = quantity;
     row.appendChild(dataQuantity);
 
     const unit = document.createElement("td");
-    unit.textContent = getUom(quants[fkey]?.type); //Add unit function
+    unit.textContent = getUom(quants[fkey]?.type);
     row.appendChild(unit);
     const material = document.createElement("td");
-    material.textContent = mat;
+    material.textContent = "";
     row.appendChild(material);
-    const emmisionsPerUnit = getEmission(mat); //Add emissions function
+    const emmisionsPerUnit = 0.0;
     const dataEmissionsPerUnit = document.createElement("td");
     dataEmissionsPerUnit.textContent = emmisionsPerUnit.toFixed(2);
     row.appendChild(dataEmissionsPerUnit);
 
     const emissions = quantity * emmisionsPerUnit;
+    document.getElementById("emissionsTotal");
+    // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
+
     const dataEmissions = document.createElement("td");
     dataEmissions.textContent = emissions.toFixed(2);
     row.appendChild(dataEmissions);
 
     row.style.fontWeight = "normal";
+
+    row.onmouseenter = function () {
+      removeTmpHighlights();
+
+      row.classList.add("tmphighlight");
+      highlightFromSpatial(node.expressID);
+    };
+
+    row.onclick = function () {
+      removeHighlights();
+      row.classList.add("highlight");
+      highlightFromSpatial(node.expressID);
+      node.expressID;
+    };
+
+    parentRow = row;
   }
+}
+
+function removeHighlights() {
+  const highlighted = document.getElementsByClassName("highlight");
+  for (let h of highlighted) {
+    if (h) {
+      h.classList.remove("highlight");
+    }
+  }
+}
+
+function removeTmpHighlights() {
+  const highlighted = document.getElementsByClassName("tmphighlight");
+  for (let h of highlighted) {
+    if (h) {
+      h.classList.remove("tmphighlight");
+    }
+  }
+}
+
+function highlightFromSpatial(id) {
+  ifcLoader$1.ifcManager.createSubset({
+    modelID: model$1.modelID,
+    ids: [id],
+    material: preselectMat$1,
+    scene: scene$1,
+    removePrevious: true,
+  });
 }
 
 function groupCategories(children) {
@@ -123019,7 +106570,7 @@ function groupCategories(children) {
       return {
         expressID: -1,
         type: type + "S",
-        children: children.filter((child) => child.type.includes(type)),
+        children: children.filter((child) => child.type === type),
       };
     });
   }
@@ -123108,6 +106659,14 @@ const subsetOfTHREE = {
   },
 };
 
+const preselectMat = new MeshLambertMaterial({
+  transparent: true,
+  opacity: 1,
+  color: 0x0396a6,
+  depthTest: true,
+});
+
+
 let shiftDown = false;
 let lineId = 0;
 let line = Line;
@@ -123118,12 +106677,7 @@ const currentUrl = window.location.href;
 const url = new URL(currentUrl);
 const currentProjectID = url.searchParams.get("id");
 let preselectModel = { id: -1 };
-const preselectMat = new MeshLambertMaterial({
-  transparent: true,
-  opacity: 0.9,
-  color: 0xff88ff,
-  depthTest: true,
-});
+
 
 // Get the current project
 let currentProject = null;
@@ -123277,7 +106831,7 @@ async function init() {
   ifcModels.push(model);
   scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
-  await createTreeTable(spatial, model, ifcLoader, currentProjectID);
+  await createTreeTable(spatial, model, ifcLoader);
 
   threeCanvas.onmousemove = (event) => {
     const found = cast(event)[0];
@@ -123322,11 +106876,11 @@ async function init() {
   };
   // const ulItem = document.getElementById("myUL");
   // ulItem.animate({ scrollTop: ulItem.scrollHeight }, 1000);
-  await getAllPropertyNames(currentProjectID);
-  await getElementProperties(currentProjectID, ifcLoader, 144);
-  await getMaterial(ifcLoader, currentProjectID, 22620);
-  const selection = await createPropertySelection(currentProjectID);
-  await getQuantityByElement(ifcLoader, currentProjectID, 284);
+  await getAllPropertyNames(model, ifcLoader);
+  await getElementProperties(model, ifcLoader, 144);
+  await getMaterial(ifcLoader, model, 22620);
+  const selection = await createPropertySelection(model, ifcLoader);
+  await getQuantityByElement(ifcLoader, model, 284);
   document.body.appendChild(selection);
 }
 

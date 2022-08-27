@@ -1,47 +1,32 @@
 import { DecodeIFCString } from "./DecodeIfcString.js";
-import { IFCRELASSOCIATESMATERIAL } from "web-ifc";
-import { getData } from "../data";
 
-function getMaterialsProperties(dataFile, elementid) {
-  let matRelAss = [];
+export async function getMaterial(ifcLoader, model, selectedElementId) {
+  const materialprop = await ifcLoader.ifcManager.getMaterialsProperties(
+    model.modelID,
+    selectedElementId,
+    true
+  );
   const materials = [];
-  const mdata = getData(dataFile);
-  if (mdata) {
-    for (const [key, value] of Object.entries(mdata)) {
-      if (value.type === "IFCRELASSOCIATESMATERIAL") {
-        if (value.RelatedObjects.includes(elementid)) {
-          // materials.push(mdata[value.RelatingMaterial].Name);
-          if (mdata[value.RelatingMaterial].type === "IFCMATERIAL") {
-            materials.push(DecodeIFCString(mdata[value.RelatingMaterial].Name));
-          } else if (
-            mdata[value.RelatingMaterial].type === "IFCMATERIALLAYERSETUSAGE"
-          ) {
-            for (const matLayer of mdata[
-              mdata[value.RelatingMaterial].ForLayerSet
-            ].MaterialLayers) {
-              materials.push(
-                DecodeIFCString(mdata[mdata[matLayer].Material].Name)
-              );
-            }
-          } else if (
-            mdata[value.RelatingMaterial].type === "IFCMATERIALLAYERSET"
-          ) {
-            for (const matLayer of mdata[value.RelatingMaterial]
-              .MaterialLayers) {
-              materials.push(
-                DecodeIFCString(mdata[mdata[matLayer].Material].Name)
-              );
-            }
-          } else {
-          }
-        }
+  for (const material of materialprop) {
+    if (material.ForLayerSet) {
+      for (const mat of material.ForLayerSet.MaterialLayers) {
+        let matName = DecodeIFCString(mat.Material.Name?.value);
+        materials.push(matName);
       }
+    } else if (material.MaterialLayers) {
+      for (const mat of material.MaterialLayers) {
+        let matName = DecodeIFCString(mat.Material.Name?.value);
+        materials.push(matName);
+      }
+    } else if (material.Materials) {
+      for (const mat of material.Materials) {
+        let matName = DecodeIFCString(mat.Name?.value);
+        materials.push(matName);
+      }
+    } else {
+      let matName = DecodeIFCString(material.Name?.value);
+      materials.push(matName);
     }
   }
-  return materials;
-}
-
-export function getMaterial(ifcLoader, model, selectedElementId) {
-  const materials = getMaterialsProperties(model, selectedElementId);
   return materials;
 }
