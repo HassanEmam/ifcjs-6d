@@ -106231,7 +106231,13 @@ let model$1;
 let ifcLoader$1;
 let scene$1;
 let emissionsTotal = 0;
-let preselectMat$1;
+
+const preselectMat$1 = new MeshLambertMaterial({
+  transparent: true,
+  opacity: 1,
+  color: 0x0396a6,
+  depthTest: true,
+});
 
 async function createTreeTable(ifcProject, modelObj, ifcloader) {
   const tableRoot = document.getElementById("boq");
@@ -106406,7 +106412,6 @@ async function createLeafRow(parentRow, table, node, depth) {
       element.classList.add("data-ifc-element");
       element.textContent = node.type;
       element.setAttribute("rowspan", materials.length);
-      element.style.paddingLeft = 1 + "rem";
       row.appendChild(element);
     }
     count++;
@@ -106602,6 +106607,14 @@ const subsetOfTHREE = {
   },
 };
 
+const preselectMat = new MeshLambertMaterial({
+  transparent: true,
+  opacity: 1,
+  color: 0x0396a6,
+  depthTest: true,
+});
+
+
 let shiftDown = false;
 let lineId = 0;
 let line = Line;
@@ -106612,12 +106625,7 @@ const currentUrl = window.location.href;
 const url = new URL(currentUrl);
 const currentProjectID = url.searchParams.get("id");
 let preselectModel = { id: -1 };
-const preselectMat = new MeshLambertMaterial({
-  transparent: true,
-  opacity: 0.9,
-  color: 0xff88ff,
-  depthTest: true,
-});
+
 
 // Get the current project
 let currentProject = null;

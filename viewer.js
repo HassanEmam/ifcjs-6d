@@ -85,6 +85,14 @@ import { selectObject } from "./functions/Selection.js";
 import { IFCBUILDINGSTOREY } from "web-ifc";
 import createTreeTable from "./functions/treeTable.js";
 
+const preselectMat = new MeshLambertMaterial({
+  transparent: true,
+  opacity: 1,
+  color: 0x0396a6,
+  depthTest: true,
+});
+
+
 let shiftDown = false;
 let lineId = 0;
 let line = Line;
@@ -95,12 +103,7 @@ const currentUrl = window.location.href;
 const url = new URL(currentUrl);
 const currentProjectID = url.searchParams.get("id");
 let preselectModel = { id: -1 };
-const preselectMat = new MeshLambertMaterial({
-  transparent: true,
-  opacity: 0.9,
-  color: 0xff88ff,
-  depthTest: true,
-});
+
 
 // Get the current project
 let currentProject = null;

@@ -12,7 +12,13 @@ let ifcLoader;
 let scene;
 let selectedElementId;
 let emissionsTotal = 0;
-let preselectMat;
+
+const preselectMat = new MeshLambertMaterial({
+  transparent: true,
+  opacity: 1,
+  color: 0x0396a6,
+  depthTest: true,
+});
 
 export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
   const tableRoot = document.getElementById("boq");
@@ -187,7 +193,6 @@ async function createLeafRow(parentRow, table, node, depth) {
       element.classList.add("data-ifc-element");
       element.textContent = node.type;
       element.setAttribute("rowspan", materials.length);
-      element.style.paddingLeft = 1 + "rem";
       row.appendChild(element);
     }
     count++;
