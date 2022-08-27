@@ -11,6 +11,7 @@ let model;
 let ifcLoader;
 let scene;
 let selectedElementId;
+let emissionsTotal = 0;
 
 export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
   const tableRoot = document.getElementById("boq");
@@ -37,9 +38,17 @@ export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
       const tdUoM =
         event.target.parentElement.nextElementSibling.nextElementSibling;
       tdUoM.textContent = uom;
+
       const factor = tdUoM.nextElementSibling.nextElementSibling;
+      const emissionOld = factor.nextElementSibling.textContent;
+      emissionsTotal -= emissionOld;
+ 
       const emission = factor.textContent * quants;
       factor.nextElementSibling.textContent = emission.toFixed(2);
+      emissionsTotal += emission;
+      const emissionsTotalData = document.getElementById("emissionsTotal");
+      emissionsTotalData.textContent = emissionsTotal.toFixed(2);
+
     }
   });
 }
@@ -64,9 +73,18 @@ function getUom(type) {
 }
 
 async function populateIfcTable(table, ifcProject) {
-  const initialDepth = 0;
-  createHeader(table);
-  await createNode(table, ifcProject, initialDepth, ifcProject.children);
+  const initialDepth = 0;  
+  const header = document.createElement("thead");
+  createHeader(header);
+  table.appendChild(header);
+
+  const body = document.createElement("tbody");
+  await createNode(body, ifcProject, initialDepth, ifcProject.children);
+  table.appendChild(body);
+
+  const footer = document.createElement("tfoot");
+  createTotal(table);
+  table.appendChild(footer);
 }
 
 function createHeader(table) {
@@ -93,6 +111,20 @@ function createHeader(table) {
   emissions.textContent = "Emissions";
   row.appendChild(emissions);
 
+  table.appendChild(row);
+}
+
+function createTotal(table) {
+  const row = document.createElement("tr");
+  const element = document.createElement("th");
+  element.textContent = "Total emissions: ";
+  element.colSpan = 6;
+  row.appendChild(element);
+
+  const emissions = document.createElement("td");
+  emissions.id = "emissionsTotal";
+  emissions.textContent = emissionsTotal.toFixed(2);
+  row.appendChild(emissions);
   table.appendChild(row);
 }
 
@@ -143,6 +175,7 @@ async function createLeafRow(table, node, depth) {
   let count = 0;
   for (const mat of materials) {
     const row = document.createElement("tr");
+    table.appendChild(row);
     const className = "level" + depth;
     // row.classList.add(className);
     row.classList.add("table-collapse");
@@ -175,28 +208,34 @@ async function createLeafRow(table, node, depth) {
 
     const dataQuantity = document.createElement("td");
     dataQuantity.quants = quants;
-    const quantity = quants[fkey]?.value.toFixed(2); //Add quantity function here
+    const quantity = quants[fkey]?.value.toFixed(2);
     dataQuantity.textContent = quantity;
     row.appendChild(dataQuantity);
 
     const unit = document.createElement("td");
-    unit.textContent = getUom(quants[fkey]?.type); //Add unit function
+    unit.textContent = getUom(quants[fkey]?.type);
     row.appendChild(unit);
     const material = document.createElement("td");
     material.textContent = mat;
     row.appendChild(material);
-    const emmisionsPerUnit = getEmission(mat); //Add emissions function
+    const emmisionsPerUnit = getEmission(mat);
     const dataEmissionsPerUnit = document.createElement("td");
     dataEmissionsPerUnit.textContent = emmisionsPerUnit.toFixed(2);
     row.appendChild(dataEmissionsPerUnit);
 
     const emissions = quantity * emmisionsPerUnit;
+
+    // Update total emissions
+    emissionsTotal += emissions;
+    const emissionsTotalData = document.getElementById("emissionsTotal");
+    emissionsTotalData.textContent = emissionsTotal.toFixed(2);
+
     const dataEmissions = document.createElement("td");
     dataEmissions.textContent = emissions.toFixed(2);
     row.appendChild(dataEmissions);
 
     row.style.fontWeight = "normal";
-    table.appendChild(row);
+
 
     row.onmouseenter = function () {
       removeTmpHighlights();
