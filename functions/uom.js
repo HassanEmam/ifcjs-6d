@@ -1,5 +1,4 @@
 import { IFCUNITASSIGNMENT } from "web-ifc";
-import { getData } from "../data";
 
 const units = {
   "MILLI METRE": "mm",
@@ -11,32 +10,24 @@ const units = {
 
 const uomObj = {};
 let filled = false;
-let data;
 
-function getAllItemsOfType(data, type) {
-  let items = [];
-  for (const [key, value] of Object.entries(data)) {
-    if (value.type === type) {
-      items.push(value);
-    }
-  }
-  return items;
-}
-
-export function fillUoM(ifcLoader, model) {
-  data = getData(model);
-  const uom = getAllItemsOfType(data, "IFCUNITASSIGNMENT");
-  const uomObject = uom[0];
-  console.log("uomObject", uomObject, uom);
+export async function fillUoM(ifcLoader, model) {
+  const uom = await ifcLoader.ifcManager.getAllItemsOfType(
+    model.modelID,
+    IFCUNITASSIGNMENT
+  );
+  const uomObject = await ifcLoader.ifcManager.byId(model.modelID, uom[0]);
   for (const unit of uomObject.Units) {
-    const unitObject = data[unit];
+    const unitObject = await ifcLoader.ifcManager.byId(
+      model.modelID,
+      unit.value
+    );
 
-    const pstrUoM = unitObject.Prefix ? unitObject.Prefix + " " : "";
-    const strUoM = pstrUoM + unitObject.Name;
-    console.log("strUoM", strUoM, unitObject.UnitType);
+    const pstrUoM = unitObject.Prefix ? unitObject.Prefix.value + " " : "";
+    const strUoM = pstrUoM + unitObject.Name?.value;
     let mType = "";
     if (unitObject.UnitType) {
-      switch (unitObject.UnitType) {
+      switch (unitObject.UnitType.value) {
         case "MASSUNIT":
           mType = "mass";
           break;
@@ -57,12 +48,10 @@ export function fillUoM(ifcLoader, model) {
     uomObj[mType] = units[strUoM];
   }
   filled = true;
-  console.log("uomObj", uomObj);
   return uomObj;
 }
 
-export function getUoM(type) {
-  console.log("type", type);
+export function getUoM(ifcLoader, model, type) {
   //   if (!filled) {
   //     fillUoM(ifcLoader, model).then((res) => {
   //       return res[type];

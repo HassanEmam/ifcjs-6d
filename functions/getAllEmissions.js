@@ -21,8 +21,8 @@ async function EmissionsOfIfcType(ifcLoader, model, currentProjectID, ifcTypeId,
     for(let i = 0; i < elementsOfTypeIDs.length; i++) {
         const elementID = elementsOfTypeIDs[i];
 
-        const NetVolume = getNetVolume(ifcLoader, currentProjectID, elementID)
-        const materials = getMaterial(ifcLoader, currentProjectID, elementID);
+        const NetVolume = await getNetVolume(ifcLoader, model, elementID)
+        const materials = await getMaterial(ifcLoader, model, elementID);
         for (const mat of materials) {
             const emissionOfmaterial = NetVolume * getEmission(mat)
             allEmissionsOfItems.push(emissionOfmaterial)
@@ -43,8 +43,8 @@ async function EmissionsOfIfcType(ifcLoader, model, currentProjectID, ifcTypeId,
     return allEmissionsOfItems
 }
 
-function getNetVolume(ifcLoader, currentProjectID, elementID) { 
-    const quants = getQuantityByElement(ifcLoader, currentProjectID, elementID);
+async function getNetVolume(ifcLoader, model, elementID) { 
+    const quants = await getQuantityByElement(ifcLoader, model, elementID);
     const NetVolumeObject = Object.values(quants).find((obj) => {
         return obj.type == "volume"
     });

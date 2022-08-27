@@ -456,8 +456,8 @@ a {
   background-image: url("../asset/icon-removeMeasurements.png");
 }
 
-#hide-objects {
-  background-image: url("../asset/icon-hideObjects.png");
+#carbon-footprint {
+  background-image: url("../asset/icon-carbonDisabled.png");
 }
 
 .measurementLabel {
