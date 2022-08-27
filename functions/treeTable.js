@@ -236,7 +236,7 @@ function removeTmpHighlights() {
 const preselectMat = new MeshLambertMaterial({
   transparent: true,
   opacity: 0.9,
-  color: 0xff88ff,
+  color: 0x0396a6,
   depthTest: true,
 });
 
