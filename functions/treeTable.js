@@ -14,19 +14,13 @@ export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
   model = modelObj;
   ifcLoader = ifcloader;
   const uom = await fillUoM(ifcLoader, model, "length");
-  console.log("Treetable", uom);
   removeAllChildren(tableRoot);
   await populateIfcTable(tableRoot, ifcProject, model, ifcLoader);
   implementTreeLogic();
 
   const qtySelector = document.getElementsByClassName("quantity-type");
-  // console.log("Event", qtySelector);
   document.body.addEventListener("change", function (event) {
     if (event.target.classList.contains("quantity-type")) {
-      // console.log(
-      //   "Event",
-      //   event.target.parentElement.nextElementSibling.quants[event.target.value]
-      // );
       const quants =
         event.target.parentElement.nextElementSibling.quants[event.target.value]
           .value;
@@ -142,11 +136,9 @@ function createBranchRow(table, node, depth, children) {
 
 async function createLeafRow(table, node, depth) {
   const quants = await getQuantityByElement(ifcLoader, model, node.expressID);
-  // console.log("QUANTS", quants);
   const materials = await getMaterial(ifcLoader, model, node.expressID);
   let count = 0;
   for (const mat of materials) {
-    console.log("MAT", mat);
     const row = document.createElement("tr");
     const className = "level" + depth;
     // row.classList.add(className);
@@ -167,7 +159,6 @@ async function createLeafRow(table, node, depth) {
     let options = "";
     let fkey = null;
     for (const [key, value] of Object.entries(quants)) {
-      // console.log("qty", key, value);
       if (!fkey) {
         fkey = key;
       }
@@ -177,7 +168,6 @@ async function createLeafRow(table, node, depth) {
     qtyTypeSelector.style.padding = "0px";
     qtyTypeSelector.innerHTML = options;
     quantityType.appendChild(qtyTypeSelector);
-    // quantityType.textContent = "Quantity Type"; //Add dropdown function here
     row.appendChild(quantityType);
 
     const dataQuantity = document.createElement("td");
@@ -205,14 +195,6 @@ async function createLeafRow(table, node, depth) {
     row.style.fontWeight = "normal";
     table.appendChild(row);
   }
-
-  // for (let index = 0; index < materials.length; index++) {
-  //   const eachMaterial = document.createElement("div");
-  //   const element = String(materials[index]);
-  //   eachMaterial.textContent = element ? element : "Undefined"; //Add material function
-  //   material.appendChild(eachMaterial);
-  // }
-  // row.appendChild(material);
 }
 
 function groupCategories(children) {

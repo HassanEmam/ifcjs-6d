@@ -17,7 +17,6 @@ export async function fillUoM(ifcLoader, model) {
     IFCUNITASSIGNMENT
   );
   const uomObject = await ifcLoader.ifcManager.byId(model.modelID, uom[0]);
-  console.log("UOM1", uom[0], uomObject);
   for (const unit of uomObject.Units) {
     const unitObject = await ifcLoader.ifcManager.byId(
       model.modelID,
@@ -27,7 +26,6 @@ export async function fillUoM(ifcLoader, model) {
     const pstrUoM = unitObject.Prefix ? unitObject.Prefix.value + " " : "";
     const strUoM = pstrUoM + unitObject.Name?.value;
     let mType = "";
-    console.log("UOM2", strUoM, units[strUoM], unitObject);
     if (unitObject.UnitType) {
       switch (unitObject.UnitType.value) {
         case "MASSUNIT":
@@ -49,7 +47,6 @@ export async function fillUoM(ifcLoader, model) {
     }
     uomObj[mType] = units[strUoM];
   }
-  console.log("UOM", uomObj);
   filled = true;
   return uomObj;
 }

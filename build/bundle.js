@@ -40,25 +40,25 @@ const projects = [
     url: "./ifc/07.ifc",
   },
   {
-    name: "Model 1",
+    name: "Model 8",
     id: "08",
     url: "./ifc/08.ifc",
   },
-    {
-    name: "Model 2",
+  {
+    name: "Model 9",
     id: "09",
     url: "./ifc/09.ifc",
   },
-    {
-    name: "Model 3",
+  {
+    name: "Model 10",
     id: "10",
     url: "./ifc/10.ifc",
   },
-    {
-    name: "Model 4",
+  {
+    name: "Model 11",
     id: "11",
     url: "./ifc/11.ifc",
-  }
+  },
 ];
 
 /**
@@ -47292,8 +47292,6 @@ async function getMaterial(ifcLoader, model, selectedElementId) {
         materials.push(matName);
       }
     } else if (material.Materials) {
-      console.log("material", material);
-
       for (const mat of material.Materials) {
         let matName = DecodeIFCString(mat.Name.value);
         materials.push(matName);
@@ -105901,7 +105899,6 @@ async function getQuantityByElement(ifcLoader, model, elementId) {
   }
   const tmpObj1 = objMap[elementId];
   const tmpObj = tmpObj1?.filter((el) => el.type === IFCELEMENTQUANTITY)[0];
-  console.log(tmpObj);
   const qtyRet = {};
   if (tmpObj && tmpObj["Quantities"]) {
     for (const quantity of tmpObj["Quantities"]) {
@@ -106092,52 +106089,56 @@ function arrowsKeysControls(cameraControls) {
 }
 
 const MaterialSelectedObject = new MeshLambertMaterial({
-    transparent: true,
-    opacity: 0.8,
-    color: 0xff0000,
-    depthTest: true,
+  transparent: true,
+  opacity: 0.8,
+  color: 0xff0000,
+  depthTest: true,
 });
 
-async function selectObject(event, cast, model, ifcLoader, scene, lastModel, selectedElementId) {
-    const found = cast(event)[0];
-    if (found) {
-        const index = found.faceIndex;
-        const geometry = found.object.geometry;
-        const id = ifcLoader.ifcManager.getExpressId(geometry, index);
-        selectedElementId = id;
-        // const typeOfSelectedObject = ifcLoader.ifcManager.getIfcType(model.modelID, id)
-        // const propsOfSelectedObject = await ifcLoader.ifcManager.getItemProperties(model.modelID, id)
-        // const nameOfSelectedObject = Object.values(propsOfSelectedObject.Name)[1]
-        // console.log(typeOfSelectedObject, nameOfSelectedObject, propsOfSelectedObject)
-        // console.log(DecodeIFCString(nameOfSelectedObject))
-        getMaterial(ifcLoader, model, selectedElementId);
-        getObject(found, model, ifcLoader, scene);
-    } else  {
-        ifcLoader.ifcManager.removeSubset(model.modelID, MaterialSelectedObject);
-    }
+async function selectObject(
+  event,
+  cast,
+  model,
+  ifcLoader,
+  scene,
+  lastModel,
+  selectedElementId
+) {
+  const found = cast(event)[0];
+  if (found) {
+    const index = found.faceIndex;
+    const geometry = found.object.geometry;
+    const id = ifcLoader.ifcManager.getExpressId(geometry, index);
+    selectedElementId = id;
+
+    getMaterial(ifcLoader, model, selectedElementId);
+    getObject(found, model, ifcLoader, scene);
+  } else {
+    ifcLoader.ifcManager.removeSubset(model.modelID, MaterialSelectedObject);
+  }
 }
 
 function getObject(found, model, ifcLoader, scene, lastModel) {
-    model.modelID;
-    if (found) {
-        found.object;
-        // Gets model ID
-        const modelId = found.object.modelID;
-    
-        // Gets Express ID
-        const faceIndex = found.faceIndex;
-        const geometry = found.object.geometry;
-        const id = ifcLoader.ifcManager.getExpressId(geometry, faceIndex);
-    
-        // Creates subset
-        ifcLoader.ifcManager.createSubset({
-            modelID: modelId,
-            ids: [id],
-            material: MaterialSelectedObject,
-            scene: scene,
-            removePrevious: true,
-        });
-    } 
+  model.modelID;
+  if (found) {
+    found.object;
+    // Gets model ID
+    const modelId = found.object.modelID;
+
+    // Gets Express ID
+    const faceIndex = found.faceIndex;
+    const geometry = found.object.geometry;
+    const id = ifcLoader.ifcManager.getExpressId(geometry, faceIndex);
+
+    // Creates subset
+    ifcLoader.ifcManager.createSubset({
+      modelID: modelId,
+      ids: [id],
+      material: MaterialSelectedObject,
+      scene: scene,
+      removePrevious: true,
+    });
+  }
 }
 
 const emission = {
@@ -106149,6 +106150,12 @@ const emission = {
   "Structure, Steel Bar Joist Layer": 314.56,
   "Concrete, Cast-in-Place gray": 420.407,
   "Steel, 45-345": 514.32,
+  "Holz - Dunkelbraun 90-80-70": 120.17,
+  "Metall - Edelstahl gebürstet": 480.78,
+  "Metall - Edelstahl satiniert": 563.62,
+  "Lack - grau 80-80-80": 120.17,
+  "Kunststoff - grau 70-70-70": 120.17,
+  Glass: 680.8,
 };
 
 function getEmission(material) {
@@ -106172,7 +106179,6 @@ async function fillUoM(ifcLoader, model) {
     IFCUNITASSIGNMENT
   );
   const uomObject = await ifcLoader.ifcManager.byId(model.modelID, uom[0]);
-  console.log("UOM1", uom[0], uomObject);
   for (const unit of uomObject.Units) {
     const unitObject = await ifcLoader.ifcManager.byId(
       model.modelID,
@@ -106182,7 +106188,6 @@ async function fillUoM(ifcLoader, model) {
     const pstrUoM = unitObject.Prefix ? unitObject.Prefix.value + " " : "";
     const strUoM = pstrUoM + unitObject.Name?.value;
     let mType = "";
-    console.log("UOM2", strUoM, units[strUoM], unitObject);
     if (unitObject.UnitType) {
       switch (unitObject.UnitType.value) {
         case "MASSUNIT":
@@ -106204,7 +106209,6 @@ async function fillUoM(ifcLoader, model) {
     }
     uomObj[mType] = units[strUoM];
   }
-  console.log("UOM", uomObj);
   return uomObj;
 }
 
@@ -106226,20 +106230,14 @@ async function createTreeTable(ifcProject, modelObj, ifcloader) {
   const tableRoot = document.getElementById("boq");
   model$1 = modelObj;
   ifcLoader$1 = ifcloader;
-  const uom = await fillUoM(ifcLoader$1, model$1);
-  console.log("Treetable", uom);
+  await fillUoM(ifcLoader$1, model$1);
   removeAllChildren(tableRoot);
   await populateIfcTable(tableRoot, ifcProject);
   implementTreeLogic();
 
   document.getElementsByClassName("quantity-type");
-  // console.log("Event", qtySelector);
   document.body.addEventListener("change", function (event) {
     if (event.target.classList.contains("quantity-type")) {
-      // console.log(
-      //   "Event",
-      //   event.target.parentElement.nextElementSibling.quants[event.target.value]
-      // );
       const quants =
         event.target.parentElement.nextElementSibling.quants[event.target.value]
           .value;
@@ -106355,11 +106353,9 @@ function createBranchRow(table, node, depth, children) {
 
 async function createLeafRow(table, node, depth) {
   const quants = await getQuantityByElement(ifcLoader$1, model$1, node.expressID);
-  // console.log("QUANTS", quants);
   const materials = await getMaterial(ifcLoader$1, model$1, node.expressID);
   let count = 0;
   for (const mat of materials) {
-    console.log("MAT", mat);
     const row = document.createElement("tr");
     // row.classList.add(className);
     row.classList.add("table-collapse");
@@ -106379,7 +106375,6 @@ async function createLeafRow(table, node, depth) {
     let options = "";
     let fkey = null;
     for (const [key, value] of Object.entries(quants)) {
-      // console.log("qty", key, value);
       if (!fkey) {
         fkey = key;
       }
@@ -106389,7 +106384,6 @@ async function createLeafRow(table, node, depth) {
     qtyTypeSelector.style.padding = "0px";
     qtyTypeSelector.innerHTML = options;
     quantityType.appendChild(qtyTypeSelector);
-    // quantityType.textContent = "Quantity Type"; //Add dropdown function here
     row.appendChild(quantityType);
 
     const dataQuantity = document.createElement("td");
@@ -106417,14 +106411,6 @@ async function createLeafRow(table, node, depth) {
     row.style.fontWeight = "normal";
     table.appendChild(row);
   }
-
-  // for (let index = 0; index < materials.length; index++) {
-  //   const eachMaterial = document.createElement("div");
-  //   const element = String(materials[index]);
-  //   eachMaterial.textContent = element ? element : "Undefined"; //Add material function
-  //   material.appendChild(eachMaterial);
-  // }
-  // row.appendChild(material);
 }
 
 function groupCategories(children) {
@@ -106694,9 +106680,6 @@ async function init() {
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
   await createTreeTable(spatial, model, ifcLoader);
 
-  // qtySelector.addEventListener("change", (event) => {
-  //   console.log("Event", event);
-  // });
   threeCanvas.onmousemove = (event) => {
     const found = cast(event)[0];
     highlight(found, preselectMat, preselectModel);
@@ -106742,11 +106725,9 @@ async function init() {
   // ulItem.animate({ scrollTop: ulItem.scrollHeight }, 1000);
   await getAllPropertyNames(model, ifcLoader);
   await getElementProperties(model, ifcLoader, 144);
-  const materials = await getMaterial(ifcLoader, model, 22620);
-  console.log(materials);
+  await getMaterial(ifcLoader, model, 22620);
   const selection = await createPropertySelection(model, ifcLoader);
-  const quanty = await getQuantityByElement(ifcLoader, model, 284);
-  console.log("Wall Quants", quanty);
+  await getQuantityByElement(ifcLoader, model, 284);
   document.body.appendChild(selection);
 }
 

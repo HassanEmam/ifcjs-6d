@@ -134,7 +134,6 @@ export async function getQuantityByElement(ifcLoader, model, elementId) {
   }
   const tmpObj1 = objMap[elementId];
   const tmpObj = tmpObj1?.filter((el) => el.type === IFCELEMENTQUANTITY)[0];
-  console.log(tmpObj);
   const qtyRet = {};
   if (tmpObj && tmpObj["Quantities"]) {
     for (const quantity of tmpObj["Quantities"]) {

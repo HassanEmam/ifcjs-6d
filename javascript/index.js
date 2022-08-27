@@ -46,7 +46,6 @@ const projectCardInput = document.getElementById("projectCard-input");
 const inputFileButton = document.getElementById("file-input");
 projectCardInput.onclick = () => {
   inputDestinationURL = inputDestinationURL;
-  console.log(inputDestinationURL);
   // inputFileButton.href = inputDestinationURL;
   location = inputDestinationURL;
 };

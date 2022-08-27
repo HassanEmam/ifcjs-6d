@@ -7,6 +7,12 @@ const emission = {
   "Structure, Steel Bar Joist Layer": 314.56,
   "Concrete, Cast-in-Place gray": 420.407,
   "Steel, 45-345": 514.32,
+  "Holz - Dunkelbraun 90-80-70": 120.17,
+  "Metall - Edelstahl gebürstet": 480.78,
+  "Metall - Edelstahl satiniert": 563.62,
+  "Lack - grau 80-80-80": 120.17,
+  "Kunststoff - grau 70-70-70": 120.17,
+  Glass: 680.8,
 };
 
 export default function getEmission(material) {

@@ -40,23 +40,23 @@ export const projects = [
     url: "./ifc/07.ifc",
   },
   {
-    name: "Model 1",
+    name: "Model 8",
     id: "08",
     url: "./ifc/08.ifc",
   },
-    {
-    name: "Model 2",
+  {
+    name: "Model 9",
     id: "09",
     url: "./ifc/09.ifc",
   },
-    {
-    name: "Model 3",
+  {
+    name: "Model 10",
     id: "10",
     url: "./ifc/10.ifc",
   },
-    {
-    name: "Model 4",
+  {
+    name: "Model 11",
     id: "11",
     url: "./ifc/11.ifc",
-  }
+  },
 ];

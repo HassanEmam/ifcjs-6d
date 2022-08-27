@@ -254,9 +254,6 @@ async function init() {
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
   await createTreeTable(spatial, model, ifcLoader);
 
-  // qtySelector.addEventListener("change", (event) => {
-  //   console.log("Event", event);
-  // });
   threeCanvas.onmousemove = (event) => {
     const found = cast(event)[0];
     highlight(found, preselectMat, preselectModel);
@@ -303,10 +300,8 @@ async function init() {
   const psets = await getAllPropertyNames(model, ifcLoader);
   const prop = await getElementProperties(model, ifcLoader, 144);
   const materials = await getMaterial(ifcLoader, model, 22620);
-  console.log(materials);
   const selection = await createPropertySelection(model, ifcLoader);
   const quanty = await getQuantityByElement(ifcLoader, model, 284);
-  console.log("Wall Quants", quanty);
   document.body.appendChild(selection);
 }
 
