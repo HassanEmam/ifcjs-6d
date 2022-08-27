@@ -197,6 +197,7 @@ async function createLeafRow(parentRow, table, node, depth) {
     }
     count++;
     const quantityType = document.createElement("td");
+    quantityType.classList.add("quantity-type-container");
     const qtyTypeSelector = document.createElement("select");
     let options = "";
     let fkey = null;
