@@ -478,6 +478,14 @@ table td {
   border: 1px solid #eee;
 }
 
+.tfoot tr:last-child{
+  text-align: left;
+}
+
+.tfoot tr:last-child{
+  text-align: right;
+}
+
 .level1 td:first-child {
   padding-left: 15px;
 }
