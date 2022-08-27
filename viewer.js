@@ -82,6 +82,7 @@ import {
   arrowsKeysControls,
 } from "./functions/keysControls.js";
 import { selectObject } from "./functions/Selection.js";
+import { colorization } from "./functions/getAllEmissions.js"
 import { IFCBUILDINGSTOREY } from "web-ifc";
 import createTreeTable from "./functions/treeTable.js";
 
@@ -246,6 +247,8 @@ scene.add(axes);
 const ifcModels = [];
 
 let model = null;
+let allEmissionsOfItems = [];
+const itemsAndEmissions = [];
 const ifcLoader = new IFCLoader();
 await ifcLoader.ifcManager.useWebWorkers(true, "IFCWorker.js");
 // await ifcLoader.ifcManager.setWasmPath("./");
@@ -253,7 +256,7 @@ await ifcLoader.ifcManager.useWebWorkers(true, "IFCWorker.js");
 // create spatial tree
 let spatial = null;
 async function init() {
-  model = await loadIfc(projectURL, ifcLoader);
+  model = await loadIfc(projectURL, ifcLoader, currentProjectID, allEmissionsOfItems, itemsAndEmissions);
   ifcModels.push(model);
   scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
@@ -584,3 +587,43 @@ const deleteMeasurementsButton = document.getElementById("deleteMeasurements");
 deleteMeasurementsButton.onclick = () => {
   deleteMeasurements(scene);
 };
+
+// Hide Objects
+const carbonFootprintButton = document.getElementById("carbon-footprint");
+let carbonEnabled = null;
+carbonFootprintButton.onclick = () => {
+  if (carbonEnabled == null) {
+    carbonEnabled = true;
+    carbonFootprintButton.style.backgroundImage = "url('./asset/icon-carbonEnabled.png')";
+    carbonFootprintButton.style.backgroundColor = "#ded2c570";
+    carbonFootprintButton.style.transform = "scale(1.1)";
+    carbonFootprintButton.style.border = "1.5px solid #927ee3";
+    return;
+  }
+  if (carbonEnabled == true) {
+    carbonEnabled = false;
+    carbonFootprintButton.style.backgroundImage = "url('./asset/icon-carbonDisabled.png')";
+    carbonFootprintButton.style.backgroundColor = "";
+    carbonFootprintButton.style.transform = "";
+    carbonFootprintButton.style.border = "";
+    return;
+  } 
+  if (carbonEnabled == false) {
+    carbonEnabled = true;
+    carbonFootprintButton.style.backgroundImage = "url('./asset/icon-carbonEnabled.png')";
+    carbonFootprintButton.style.backgroundColor = "#ded2c570";
+    carbonFootprintButton.style.transform = "scale(1.1)";
+    carbonFootprintButton.style.border = "1.5px solid #927ee3";
+    return;
+  }
+}
+
+//Hide selected objects
+carbonFootprintButton.addEventListener('click', function(event) {
+  if (carbonEnabled == true) {
+    //Emissions Colorization
+    colorization(ifcLoader, model, itemsAndEmissions, scene)
+  }
+  else {
+  }
+})
