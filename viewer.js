@@ -628,8 +628,12 @@ deleteMeasurementsButton.onclick = () => {
 
 // Update FootPrint Button
 const carbonFootprintButton = document.getElementById("carbon-footprint");
+const footprintSimulationButton = document.getElementById("footprint-simulation-button")
 let carbonEnabled = null;
 carbonFootprintButton.onclick = () => {
+  carbonEnabled = updateFootprintButton(carbonFootprintButton, carbonEnabled);
+};
+footprintSimulationButton.onclick = () => {
   carbonEnabled = updateFootprintButton(carbonFootprintButton, carbonEnabled);
 };
 
@@ -649,3 +653,18 @@ carbonFootprintButton.addEventListener("click", function (event) {
     gridActive
   );
 });
+footprintSimulationButton.addEventListener("click", function (event) {
+  colorizationActive = updateFootPrintColors(
+    ifcLoader,
+    model,
+    itemsAndEmissions,
+    scene,
+    colorizationActive,
+    carbonEnabled,
+    grid,
+    axes,
+    gridToggle,
+    gridActive
+  );
+});
+

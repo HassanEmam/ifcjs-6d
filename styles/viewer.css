@@ -160,7 +160,7 @@ a {
 
 .title-card {
   margin-top: 1rem;
-  width: 100%;
+  width: 80vh;
   height: 1.75rem;
   line-height: 1.75rem;
   border-radius: var(--coverRadius);
@@ -170,6 +170,49 @@ a {
   font-weight: 600;
   font-size: 14px;
   text-align: center;
+}
+
+@media (max-width: 500px) {
+  .title-card {
+    width: 20vh;
+  }
+}
+
+@media (min-width: 1px) and (max-width: 400px) {
+  .title-card {
+    width: 100%;
+    padding: 0 0.5rem;
+  }
+}
+@media (min-width: 401px) and (max-width: 500px) {
+  .title-card {
+    width: 15vh;
+  }
+}
+@media (min-width: 501px) and (max-width: 600px) {
+  .title-card {
+    width: 25vh;
+  }
+}
+@media (min-width: 601px) and (max-width: 800px) {
+  .title-card {
+    width: 35vh;
+  }
+}
+@media (min-width: 801px) and (max-width: 1000px) {
+  .title-card {
+    width: 50vh;
+  }
+}
+@media (min-width: 1001px) and (max-width: 1200px) {
+  .title-card {
+    width: 75vh;
+  }
+}
+@media (min-width: 1201px) {
+  .title-card {
+    width: 90vh;
+  }
 }
 
 .simple-card-container {
@@ -635,4 +678,45 @@ select {
   height: 90%;
   margin-right: 1rem;
   border-radius: 0.3rem;
+}
+
+.sub-header-container {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+.footprint-simulation {
+  display: flex;
+  flex-direction: row;
+  margin-top: 1rem;
+  width: max-content;
+  padding: 0 1rem;
+  height: 1.75rem;
+  line-height: 1.75rem;
+  border-radius: var(--coverRadius);
+  background: var(--live-orange);
+  color: var(--dark-gray);
+  box-shadow: 0px 0px 10px rgb(0 0 0 / 80%);
+  font-weight: 600;
+  font-size: 14px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.simulation-button {
+  width: 22px;
+  height: 22px;
+  margin-right: 0.5rem;
+  border-radius: 30px;
+  border: 1px solid #8f9092;
+  background-size: 80%;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-image: url("../asset/icon-carbonDisabled.png");
+}
+
+.button-item {
+  display: flex;
+  align-items: center;
 }
