@@ -326,7 +326,7 @@ async function createBranchRow(table, node, depth, children) {
 
   let options;
   for (const option of opts) {
-    if (option === "NetVolume") {
+    if (option === "NetVolume" || option === "Volume" || option === "Volumen" || option === "Netto-Volumen") {
       options += `<option value="${option}" selected>${option}</option>`;
     } else if (option === "Area") {
       options += `<option value="${option}" selected>${option}</option>`;      
@@ -382,7 +382,7 @@ async function createLeafRow(
           fkey = key;
         }
         opts.add(key);
-        if (key === "NetVolume") {
+        if (key === "NetVolume" || key === "Volume" || key === "Volumen" || key === "Netto-Volumen") {
           options += `<option value="${key}" selected>${key}</option>`;
           hasNetVolume = true;
           fkey = "NetVolume";
