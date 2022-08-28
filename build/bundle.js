@@ -106923,23 +106923,20 @@ async function createLeafRow(
       let options = "";
       let fkey = null;
       for (const [key, value] of Object.entries(quants)) {
+        let formattedKey = DecodeIFCString(key);
         if (!fkey) {
-          fkey = key;
+          fkey = formattedKey;
         }
-        opts.add(key);
-        if (
-          key === "NetVolume" ||
-          key === "Volume" ||
-          key === "Volumen" ||
-          key === "Netto-Volumen"
-        ) {
-          options += `<option value="${key}" selected>${key}</option>`;
+        opts.add(formattedKey);
+        console.log(formattedKey);
+        if (formattedKey === "NetVolume" || formattedKey === "Volume" || formattedKey === "Volumen" || formattedKey === "Netto-Volumen") {
+          options += `<option value="${formattedKey}" selected>${formattedKey}</option>`;
           fkey = "NetVolume";
-        } else if (key === "Area") {
-          options += `<option value="${key}" selected>${key}</option>`;
-          fkey = "Area";
+        } else if (formattedKey === "Area") {
+          options += `<option value="${formattedKey}" selected>${formattedKey}</option>`;
+          fkey = "Area";          
         } else {
-          options += `<option value="${key}">${key}</option>`;
+          options += `<option value="${formattedKey}">${formattedKey}</option>`;
         }
       }
       qtyTypeSelector.classList.add("quantity-type");
@@ -107017,10 +107014,11 @@ async function createLeafRow(
     let options = "";
     let fkey = null;
     for (const [key, value] of Object.entries(quants)) {
+      let formattedKey = DecodeIFCString(key);
       if (!fkey) {
-        fkey = key;
+        fkey = formattedKey;
       }
-      options += `<option value="${key}">${key}</option>`;
+      options += `<option value="${formattedKey}">${formattedKey}</option>`;
     }
     qtyTypeSelector.classList.add("quantity-type");
     qtyTypeSelector.style.padding = "0px";
