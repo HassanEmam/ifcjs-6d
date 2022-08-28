@@ -1,16 +1,26 @@
 import { getAllEmissions } from "./getAllEmissions";
 import { 
   IFCSLAB,
-  IFCPLATE,
   IFCWALLSTANDARDCASE,
-  IFCCOLUMN
+  IFCWALL,
+  IFCWINDOW,
+  IFCDOOR,
+  IFCFURNISHINGELEMENT,
+  IFCCOLUMN,
+  IFCPLATE,
+  IFCMEMBER
 } from "web-ifc";
 
 const ifcTypesIds = [
   IFCSLAB,
-  IFCPLATE,
   IFCWALLSTANDARDCASE,
-  IFCCOLUMN
+  IFCWALL,
+  IFCWINDOW,
+  IFCDOOR,
+  IFCFURNISHINGELEMENT,
+  IFCCOLUMN,
+  IFCPLATE,
+  IFCMEMBER
 ]
 
 export default async function loadIfc(ifcFile, ifcLoader, currentProjectID, allEmissionsOfItems, itemsAndEmissions) {
