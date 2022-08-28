@@ -584,6 +584,15 @@ tr:hover {
   font-size: 0.7rem;
 }
 
+#boq tbody td:nth-child(7) {
+
+}
+
+.dataNumber {
+  text-align: right;
+  padding-right: .5rem;
+}
+
 select {
   width: 3.5rem;
   height: 1.2rem;

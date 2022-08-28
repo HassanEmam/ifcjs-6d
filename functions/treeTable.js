@@ -37,7 +37,7 @@ export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
         event.target.parentElement.nextElementSibling.quants[event.target.value]
           .value;
       event.target.parentElement.nextElementSibling.textContent =
-        quants.toFixed(2);
+        printNumber(quants);
 
       const type =
         event.target.parentElement.nextElementSibling.quants[event.target.value]
@@ -52,10 +52,10 @@ export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
       emissionsTotal -= emissionOld;
 
       const emission = factor.textContent * quants;
-      factor.nextElementSibling.textContent = emission.toFixed(2);
+      factor.nextElementSibling.textContent = printNumber(emission);
       emissionsTotal += emission;
       const emissionsTotalData = document.getElementById("emissionsTotal");
-      // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
+      emissionsTotalData.textContent = printNumber(emissionsTotal);
     }
     if (event.target.classList.contains("group-select")) {
       const setVal = event.target.value;
@@ -119,7 +119,7 @@ async function populateIfcTable(table, ifcProject) {
   table.appendChild(body);
 
   const footer = document.createElement("tfoot");
-  // createTotal(table);
+  createTotal(table);
   table.appendChild(footer);
 }
 
@@ -157,9 +157,10 @@ function createTotal(table) {
   element.colSpan = 6;
   row.appendChild(element);
 
-  const emissions = document.createElement("td");
+  const emissions = document.createElement("th");
   emissions.id = "emissionsTotal";
-  emissions.textContent = emissionsTotal.toFixed(2);
+  emissions.textContent = printNumber(emissionsTotal);
+  emissions.classList.add('dataNumber');
   row.appendChild(emissions);
   table.appendChild(row);
 }
@@ -256,8 +257,9 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
 
       const dataQuantity = document.createElement("td");
       dataQuantity.quants = quants;
-      const quantity = quants[fkey] ? quants[fkey].value.toFixed(2) : 0;
-      dataQuantity.textContent = quantity;
+      const quantity = quants[fkey] ? quants[fkey].value : 0;
+      dataQuantity.textContent = printNumber(quantity);
+      dataQuantity.classList.add('dataNumber');
       row.appendChild(dataQuantity);
 
       const unit = document.createElement("td");
@@ -268,7 +270,8 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
       row.appendChild(material);
       const emmisionsPerUnit = getEmission(mat);
       const dataEmissionsPerUnit = document.createElement("td");
-      dataEmissionsPerUnit.textContent = emmisionsPerUnit.toFixed(2);
+      dataEmissionsPerUnit.classList.add('dataNumber');
+      dataEmissionsPerUnit.textContent = printNumber(emmisionsPerUnit);
       row.appendChild(dataEmissionsPerUnit);
 
       const emissions = quantity * emmisionsPerUnit;
@@ -276,10 +279,10 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
       // Update total emissions
       emissionsTotal += emissions;
       const emissionsTotalData = document.getElementById("emissionsTotal");
-      // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
 
       const dataEmissions = document.createElement("td");
-      dataEmissions.textContent = emissions.toFixed(2);
+      dataEmissions.classList.add('dataNumber');
+      dataEmissions.textContent = printNumber(emissions);
       row.appendChild(dataEmissions);
 
       row.style.fontWeight = "normal";
@@ -333,8 +336,9 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
 
     const dataQuantity = document.createElement("td");
     dataQuantity.quants = quants;
-    const quantity = quants[fkey] ? quants[fkey].value.toFixed(2) : 0;
-    dataQuantity.textContent = quantity;
+    const quantity = quants[fkey] ? quants[fkey].value : 0;
+    dataQuantity.textContent = printNumber(quantity);
+    dataQuantity.classList.add("dataNumber");
     row.appendChild(dataQuantity);
 
     const unit = document.createElement("td");
@@ -345,18 +349,19 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
     row.appendChild(material);
     const emmisionsPerUnit = 0.0;
     const dataEmissionsPerUnit = document.createElement("td");
-    dataEmissionsPerUnit.textContent = emmisionsPerUnit.toFixed(2);
+    dataEmissionsPerUnit.textContent = printNumber(emmisionsPerUnit);
+    dataEmissionsPerUnit.classList.add("dataNumber");
     row.appendChild(dataEmissionsPerUnit);
 
     const emissions = quantity * emmisionsPerUnit;
 
     // Update total emissions
     emissionsTotal += emissions;
-    const emissionsTotalData = document.getElementById("emissionsTotal");
-    // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
 
     const dataEmissions = document.createElement("td");
-    dataEmissions.textContent = emissions.toFixed(2);
+    dataEmissions.textContent = printNumber(emissions);
+
+    dataEmissions.classList.add("dataNumber");
     row.appendChild(dataEmissions);
 
     row.style.fontWeight = "normal";
@@ -378,6 +383,10 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
     parentRow = row;
   }
 }
+
+function printNumber(number) {
+  return new Intl.NumberFormat().format(number.toFixed(2));
+  }
 
 function removeHighlights() {
   const highlighted = document.getElementsByClassName("highlight");
