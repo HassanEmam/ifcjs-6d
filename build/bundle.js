@@ -106587,11 +106587,9 @@ function getParent(target) {
     target = target.previousElementSibling;
     tDepth = target.getAttribute("data-depth");
   }
-  console.log("tDepth", tDepth);
   while (!isParent) {
     parent = parent.previousElementSibling;
     let pDepth = parent.getAttribute("data-depth");
-    console.log("parent2", pDepth, tDepth);
     if (pDepth) {
       isParent = pDepth < tDepth;
     }
@@ -106605,7 +106603,6 @@ function getAllChilds(parent) {
   let child = parent.nextElementSibling;
   let cDepth = child.getAttribute("data-depth");
   let isChild = true;
-  console.log("cDepth", cDepth, pDepth);
   while (isChild) {
     if (cDepth) {
       if (cDepth > pDepth) {
@@ -106617,7 +106614,6 @@ function getAllChilds(parent) {
         } else {
           isChild = true;
         }
-        console.log("CPDepth", cDepth, pDepth);
       } else {
         isChild = false;
       }
@@ -106635,16 +106631,13 @@ function getAllChilds(parent) {
 function recalculateSubtotal(parent) {
   const childs = getAllChilds(parent);
   let subtotal = 0;
-  console.log("childs befor loop", childs);
 
   for (const child of childs) {
     const emission = child.getElementsByClassName("emissions")[0];
     let em = emission?.textContent;
     em = em.replace(",", "");
     subtotal += parseFloat(em);
-    console.log("Emission", em);
   }
-  console.log("childs", subtotal, childs);
   return subtotal;
 }
 
@@ -106657,7 +106650,6 @@ function updateSubtotal(target, isParent = false) {
   }
   const subtotal = parent.getElementsByClassName("subtotal")[0];
   let emissionSubTotal = recalculateSubtotal(parent);
-  console.log("subtotal", subtotal, parent);
   subtotal.textContent = printNumber(emissionSubTotal);
 }
 
@@ -106701,16 +106693,11 @@ async function createTreeTable(ifcProject, modelObj, ifcloader) {
     if (event.target.classList.contains("group-select")) {
       const setVal = event.target.value;
       const parentTR = event.target.parentElement;
-      console.log(
-        setVal,
-        parentTR,
-        parseInt(parentTR.getAttribute("data-depth"))
-      );
+
       let child = parentTR.nextElementSibling;
       let isChild =
         parentTR.getAttribute("data-depth") < child.getAttribute("data-depth");
       while (isChild) {
-        console.log(child, child.quants);
         const qtySelect = child.getElementsByTagName("select")[0];
         qtySelect.value = setVal;
         qtySelect.parentElement.nextElementSibling.textContent =
@@ -106724,7 +106711,6 @@ async function createTreeTable(ifcProject, modelObj, ifcloader) {
           uom;
         let emission = child.getElementsByClassName("emissions")[0];
         let empu = emission.previousElementSibling;
-        console.log("EmissionElement", emission.textContent, empu.textContent);
         emission.textContent = printNumber(
           parseFloat(empu.textContent.replace(",", "")) *
             qtySelect.parentElement.nextElementSibling.quants[setVal].value
@@ -106739,7 +106725,6 @@ async function createTreeTable(ifcProject, modelObj, ifcloader) {
         }
         child = child.nextElementSibling;
       }
-      console.log("EventTarget", event.target.parentElement);
       updateSubtotal(event.target.parentElement, true);
     }
   });
@@ -106878,12 +106863,17 @@ async function createBranchRow(table, node, depth, children) {
       await createLeafRow(row, table, child, depth, opts, subtotalEmission);
     }
   }
-  console.log("Opts", opts);
-  console.log("Subtotal", subtotalEmission);
 
   let options;
   for (const option of opts) {
-    if (option === "NetVolume") {
+    if (
+      option === "NetVolume" ||
+      option === "Volume" ||
+      option === "Volumen" ||
+      option === "Netto-Volumen"
+    ) {
+      options += `<option value="${option}" selected>${option}</option>`;
+    } else if (option === "Area") {
       options += `<option value="${option}" selected>${option}</option>`;
     } else {
       options += `<option value="${option}">${option}</option>`;
@@ -106935,9 +106925,17 @@ async function createLeafRow(
           fkey = key;
         }
         opts.add(key);
-        if (key === "NetVolume") {
+        if (
+          key === "NetVolume" ||
+          key === "Volume" ||
+          key === "Volumen" ||
+          key === "Netto-Volumen"
+        ) {
           options += `<option value="${key}" selected>${key}</option>`;
           fkey = "NetVolume";
+        } else if (key === "Area") {
+          options += `<option value="${key}" selected>${key}</option>`;
+          fkey = "Area";
         } else {
           options += `<option value="${key}">${key}</option>`;
         }
@@ -107346,9 +107344,10 @@ scene.add(directionalLight);
 // const threeCanvas = document.getElementById("three-canvas");
 const renderer = new WebGLRenderer({ alpha: true });
 renderer.setClearColor(0xffffff, 0.2);
-threeCanvas.appendChild(renderer.domElement);
+console.log("size", size);
 renderer.setSize(size.width, size.height, false);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+threeCanvas.appendChild(renderer.domElement);
 const labelRenderer = new CSS2DRenderer({
   canvas: threeCanvas,
 });
@@ -107444,7 +107443,8 @@ async function init() {
           positions[5] = intersects[0].point.z;
           line.geometry.attributes.position.needsUpdate = true;
           const distance = v0.distanceTo(v1);
-          measurementLabels[lineId].element.innerText = distance.toFixed(2) + "m";
+          measurementLabels[lineId].element.innerText =
+            distance.toFixed(2) + "m";
           measurementLabels[lineId].position.lerpVectors(v0, v1, 0.5);
         }
       }
@@ -107561,10 +107561,13 @@ animate();
 
 // //Adjust the viewport to the size of the browser
 window.addEventListener("resize", () => {
+  size.width = threeCanvas.clientWidth;
+  size.height = threeCanvas.clientHeight;
+  renderer.domElement.width = size.width;
   camera.aspect = size.width / size.height;
   camera.updateProjectionMatrix();
-
-  renderer.setSize(size.width, size.height);
+  console.log(size);
+  renderer.setSize(size.width, size.height, false);
 });
 
 window.addEventListener("keydown", function (event) {
@@ -107748,5 +107751,14 @@ carbonFootprintButton.onclick = () => {
 // Update Objects Footprints Colors
 let colorizationActive = false;
 carbonFootprintButton.addEventListener("click", function (event) {
-  colorizationActive = updateFootPrintColors(ifcLoader, model, itemsAndEmissions, scene, colorizationActive, carbonEnabled, grid, axes, gridToggle);
+  colorizationActive = updateFootPrintColors(
+    ifcLoader,
+    model,
+    itemsAndEmissions,
+    scene,
+    colorizationActive,
+    carbonEnabled,
+    grid,
+    axes,
+    gridToggle);
 });
