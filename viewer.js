@@ -115,7 +115,9 @@ currentProject = projects.find((project) => project.id === currentProjectID);
 let gridActive = true;
 let gridToggle = document.getElementById("grid-toggle");
 gridToggle.classList.add("grid-enabled");
-gridToggle.style.backgroundImage = "url('./asset/grid.svg')";
+let gridIcon = "url('./asset/icon-grid.svg')";
+console.log(gridIcon);
+gridToggle.style.backgroundImage = gridIcon;
 if (currentProjectID != "input-ifc") {
   projectURL = currentProject.url;
 } else {
@@ -251,6 +253,7 @@ gridToggle.addEventListener("click", () => {
   if (gridActive) {
     grid.visible = false;
     axes.visible = false;
+    gridToggle.fill = "blue";
     gridToggle.classList.remove("grid-enabled");
     gridActive = false;
   } else {

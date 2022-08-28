@@ -570,5 +570,6 @@ select {
 }
 
 .grid-enabled {
+  fill: green;
   color: #034c8c;
 }
