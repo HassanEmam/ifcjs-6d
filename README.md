@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This project was created as part of the Ifc.js crash course hackathon. The project is developed by three of the course alumni ([HassanEmam](https://www.linkedin.com/in/hassanemam/), [Badr Ouhabi](https://www.linkedin.com/in/ouahbi/) and [Mortiz Lill](https://www.linkedin.com/in/moritz-lill/)).
+This project was created as part of the Ifc.js crash course hackathon. The project is developed by three of the course alumni ([HassanEmam](https://www.linkedin.com/in/hassanemam/), [Badr Ouahbi](https://www.linkedin.com/in/ouahbi/) and [Mortiz Lill](https://www.linkedin.com/in/moritz-lill/)).
 The main purpose of the application is to perform 5D operations as Quantity Takeoff and 6D simulation (carbon emissions and footprint calculations). The project is a proof of concept and data used for carbon calculations are not real factors
 
 ## How to access the application
