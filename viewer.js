@@ -198,7 +198,7 @@ cameraControls.maxDistance = 50;
 
 // Mouse controls
 cameraControls.mouseButtons.middle = CameraControls.ACTION.TRUCK;
-cameraControls.mouseButtons.right = CameraControls.ACTION.DOLLY;
+// cameraControls.mouseButtons.right = CameraControls.ACTION.DOLLY;
 cameraControls.mouseButtons.wheel = CameraControls.ACTION.DOLLY;
 
 // Polar Angle
