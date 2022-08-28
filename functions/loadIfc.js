@@ -1,5 +1,5 @@
 import { getAllEmissions } from "./getAllEmissions";
-import { 
+import {
   IFCSLAB,
   IFCWALLSTANDARDCASE,
   IFCWALL,
@@ -8,7 +8,7 @@ import {
   IFCFURNISHINGELEMENT,
   IFCCOLUMN,
   IFCPLATE,
-  IFCMEMBER
+  IFCMEMBER,
 } from "web-ifc";
 
 const ifcTypesIds = [
@@ -20,12 +20,24 @@ const ifcTypesIds = [
   IFCFURNISHINGELEMENT,
   IFCCOLUMN,
   IFCPLATE,
-  IFCMEMBER
-]
+  IFCMEMBER,
+];
 
-export default async function loadIfc(ifcFile, ifcLoader, currentProjectID, allEmissionsOfItems, itemsAndEmissions) {
+export default async function loadIfc(
+  ifcFile,
+  ifcLoader,
+  currentProjectID,
+  allEmissionsOfItems,
+  itemsAndEmissions
+) {
   console.log("Loading IFC file...", ifcFile);
   const model = await ifcLoader.loadAsync(ifcFile);
-  await getAllEmissions(ifcLoader, model, currentProjectID, allEmissionsOfItems, itemsAndEmissions, ifcTypesIds)
+  await getAllEmissions(
+    ifcLoader,
+    model,
+    allEmissionsOfItems,
+    itemsAndEmissions,
+    ifcTypesIds
+  );
   return model;
 }

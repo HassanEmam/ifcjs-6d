@@ -105983,7 +105983,6 @@ const materialVeryLow = new MeshBasicMaterial({
 async function getAllEmissions(
   ifcLoader,
   model,
-  currentProjectID,
   allEmissionsOfItems,
   itemsAndEmissions,
   ifcTypesIds
@@ -105997,7 +105996,6 @@ async function getAllEmissions(
     await EmissionsOfIfcType(
       ifcLoader,
       model,
-      currentProjectID,
       ifcTypeId,
       allEmissionsOfItems,
       emissionsOfItem,
@@ -106009,7 +106007,6 @@ async function getAllEmissions(
 async function EmissionsOfIfcType(
   ifcLoader,
   model,
-  currentProjectID,
   ifcTypeId,
   allEmissionsOfItems,
   emissionsOfItem,
@@ -106129,36 +106126,57 @@ function removeColorization(ifcLoader, model) {
     model.modelID,
     materialVeryHigh,
     "VeryHighEmission"
-  );
+    );
   ifcLoader.ifcManager.removeSubset(
     model.modelID,
     materialHigh,
     "HighEmission"
-  );
+    );
   ifcLoader.ifcManager.removeSubset(
     model.modelID,
     materialMedium,
     "MediumEmission"
-  );
-  ifcLoader.ifcManager.removeSubset(model.modelID, materialLow, "LowEmission");
+    );
+  ifcLoader.ifcManager.removeSubset(
+    model.modelID, 
+    materialLow, 
+    "LowEmission"
+    );
   ifcLoader.ifcManager.removeSubset(
     model.modelID,
     materialVeryLow,
     "VeryLowEmission"
-  );
+    );
 }
 
 const ifcTypesIds = [
   IFCSLAB,
-  IFCPLATE,
   IFCWALLSTANDARDCASE,
-  IFCCOLUMN
+  IFCWALL,
+  IFCWINDOW,
+  IFCDOOR,
+  IFCFURNISHINGELEMENT,
+  IFCCOLUMN,
+  IFCPLATE,
+  IFCMEMBER,
 ];
 
-async function loadIfc(ifcFile, ifcLoader, currentProjectID, allEmissionsOfItems, itemsAndEmissions) {
+async function loadIfc(
+  ifcFile,
+  ifcLoader,
+  currentProjectID,
+  allEmissionsOfItems,
+  itemsAndEmissions
+) {
   console.log("Loading IFC file...", ifcFile);
   const model = await ifcLoader.loadAsync(ifcFile);
-  await getAllEmissions(ifcLoader, model, currentProjectID, allEmissionsOfItems, itemsAndEmissions, ifcTypesIds);
+  await getAllEmissions(
+    ifcLoader,
+    model,
+    allEmissionsOfItems,
+    itemsAndEmissions,
+    ifcTypesIds
+  );
   return model;
 }
 
