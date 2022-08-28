@@ -9,6 +9,7 @@ import {
   Scene,
   Raycaster,
   WebGLRenderer,
+  MeshBasicMaterial,
   MeshLambertMaterial,
   Clock,
   MOUSE,
@@ -82,7 +83,7 @@ import {
   arrowsKeysControls,
 } from "./functions/keysControls.js";
 import { selectObject } from "./functions/Selection.js";
-import { colorization } from "./functions/getAllEmissions.js"
+import { colorization, getColorizedItemsIds } from "./functions/getAllEmissions.js"
 import { IFCBUILDINGSTOREY } from "web-ifc";
 import createTreeTable from "./functions/treeTable.js";
 
@@ -625,5 +626,35 @@ carbonFootprintButton.addEventListener('click', function(event) {
     colorization(ifcLoader, model, itemsAndEmissions, scene)
   }
   else {
+    const materialVeryHigh = new MeshBasicMaterial({
+      transparent: true,
+      opacity: 0.8,
+      color: 0xff0000,
+      depthTest: true,
+    });
+    const colorizedItemsIds = getColorizedItemsIds(itemsAndEmissions)
+    
+    console.log(model.modelID)
+    console.log(colorizedItemsIds)
+    // Remove Element from Subset
+    ifcLoader.ifcManager.removeFromSubset({
+      modelID: model.modelID,
+      ids: [colorizedItemsIds],
+      material: materialVeryHigh,
+    });
+
+    // const veryHighSubset = ifcLoader.ifcManager.getSubset({
+    //   modelID: model.modelID,
+    //   material: materialVeryHigh.addEventListener,
+    //   customId: 'VeryHighEmission'
+    // })
+
+    // console.log(ifcLoader.ifcManager.)
+
+    // ifcLoader.ifcManager.removeSubset({
+    //   modelID: model.modelID,
+    //   parent: model,
+    //   material: materialVeryHigh
+    // });
   }
 })

@@ -151,7 +151,17 @@ export function colorization(ifcLoader, model, itemsAndEmissions, scene) {
                 scene: scene,
                 removePrevious: false,
                 customID: 'VeryLowEmission'
-            });  
+            });
         }
+
     });
+}
+
+export function getColorizedItemsIds(itemsAndEmissions) {
+    let colorizedItemsIds = []
+    itemsAndEmissions.forEach(element => {
+        colorizedItemsIds.push(element.id)
+    });
+
+    return colorizedItemsIds
 }
