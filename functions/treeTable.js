@@ -328,6 +328,8 @@ async function createBranchRow(table, node, depth, children) {
   for (const option of opts) {
     if (option === "NetVolume") {
       options += `<option value="${option}" selected>${option}</option>`;
+    } else if (option === "Area") {
+      options += `<option value="${option}" selected>${option}</option>`;      
     } else {
       options += `<option value="${option}">${option}</option>`;
     }
@@ -348,6 +350,7 @@ async function createLeafRow(
   subtotalEmission
 ) {
   let hasNetVolume = false;
+  let hasArea = false;
   const quants = await getQuantityByElement(ifcLoader, model, node.expressID);
   const materials = await getMaterial(ifcLoader, model, node.expressID);
   let count = 0;
@@ -383,6 +386,10 @@ async function createLeafRow(
           options += `<option value="${key}" selected>${key}</option>`;
           hasNetVolume = true;
           fkey = "NetVolume";
+        } else if (key === "Area") {
+          options += `<option value="${key}" selected>${key}</option>`;
+          hasArea = true;
+          fkey = "Area";          
         } else {
           options += `<option value="${key}">${key}</option>`;
         }
