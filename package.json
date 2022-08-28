@@ -14,7 +14,7 @@
   ],
   "description": "",
   "dependencies": {
-    "camera-controls": "^1.36.1",
+    "camera-controls": "^1.36.2",
     "hold-event": "^0.2.0",
     "three": "^0.135.0",
     "three-mesh-bvh": "^0.5.15",
@@ -23,6 +23,6 @@
   },
   "devDependencies": {
     "@rollup/plugin-node-resolve": "^13.3.0",
-    "rollup": "^2.77.3"
+    "rollup": "^2.78.1"
   }
 }
