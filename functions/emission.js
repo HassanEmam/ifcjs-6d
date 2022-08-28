@@ -24,6 +24,12 @@ const emission = {
   "Pine": 120.17,
   "Textile - Bamboo Weave": 120.17,
   "Suelos por defecto": 420.407,
+  "Holz": 120.17,
+  "Leichtbeton 102890359": 420.407,
+  "Radial Gradient Fill 1515460218": 514.32,
+  "Stahlbeton 65690": 312.6,
+  "Solid": 300,
+  "Solid 397409098": 420.407,
   Glass: 680.8,
 };
 

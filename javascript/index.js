@@ -34,6 +34,10 @@ for (let project of projects) {
     const projectImage = newCard.querySelector(".imageCard");
     projectImage.src = `./asset/${project.id}.jpeg`;
 
+    // Replace the description
+    const projectDescription = newCard.querySelector('#project-description')
+    projectDescription.textContent = project.description;
+
     // Add the cards to the DOM (HTML)
     projectsContainer.appendChild(newCard);
   } else {
