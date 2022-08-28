@@ -22,6 +22,88 @@ const preselectMat = new MeshLambertMaterial({
   depthTest: true,
 });
 
+function getParent(target) {
+  let parent = target;
+  let tDepth = target.getAttribute("data-depth");
+  let isParent = false;
+  while (!tDepth) {
+    target = target.previousElementSibling;
+    tDepth = target.getAttribute("data-depth");
+  }
+  console.log("tDepth", tDepth);
+  while (!isParent) {
+    parent = parent.previousElementSibling;
+    let pDepth = parent.getAttribute("data-depth");
+    console.log("parent2", pDepth, tDepth);
+    if (pDepth) {
+      isParent = pDepth < tDepth;
+    }
+  }
+  return parent;
+}
+
+function getAllChilds(parent) {
+  let childs = [];
+  let pDepth = parseInt(parent.getAttribute("data-depth"));
+  let child = parent.nextElementSibling;
+  let cDepth = child.getAttribute("data-depth");
+  let isChild = true;
+  console.log("cDepth", cDepth, pDepth);
+  while (isChild) {
+    if (cDepth) {
+      if (cDepth > pDepth) {
+        childs.push(child);
+        child = child.nextElementSibling;
+        cDepth = parseInt(child.getAttribute("data-depth"));
+        if (cDepth) {
+          isChild = cDepth > pDepth;
+        } else {
+          isChild = true;
+        }
+        console.log("CPDepth", cDepth, pDepth);
+      } else {
+        isChild = false;
+      }
+    } else {
+      childs.push(child);
+      child = child.nextElementSibling;
+      cDepth = parseInt(child.getAttribute("data-depth"));
+      isChild = true;
+    }
+  }
+
+  return childs;
+}
+
+function recalculateSubtotal(parent) {
+  const childs = getAllChilds(parent);
+  let subtotal = 0;
+  console.log("childs befor loop", childs);
+
+  for (const child of childs) {
+    const emission = child.getElementsByClassName("emissions")[0];
+    let em = emission?.textContent;
+    em = em.replace(",", "");
+    subtotal += parseFloat(em);
+    console.log("Emission", em);
+  }
+  console.log("childs", subtotal, childs);
+  return subtotal;
+}
+
+function updateSubtotal(target, isParent = false) {
+  let parent;
+  if (!isParent) {
+    parent = getParent(target);
+  } else {
+    parent = target;
+  }
+  const subtotal = parent.getElementsByClassName("subtotal")[0];
+  let emissionSubTotal = recalculateSubtotal(parent);
+  console.log("subtotal", subtotal, parent);
+  subtotal.textContent = printNumber(emissionSubTotal);
+}
+
 export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
   const tableRoot = document.getElementById("boq");
   model = modelObj;
@@ -57,6 +139,7 @@ export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
       emissionsTotal += emission;
       const emissionsTotalData = document.getElementById("emissionsTotal");
       emissionsTotalData.textContent = printNumber(emissionsTotal);
+      updateSubtotal(event.target.parentElement.parentElement);
     }
     if (event.target.classList.contains("group-select")) {
       const setVal = event.target.value;
@@ -67,10 +150,9 @@ export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
         parseInt(parentTR.getAttribute("data-depth"))
       );
       let child = parentTR.nextElementSibling;
-      while (
-        parseInt(child.getAttribute("data-depth")) >
-        parseInt(parentTR.getAttribute("data-depth"))
-      ) {
+      let isChild =
+        parentTR.getAttribute("data-depth") < child.getAttribute("data-depth");
+      while (isChild) {
         console.log(child, child.quants);
         const qtySelect = child.getElementsByTagName("select")[0];
         qtySelect.value = setVal;
@@ -83,9 +165,25 @@ export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
         let uom = getUom(type);
         qtySelect.parentElement.nextElementSibling.nextElementSibling.textContent =
           uom;
+        let emission = child.getElementsByClassName("emissions")[0];
+        let empu = emission.previousElementSibling;
+        console.log("EmissionElement", emission.textContent, empu.textContent);
+        emission.textContent = printNumber(
+          parseFloat(empu.textContent.replace(",", "")) *
+            qtySelect.parentElement.nextElementSibling.quants[setVal].value
+        );
         child.element;
+        if (child.nextElementSibling.getAttribute("data-depth")) {
+          isChild =
+            parentTR.getAttribute("data-depth") <
+            child.nextElementSibling.getAttribute("data-depth");
+        } else {
+          isChild = true;
+        }
         child = child.nextElementSibling;
       }
+      console.log("EventTarget", event.target.parentElement);
+      updateSubtotal(event.target.parentElement, true);
     }
   });
 }
@@ -161,7 +259,7 @@ function createTotal(table) {
   const emissions = document.createElement("th");
   emissions.id = "emissionsTotal";
   emissions.textContent = printNumber(emissionsTotal);
-  emissions.classList.add('dataNumber');
+  emissions.classList.add("dataNumber");
   row.appendChild(emissions);
   table.appendChild(row);
 }
@@ -182,7 +280,7 @@ async function createBranchRow(table, node, depth, children) {
   row.classList.add(className);
   row.classList.add("table-collapse");
   row.setAttribute("data-depth", depth);
-
+  row.style.backgroundColor = "#f5f5f5";
   const element = document.createElement("td");
   // element.colSpan = 7;
   element.classList.add("data-ifc-element");
@@ -192,11 +290,26 @@ async function createBranchRow(table, node, depth, children) {
 
   element.textContent = node.type;
   element.insertBefore(toggle, element.firstChild);
-
   const selectDB = document.createElement("select");
+  const subtotalEl = document.createElement("td");
+  subtotalEl.classList.add("subtotal");
+  let subtotalEmission = [];
+  if (node.children[0]?.children.length == 0) {
+    const spanEl = document.createElement("td");
+    spanEl.colSpan = 4;
+    // subtotalEl.textContent = printNumber(subtotalEmission);
+    row.appendChild(element);
+    row.appendChild(selectDB);
+    row.appendChild(spanEl);
+    row.appendChild(subtotalEl);
+  } else {
+    const spanEl = document.createElement("td");
+    spanEl.colSpan = 6;
+    row.appendChild(element);
+
+    row.appendChild(spanEl);
+  }
   selectDB.classList.add("group-select");
-  row.appendChild(element);
-  row.appendChild(selectDB);
   table.appendChild(row);
 
   depth++;
@@ -205,18 +318,36 @@ async function createBranchRow(table, node, depth, children) {
     if (child.children.length > 0) {
       await createNode(table, child, depth, child.children);
     } else {
-      await createLeafRow(row, table, child, depth, opts);
+      await createLeafRow(row, table, child, depth, opts, subtotalEmission);
     }
   }
   console.log("Opts", opts);
+  console.log("Subtotal", subtotalEmission);
+
   let options;
   for (const option of opts) {
-    options += `<option value="${option}">${option}</option>`;
+    if (option === "NetVolume") {
+      options += `<option value="${option}" selected>${option}</option>`;
+    } else {
+      options += `<option value="${option}">${option}</option>`;
+    }
   }
+  subtotalEl.textContent = printNumber(
+    subtotalEmission.reduce((a, b) => a + b, 0)
+  );
+  subtotalEl.style.textAlign = "right";
   selectDB.innerHTML = options;
 }
 
-async function createLeafRow(parentRow, table, node, depth, opts) {
+async function createLeafRow(
+  parentRow,
+  table,
+  node,
+  depth,
+  opts,
+  subtotalEmission
+) {
+  let hasNetVolume = false;
   const quants = await getQuantityByElement(ifcLoader, model, node.expressID);
   const materials = await getMaterial(ifcLoader, model, node.expressID);
   let count = 0;
@@ -248,10 +379,10 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
           fkey = key;
         }
         opts.add(key);
-        if (key == 'NetVolume') {
+        if (key === "NetVolume") {
           options += `<option value="${key}" selected>${key}</option>`;
-        } else if (key == 'Area') {
-          options += `<option value="${key}" selected>${key}</option>`;
+          hasNetVolume = true;
+          fkey = "NetVolume";
         } else {
           options += `<option value="${key}">${key}</option>`;
         }
@@ -266,7 +397,7 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
       dataQuantity.quants = quants;
       const quantity = quants[fkey] ? quants[fkey].value : 0;
       dataQuantity.textContent = printNumber(quantity);
-      dataQuantity.classList.add('dataNumber');
+      dataQuantity.classList.add("dataNumber");
       row.appendChild(dataQuantity);
 
       const unit = document.createElement("td");
@@ -277,18 +408,19 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
       row.appendChild(material);
       const emmisionsPerUnit = getEmission(mat);
       const dataEmissionsPerUnit = document.createElement("td");
-      dataEmissionsPerUnit.classList.add('dataNumber');
+      dataEmissionsPerUnit.classList.add("dataNumber");
       dataEmissionsPerUnit.textContent = printNumber(emmisionsPerUnit);
       row.appendChild(dataEmissionsPerUnit);
 
       const emissions = quantity * emmisionsPerUnit;
-
+      subtotalEmission.push(emissions);
       // Update total emissions
       emissionsTotal += emissions;
       const emissionsTotalData = document.getElementById("emissionsTotal");
 
       const dataEmissions = document.createElement("td");
-      dataEmissions.classList.add('dataNumber');
+      dataEmissions.classList.add("dataNumber");
+      dataEmissions.classList.add("emissions");
       dataEmissions.textContent = printNumber(emissions);
       row.appendChild(dataEmissions);
 
@@ -354,7 +486,7 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
     const material = document.createElement("td");
     material.textContent = "";
     row.appendChild(material);
-    const emmisionsPerUnit = 0.00;
+    const emmisionsPerUnit = 0.0;
     const dataEmissionsPerUnit = document.createElement("td");
     dataEmissionsPerUnit.textContent = printNumber(emmisionsPerUnit);
     dataEmissionsPerUnit.classList.add("dataNumber");
@@ -393,7 +525,7 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
 
 function printNumber(number) {
   return new Intl.NumberFormat().format(number.toFixed(2));
-  }
+}
 
 function removeHighlights() {
   const highlighted = document.getElementsByClassName("highlight");

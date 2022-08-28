@@ -50285,8 +50285,6 @@ class CameraControls extends EventDispatcher {
                     .add(planeY.multiplyScalar(this._dollyControlCoord.y * worldToScreen));
                 this._targetEnd.lerp(cursor, lerpRatio);
                 this._target.copy(this._targetEnd);
-                // target position may be moved beyond boundary.
-                this._boundary.clampPoint(this._targetEnd, this._targetEnd);
             }
             else if (isOrthographicCamera(this._camera)) {
                 const camera = this._camera;
@@ -50297,8 +50295,6 @@ class CameraControls extends EventDispatcher {
                 const cursor = _v3C.copy(worldPosition).add(quaternion.multiplyScalar(distance));
                 this._targetEnd.lerp(cursor, 1 - camera.zoom / this._dollyControlAmount);
                 this._target.copy(this._targetEnd);
-                // target position may be moved beyond boundary.
-                this._boundary.clampPoint(this._targetEnd, this._targetEnd);
             }
             this._dollyControlAmount = 0;
         }
@@ -106318,6 +106314,69 @@ function deleteMeasurements(scene) {
     });
 }
 
+// update FootPrintButton
+function updateFootprintButton(carbonFootprintButton, carbonEnabled) {
+    const carbonFootprintLegend = document.querySelector('.legend-container');
+    if (carbonEnabled == null) {
+        carbonEnabled = true;
+        carbonFootprintButton.style.backgroundImage =
+        "url('./asset/icon-carbonEnabled.png')";
+        carbonFootprintButton.style.backgroundColor = "#ded2c570";
+        carbonFootprintButton.style.transform = "scale(1.1)";
+        carbonFootprintButton.style.border = "1.5px solid #927ee3";
+        carbonFootprintLegend.style.visibility = "visible";
+        return carbonEnabled;
+    }
+    if (carbonEnabled == true) {
+        carbonEnabled = false;
+        carbonFootprintButton.style.backgroundImage =
+        "url('./asset/icon-carbonDisabled.png')";
+        carbonFootprintButton.style.backgroundColor = "";
+        carbonFootprintButton.style.transform = "";
+        carbonFootprintButton.style.border = "";
+        carbonFootprintLegend.style.visibility = "hidden";
+        return carbonEnabled;
+    }
+    if (carbonEnabled == false) {
+        carbonEnabled = true;
+        carbonFootprintButton.style.backgroundImage =
+        "url('./asset/icon-carbonEnabled.png')";
+        carbonFootprintButton.style.backgroundColor = "#ded2c570";
+        carbonFootprintButton.style.transform = "scale(1.1)";
+        carbonFootprintButton.style.border = "1.5px solid #927ee3";
+        carbonFootprintLegend.style.visibility = "visible";
+        return carbonEnabled;
+    }
+}
+
+// Update Footprint Colors
+function updateFootPrintColors(ifcLoader, model, itemsAndEmissions, scene, colorizationActive, carbonEnabled, grid, axes, gridToggle, gridActive) {
+    if (carbonEnabled == true && colorizationActive == false) {
+        //Emissions Colorization
+        colorization(ifcLoader, model, itemsAndEmissions, scene);
+        colorizationActive = true;
+        //Disable grid and axes
+        grid.visible = false;
+        axes.visible = false;
+        gridToggle.fill = "blue";
+        gridToggle.classList.remove("grid-enabled");
+        
+        return colorizationActive
+
+      } else {
+        //Remove Colorization
+        removeColorization(ifcLoader, model);
+        colorizationActive = false;
+        //Enable grid and axes
+        grid.visible = true;
+        axes.visible = true;
+        gridToggle.classList.add("grid-enabled");
+        gridToggle.style.color = "blue";
+
+        return colorizationActive
+      }
+}
+
 /*!
  * hold-event
  * https://github.com/yomotsu/hold-event
@@ -106505,6 +106564,88 @@ const preselectMat$1 = new MeshLambertMaterial({
   depthTest: true,
 });
 
+function getParent(target) {
+  let parent = target;
+  let tDepth = target.getAttribute("data-depth");
+  let isParent = false;
+  while (!tDepth) {
+    target = target.previousElementSibling;
+    tDepth = target.getAttribute("data-depth");
+  }
+  console.log("tDepth", tDepth);
+  while (!isParent) {
+    parent = parent.previousElementSibling;
+    let pDepth = parent.getAttribute("data-depth");
+    console.log("parent2", pDepth, tDepth);
+    if (pDepth) {
+      isParent = pDepth < tDepth;
+    }
+  }
+  return parent;
+}
+
+function getAllChilds(parent) {
+  let childs = [];
+  let pDepth = parseInt(parent.getAttribute("data-depth"));
+  let child = parent.nextElementSibling;
+  let cDepth = child.getAttribute("data-depth");
+  let isChild = true;
+  console.log("cDepth", cDepth, pDepth);
+  while (isChild) {
+    if (cDepth) {
+      if (cDepth > pDepth) {
+        childs.push(child);
+        child = child.nextElementSibling;
+        cDepth = parseInt(child.getAttribute("data-depth"));
+        if (cDepth) {
+          isChild = cDepth > pDepth;
+        } else {
+          isChild = true;
+        }
+        console.log("CPDepth", cDepth, pDepth);
+      } else {
+        isChild = false;
+      }
+    } else {
+      childs.push(child);
+      child = child.nextElementSibling;
+      cDepth = parseInt(child.getAttribute("data-depth"));
+      isChild = true;
+    }
+  }
+
+  return childs;
+}
+
+function recalculateSubtotal(parent) {
+  const childs = getAllChilds(parent);
+  let subtotal = 0;
+  console.log("childs befor loop", childs);
+
+  for (const child of childs) {
+    const emission = child.getElementsByClassName("emissions")[0];
+    let em = emission?.textContent;
+    em = em.replace(",", "");
+    subtotal += parseFloat(em);
+    console.log("Emission", em);
+  }
+  console.log("childs", subtotal, childs);
+  return subtotal;
+}
+
+function updateSubtotal(target, isParent = false) {
+  let parent;
+  if (!isParent) {
+    parent = getParent(target);
+  } else {
+    parent = target;
+  }
+  const subtotal = parent.getElementsByClassName("subtotal")[0];
+  let emissionSubTotal = recalculateSubtotal(parent);
+  console.log("subtotal", subtotal, parent);
+  subtotal.textContent = printNumber(emissionSubTotal);
+}
+
 async function createTreeTable(ifcProject, modelObj, ifcloader) {
   const tableRoot = document.getElementById("boq");
   model$1 = modelObj;
@@ -106540,6 +106681,7 @@ async function createTreeTable(ifcProject, modelObj, ifcloader) {
       emissionsTotal += emission;
       const emissionsTotalData = document.getElementById("emissionsTotal");
       emissionsTotalData.textContent = printNumber(emissionsTotal);
+      updateSubtotal(event.target.parentElement.parentElement);
     }
     if (event.target.classList.contains("group-select")) {
       const setVal = event.target.value;
@@ -106550,10 +106692,9 @@ async function createTreeTable(ifcProject, modelObj, ifcloader) {
         parseInt(parentTR.getAttribute("data-depth"))
       );
       let child = parentTR.nextElementSibling;
-      while (
-        parseInt(child.getAttribute("data-depth")) >
-        parseInt(parentTR.getAttribute("data-depth"))
-      ) {
+      let isChild =
+        parentTR.getAttribute("data-depth") < child.getAttribute("data-depth");
+      while (isChild) {
         console.log(child, child.quants);
         const qtySelect = child.getElementsByTagName("select")[0];
         qtySelect.value = setVal;
@@ -106566,9 +106707,25 @@ async function createTreeTable(ifcProject, modelObj, ifcloader) {
         let uom = getUom(type);
         qtySelect.parentElement.nextElementSibling.nextElementSibling.textContent =
           uom;
+        let emission = child.getElementsByClassName("emissions")[0];
+        let empu = emission.previousElementSibling;
+        console.log("EmissionElement", emission.textContent, empu.textContent);
+        emission.textContent = printNumber(
+          parseFloat(empu.textContent.replace(",", "")) *
+            qtySelect.parentElement.nextElementSibling.quants[setVal].value
+        );
         child.element;
+        if (child.nextElementSibling.getAttribute("data-depth")) {
+          isChild =
+            parentTR.getAttribute("data-depth") <
+            child.nextElementSibling.getAttribute("data-depth");
+        } else {
+          isChild = true;
+        }
         child = child.nextElementSibling;
       }
+      console.log("EventTarget", event.target.parentElement);
+      updateSubtotal(event.target.parentElement, true);
     }
   });
 }
@@ -106644,7 +106801,7 @@ function createTotal(table) {
   const emissions = document.createElement("th");
   emissions.id = "emissionsTotal";
   emissions.textContent = printNumber(emissionsTotal);
-  emissions.classList.add('dataNumber');
+  emissions.classList.add("dataNumber");
   row.appendChild(emissions);
   table.appendChild(row);
 }
@@ -106665,7 +106822,7 @@ async function createBranchRow(table, node, depth, children) {
   row.classList.add(className);
   row.classList.add("table-collapse");
   row.setAttribute("data-depth", depth);
-
+  row.style.backgroundColor = "#f5f5f5";
   const element = document.createElement("td");
   // element.colSpan = 7;
   element.classList.add("data-ifc-element");
@@ -106675,11 +106832,26 @@ async function createBranchRow(table, node, depth, children) {
 
   element.textContent = node.type;
   element.insertBefore(toggle, element.firstChild);
-
   const selectDB = document.createElement("select");
+  const subtotalEl = document.createElement("td");
+  subtotalEl.classList.add("subtotal");
+  let subtotalEmission = [];
+  if (node.children[0]?.children.length == 0) {
+    const spanEl = document.createElement("td");
+    spanEl.colSpan = 4;
+    // subtotalEl.textContent = printNumber(subtotalEmission);
+    row.appendChild(element);
+    row.appendChild(selectDB);
+    row.appendChild(spanEl);
+    row.appendChild(subtotalEl);
+  } else {
+    const spanEl = document.createElement("td");
+    spanEl.colSpan = 6;
+    row.appendChild(element);
+
+    row.appendChild(spanEl);
+  }
   selectDB.classList.add("group-select");
-  row.appendChild(element);
-  row.appendChild(selectDB);
   table.appendChild(row);
 
   depth++;
@@ -106688,18 +106860,35 @@ async function createBranchRow(table, node, depth, children) {
     if (child.children.length > 0) {
       await createNode(table, child, depth, child.children);
     } else {
-      await createLeafRow(row, table, child, depth, opts);
+      await createLeafRow(row, table, child, depth, opts, subtotalEmission);
     }
   }
   console.log("Opts", opts);
+  console.log("Subtotal", subtotalEmission);
+
   let options;
   for (const option of opts) {
-    options += `<option value="${option}">${option}</option>`;
+    if (option === "NetVolume") {
+      options += `<option value="${option}" selected>${option}</option>`;
+    } else {
+      options += `<option value="${option}">${option}</option>`;
+    }
   }
+  subtotalEl.textContent = printNumber(
+    subtotalEmission.reduce((a, b) => a + b, 0)
+  );
+  subtotalEl.style.textAlign = "right";
   selectDB.innerHTML = options;
 }
 
-async function createLeafRow(parentRow, table, node, depth, opts) {
+async function createLeafRow(
+  parentRow,
+  table,
+  node,
+  depth,
+  opts,
+  subtotalEmission
+) {
   const quants = await getQuantityByElement(ifcLoader$1, model$1, node.expressID);
   const materials = await getMaterial(ifcLoader$1, model$1, node.expressID);
   let count = 0;
@@ -106731,7 +106920,12 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
           fkey = key;
         }
         opts.add(key);
-        options += `<option value="${key}">${key}</option>`;
+        if (key === "NetVolume") {
+          options += `<option value="${key}" selected>${key}</option>`;
+          fkey = "NetVolume";
+        } else {
+          options += `<option value="${key}">${key}</option>`;
+        }
       }
       qtyTypeSelector.classList.add("quantity-type");
       qtyTypeSelector.style.padding = "0px";
@@ -106743,7 +106937,7 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
       dataQuantity.quants = quants;
       const quantity = quants[fkey] ? quants[fkey].value : 0;
       dataQuantity.textContent = printNumber(quantity);
-      dataQuantity.classList.add('dataNumber');
+      dataQuantity.classList.add("dataNumber");
       row.appendChild(dataQuantity);
 
       const unit = document.createElement("td");
@@ -106754,18 +106948,19 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
       row.appendChild(material);
       const emmisionsPerUnit = getEmission(mat);
       const dataEmissionsPerUnit = document.createElement("td");
-      dataEmissionsPerUnit.classList.add('dataNumber');
+      dataEmissionsPerUnit.classList.add("dataNumber");
       dataEmissionsPerUnit.textContent = printNumber(emmisionsPerUnit);
       row.appendChild(dataEmissionsPerUnit);
 
       const emissions = quantity * emmisionsPerUnit;
-
+      subtotalEmission.push(emissions);
       // Update total emissions
       emissionsTotal += emissions;
       document.getElementById("emissionsTotal");
 
       const dataEmissions = document.createElement("td");
-      dataEmissions.classList.add('dataNumber');
+      dataEmissions.classList.add("dataNumber");
+      dataEmissions.classList.add("emissions");
       dataEmissions.textContent = printNumber(emissions);
       row.appendChild(dataEmissions);
 
@@ -106831,7 +107026,7 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
     const material = document.createElement("td");
     material.textContent = "";
     row.appendChild(material);
-    const emmisionsPerUnit = 0.00;
+    const emmisionsPerUnit = 0.0;
     const dataEmissionsPerUnit = document.createElement("td");
     dataEmissionsPerUnit.textContent = printNumber(emmisionsPerUnit);
     dataEmissionsPerUnit.classList.add("dataNumber");
@@ -106870,7 +107065,7 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
 
 function printNumber(number) {
   return new Intl.NumberFormat().format(number.toFixed(2));
-  }
+}
 
 function removeHighlights() {
   const highlighted = document.getElementsByClassName("highlight");
@@ -107198,43 +107393,45 @@ async function init() {
   await createTreeTable(spatial, model, ifcLoader);
 
   threeCanvas.onmousemove = (event) => {
-    const found = cast(event)[0];
-    highlight(found, preselectMat, preselectModel);
-    if (drawingLine) {
-      let canvasBounds = renderer.domElement.getBoundingClientRect();
-      raycaster.setFromCamera(
-        {
-          x:
-            ((event.clientX - canvasBounds.left) /
-              renderer.domElement.clientWidth) *
-              2 -
-            1,
-          y:
-            -(
-              (event.clientY - canvasBounds.top) /
-              renderer.domElement.clientHeight
-            ) *
-              2 +
-            1,
-        },
-        camera
-      );
-      const intersects = raycaster.intersectObjects(ifcModels, false);
-      if (intersects.length > 0) {
-        const positions = line.geometry.attributes.position.array;
-        const v0 = new Vector3$1(positions[0], positions[1], positions[2]);
-        const v1 = new Vector3$1(
-          intersects[0].point.x,
-          intersects[0].point.y,
-          intersects[0].point.z
+    if (!colorizationActive) {
+      const found = cast(event)[0];
+      highlight(found, preselectMat, preselectModel);
+      if (drawingLine) {
+        let canvasBounds = renderer.domElement.getBoundingClientRect();
+        raycaster.setFromCamera(
+          {
+            x:
+              ((event.clientX - canvasBounds.left) /
+                renderer.domElement.clientWidth) *
+                2 -
+              1,
+            y:
+              -(
+                (event.clientY - canvasBounds.top) /
+                renderer.domElement.clientHeight
+              ) *
+                2 +
+              1,
+          },
+          camera
         );
-        positions[3] = intersects[0].point.x;
-        positions[4] = intersects[0].point.y;
-        positions[5] = intersects[0].point.z;
-        line.geometry.attributes.position.needsUpdate = true;
-        const distance = v0.distanceTo(v1);
-        measurementLabels[lineId].element.innerText = distance.toFixed(2) + "m";
-        measurementLabels[lineId].position.lerpVectors(v0, v1, 0.5);
+        const intersects = raycaster.intersectObjects(ifcModels, false);
+        if (intersects.length > 0) {
+          const positions = line.geometry.attributes.position.array;
+          const v0 = new Vector3$1(positions[0], positions[1], positions[2]);
+          const v1 = new Vector3$1(
+            intersects[0].point.x,
+            intersects[0].point.y,
+            intersects[0].point.z
+          );
+          positions[3] = intersects[0].point.x;
+          positions[4] = intersects[0].point.y;
+          positions[5] = intersects[0].point.z;
+          line.geometry.attributes.position.needsUpdate = true;
+          const distance = v0.distanceTo(v1);
+          measurementLabels[lineId].element.innerText = distance.toFixed(2) + "m";
+          measurementLabels[lineId].position.lerpVectors(v0, v1, 0.5);
+        }
       }
     }
   };
@@ -107316,16 +107513,19 @@ function highlight(found, material, model) {
 //Select an object
 let selectedElementId = null;
 let lastModel = null;
-threeCanvas.ondblclick = (event) =>
-  selectObject(
-    event,
-    cast,
-    model,
-    ifcLoader,
-    scene,
-    lastModel,
-    selectedElementId
-  );
+threeCanvas.ondblclick = (event) => {
+  if (!colorizationActive) {
+    selectObject(
+      event,
+      cast,
+      model,
+      ifcLoader,
+      scene,
+      lastModel,
+      selectedElementId
+    );
+  }
+};
 
 //Animation loop
 const animate = () => {
@@ -107523,49 +107723,15 @@ deleteMeasurementsButton.onclick = () => {
   deleteMeasurements(scene);
 };
 
-// Hide Objects
+// Update FootPrint Button
 const carbonFootprintButton = document.getElementById("carbon-footprint");
 let carbonEnabled = null;
 carbonFootprintButton.onclick = () => {
-  if (carbonEnabled == null) {
-    carbonEnabled = true;
-    carbonFootprintButton.style.backgroundImage =
-      "url('./asset/icon-carbonEnabled.png')";
-    carbonFootprintButton.style.backgroundColor = "#ded2c570";
-    carbonFootprintButton.style.transform = "scale(1.1)";
-    carbonFootprintButton.style.border = "1.5px solid #927ee3";
-    return;
-  }
-  if (carbonEnabled == true) {
-    carbonEnabled = false;
-    carbonFootprintButton.style.backgroundImage =
-      "url('./asset/icon-carbonDisabled.png')";
-    carbonFootprintButton.style.backgroundColor = "";
-    carbonFootprintButton.style.transform = "";
-    carbonFootprintButton.style.border = "";
-    return;
-  }
-  if (carbonEnabled == false) {
-    carbonEnabled = true;
-    carbonFootprintButton.style.backgroundImage =
-      "url('./asset/icon-carbonEnabled.png')";
-    carbonFootprintButton.style.backgroundColor = "#ded2c570";
-    carbonFootprintButton.style.transform = "scale(1.1)";
-    carbonFootprintButton.style.border = "1.5px solid #927ee3";
-    return;
-  }
+  carbonEnabled = updateFootprintButton(carbonFootprintButton, carbonEnabled);
 };
 
+// Update Objects Footprints Colors
 let colorizationActive = false;
-//Hide selected objects
 carbonFootprintButton.addEventListener("click", function (event) {
-  if (carbonEnabled == true && colorizationActive == false) {
-    //Emissions Colorization
-    colorization(ifcLoader, model, itemsAndEmissions, scene);
-    colorizationActive = true;
-  } else {
-    //Remove Colorization
-    removeColorization(ifcLoader, model);
-    colorizationActive = false;
-  }
+  colorizationActive = updateFootPrintColors(ifcLoader, model, itemsAndEmissions, scene, colorizationActive, carbonEnabled, grid, axes, gridToggle);
 });
