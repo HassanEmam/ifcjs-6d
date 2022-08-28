@@ -287,43 +287,45 @@ async function init() {
   await createTreeTable(spatial, model, ifcLoader);
 
   threeCanvas.onmousemove = (event) => {
-    const found = cast(event)[0];
-    highlight(found, preselectMat, preselectModel);
-    if (drawingLine) {
-      let canvasBounds = renderer.domElement.getBoundingClientRect();
-      raycaster.setFromCamera(
-        {
-          x:
-            ((event.clientX - canvasBounds.left) /
-              renderer.domElement.clientWidth) *
-              2 -
-            1,
-          y:
-            -(
-              (event.clientY - canvasBounds.top) /
-              renderer.domElement.clientHeight
-            ) *
-              2 +
-            1,
-        },
-        camera
-      );
-      const intersects = raycaster.intersectObjects(ifcModels, false);
-      if (intersects.length > 0) {
-        const positions = line.geometry.attributes.position.array;
-        const v0 = new Vector3(positions[0], positions[1], positions[2]);
-        const v1 = new Vector3(
-          intersects[0].point.x,
-          intersects[0].point.y,
-          intersects[0].point.z
+    if (!colorizationActive) {
+      const found = cast(event)[0];
+      highlight(found, preselectMat, preselectModel);
+      if (drawingLine) {
+        let canvasBounds = renderer.domElement.getBoundingClientRect();
+        raycaster.setFromCamera(
+          {
+            x:
+              ((event.clientX - canvasBounds.left) /
+                renderer.domElement.clientWidth) *
+                2 -
+              1,
+            y:
+              -(
+                (event.clientY - canvasBounds.top) /
+                renderer.domElement.clientHeight
+              ) *
+                2 +
+              1,
+          },
+          camera
         );
-        positions[3] = intersects[0].point.x;
-        positions[4] = intersects[0].point.y;
-        positions[5] = intersects[0].point.z;
-        line.geometry.attributes.position.needsUpdate = true;
-        const distance = v0.distanceTo(v1);
-        measurementLabels[lineId].element.innerText = distance.toFixed(2) + "m";
-        measurementLabels[lineId].position.lerpVectors(v0, v1, 0.5);
+        const intersects = raycaster.intersectObjects(ifcModels, false);
+        if (intersects.length > 0) {
+          const positions = line.geometry.attributes.position.array;
+          const v0 = new Vector3(positions[0], positions[1], positions[2]);
+          const v1 = new Vector3(
+            intersects[0].point.x,
+            intersects[0].point.y,
+            intersects[0].point.z
+          );
+          positions[3] = intersects[0].point.x;
+          positions[4] = intersects[0].point.y;
+          positions[5] = intersects[0].point.z;
+          line.geometry.attributes.position.needsUpdate = true;
+          const distance = v0.distanceTo(v1);
+          measurementLabels[lineId].element.innerText = distance.toFixed(2) + "m";
+          measurementLabels[lineId].position.lerpVectors(v0, v1, 0.5);
+        }
       }
     }
   };
