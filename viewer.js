@@ -116,7 +116,6 @@ let gridActive = true;
 let gridToggle = document.getElementById("grid-toggle");
 gridToggle.classList.add("grid-enabled");
 let gridIcon = "url('./asset/icon-grid.svg')";
-console.log(gridIcon);
 gridToggle.style.backgroundImage = gridIcon;
 if (currentProjectID != "input-ifc") {
   projectURL = currentProject.url;
@@ -657,7 +656,6 @@ carbonFootprintButton.addEventListener("click", function (event) {
     colorizationActive = true;
   } else {
     //Remove Colorization
-    console.log("remove colorization");
     removeColorization(ifcLoader, model);
     colorizationActive = false;
   }
