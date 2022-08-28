@@ -40,7 +40,6 @@ body {
   margin: var(--coverMargin), var(--coverMargin);
   padding-top: var(--coverMargin);
   padding-bottom: var(--coverMargin);
-  height: 87vh;
 }
 
 .projectCard {
