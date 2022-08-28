@@ -290,7 +290,11 @@ async function init() {
   threeCanvas.onmousemove = (event) => {
     if (!colorizationActive) {
       const found = cast(event)[0];
-      highlight(found, preselectMat, preselectModel);
+      if (found) {
+        highlight(found, preselectMat, preselectModel);
+      } else {
+        ifcLoader.ifcManager.removeSubset(model.modelID, preselectMat);
+      }
       if (drawingLine) {
         let canvasBounds = renderer.domElement.getBoundingClientRect();
         raycaster.setFromCamera(
