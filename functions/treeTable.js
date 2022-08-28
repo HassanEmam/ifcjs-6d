@@ -12,6 +12,7 @@ let model;
 let ifcLoader;
 let scene;
 let selectedElementId;
+let emmisionsArray = [];
 let emissionsTotal = 0;
 
 const preselectMat = new MeshLambertMaterial({
@@ -119,7 +120,7 @@ async function populateIfcTable(table, ifcProject) {
   table.appendChild(body);
 
   const footer = document.createElement("tfoot");
-  createTotal(table);
+  createTotal(footer);
   table.appendChild(footer);
 }
 
@@ -347,7 +348,7 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
     const material = document.createElement("td");
     material.textContent = "";
     row.appendChild(material);
-    const emmisionsPerUnit = 0.0;
+    const emmisionsPerUnit = 0.00;
     const dataEmissionsPerUnit = document.createElement("td");
     dataEmissionsPerUnit.textContent = printNumber(emmisionsPerUnit);
     dataEmissionsPerUnit.classList.add("dataNumber");

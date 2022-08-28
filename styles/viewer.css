@@ -584,11 +584,7 @@ tr:hover {
   font-size: 0.7rem;
 }
 
-#boq tbody td:nth-child(7) {
-
-}
-
-.dataNumber {
+tfoot td, .dataNumber {
   text-align: right;
   padding-right: .5rem;
 }
