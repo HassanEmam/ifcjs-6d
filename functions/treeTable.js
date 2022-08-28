@@ -130,6 +130,7 @@ function createTotal(table) {
   const emissions = document.createElement("th");
   emissions.id = "emissionsTotal";
   emissions.textContent = printNumber(emissionsTotal);
+  emissions.classList.add('dataNumber');
   row.appendChild(emissions);
   table.appendChild(row);
 }
@@ -216,6 +217,7 @@ async function createLeafRow(parentRow, table, node, depth) {
       dataQuantity.quants = quants;
       const quantity = quants[fkey] ? quants[fkey].value : 0;
       dataQuantity.textContent = printNumber(quantity);
+      dataQuantity.classList.add('dataNumber');
       row.appendChild(dataQuantity);
 
       const unit = document.createElement("td");
@@ -226,6 +228,7 @@ async function createLeafRow(parentRow, table, node, depth) {
       row.appendChild(material);
       const emmisionsPerUnit = getEmission(mat);
       const dataEmissionsPerUnit = document.createElement("td");
+      dataEmissionsPerUnit.classList.add('dataNumber');
       dataEmissionsPerUnit.textContent = printNumber(emmisionsPerUnit);
       row.appendChild(dataEmissionsPerUnit);
 
@@ -236,6 +239,7 @@ async function createLeafRow(parentRow, table, node, depth) {
       const emissionsTotalData = document.getElementById("emissionsTotal");
 
       const dataEmissions = document.createElement("td");
+      dataEmissions.classList.add('dataNumber');
       dataEmissions.textContent = printNumber(emissions);
       row.appendChild(dataEmissions);
 
@@ -290,9 +294,9 @@ async function createLeafRow(parentRow, table, node, depth) {
 
     const dataQuantity = document.createElement("td");
     dataQuantity.quants = quants;
-    dataQuantity.classList.add("dataNumber");
     const quantity = quants[fkey] ? quants[fkey].value : 0;
     dataQuantity.textContent = printNumber(quantity);
+    dataQuantity.classList.add("dataNumber");
     row.appendChild(dataQuantity);
 
     const unit = document.createElement("td");
@@ -303,20 +307,19 @@ async function createLeafRow(parentRow, table, node, depth) {
     row.appendChild(material);
     const emmisionsPerUnit = 0.0;
     const dataEmissionsPerUnit = document.createElement("td");
-    dataEmissionsPerUnit.classList.add("dataNumber");
     dataEmissionsPerUnit.textContent = printNumber(emmisionsPerUnit);
+    dataEmissionsPerUnit.classList.add("dataNumber");
     row.appendChild(dataEmissionsPerUnit);
 
     const emissions = quantity * emmisionsPerUnit;
 
     // Update total emissions
     emissionsTotal += emissions;
-    // const emissionsTotalData = document.getElementById("emissionsTotal");
-    // // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
 
     const dataEmissions = document.createElement("td");
-    dataEmissions.classList.add("dataNumber");
     dataEmissions.textContent = printNumber(emissions);
+
+    dataEmissions.classList.add("dataNumber");
     row.appendChild(dataEmissions);
 
     row.style.fontWeight = "normal";
