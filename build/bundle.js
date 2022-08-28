@@ -106928,8 +106928,12 @@ async function createLeafRow(
           fkey = formattedKey;
         }
         opts.add(formattedKey);
-        console.log(formattedKey);
-        if (formattedKey === "NetVolume" || formattedKey === "Volume" || formattedKey === "Volumen" || formattedKey === "Netto-Volumen") {
+        if (
+          formattedKey === "NetVolume" || 
+          formattedKey === "Volume" || 
+          formattedKey === "Volumen" || 
+          formattedKey === "Netto-Volumen"
+        ) {
           options += `<option value="${formattedKey}" selected>${formattedKey}</option>`;
           fkey = "NetVolume";
         } else if (formattedKey === "Area") {
@@ -107747,14 +107751,30 @@ deleteMeasurementsButton.onclick = () => {
 
 // Update FootPrint Button
 const carbonFootprintButton = document.getElementById("carbon-footprint");
+const footprintSimulationButton = document.getElementById("footprint-simulation-button");
 let carbonEnabled = null;
 carbonFootprintButton.onclick = () => {
+  carbonEnabled = updateFootprintButton(carbonFootprintButton, carbonEnabled);
+};
+footprintSimulationButton.onclick = () => {
   carbonEnabled = updateFootprintButton(carbonFootprintButton, carbonEnabled);
 };
 
 // Update Objects Footprints Colors
 let colorizationActive = false;
 carbonFootprintButton.addEventListener("click", function (event) {
+  colorizationActive = updateFootPrintColors(
+    ifcLoader,
+    model,
+    itemsAndEmissions,
+    scene,
+    colorizationActive,
+    carbonEnabled,
+    grid,
+    axes,
+    gridToggle);
+});
+footprintSimulationButton.addEventListener("click", function (event) {
   colorizationActive = updateFootPrintColors(
     ifcLoader,
     model,
