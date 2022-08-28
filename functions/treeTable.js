@@ -248,7 +248,6 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
           fkey = key;
         }
         opts.add(key);
-        options += `<option value="${key}">${key}</option>`;
         if (key == 'NetVolume') {
           options += `<option value="${key}" selected>${key}</option>`;
         } else if (key == 'Area') {
