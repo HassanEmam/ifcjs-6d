@@ -76,16 +76,14 @@ import {
   wireframeView,
   materializedView,
   deleteMeasurements,
+  updateFootprintButton,
+  updateFootPrintColors,
 } from "./functions/viewsButtons.js";
 import {
   wasdKeysControls,
   arrowsKeysControls,
 } from "./functions/keysControls.js";
 import { selectObject } from "./functions/Selection.js";
-import {
-  colorization,
-  removeColorization,
-} from "./functions/getAllEmissions.js";
 import { IFCBUILDINGSTOREY, IfcConstructionMaterialResource } from "web-ifc";
 import createTreeTable from "./functions/treeTable.js";
 
@@ -289,43 +287,45 @@ async function init() {
   await createTreeTable(spatial, model, ifcLoader);
 
   threeCanvas.onmousemove = (event) => {
-    const found = cast(event)[0];
-    highlight(found, preselectMat, preselectModel);
-    if (drawingLine) {
-      let canvasBounds = renderer.domElement.getBoundingClientRect();
-      raycaster.setFromCamera(
-        {
-          x:
-            ((event.clientX - canvasBounds.left) /
-              renderer.domElement.clientWidth) *
-              2 -
-            1,
-          y:
-            -(
-              (event.clientY - canvasBounds.top) /
-              renderer.domElement.clientHeight
-            ) *
-              2 +
-            1,
-        },
-        camera
-      );
-      const intersects = raycaster.intersectObjects(ifcModels, false);
-      if (intersects.length > 0) {
-        const positions = line.geometry.attributes.position.array;
-        const v0 = new Vector3(positions[0], positions[1], positions[2]);
-        const v1 = new Vector3(
-          intersects[0].point.x,
-          intersects[0].point.y,
-          intersects[0].point.z
+    if (!colorizationActive) {
+      const found = cast(event)[0];
+      highlight(found, preselectMat, preselectModel);
+      if (drawingLine) {
+        let canvasBounds = renderer.domElement.getBoundingClientRect();
+        raycaster.setFromCamera(
+          {
+            x:
+              ((event.clientX - canvasBounds.left) /
+                renderer.domElement.clientWidth) *
+                2 -
+              1,
+            y:
+              -(
+                (event.clientY - canvasBounds.top) /
+                renderer.domElement.clientHeight
+              ) *
+                2 +
+              1,
+          },
+          camera
         );
-        positions[3] = intersects[0].point.x;
-        positions[4] = intersects[0].point.y;
-        positions[5] = intersects[0].point.z;
-        line.geometry.attributes.position.needsUpdate = true;
-        const distance = v0.distanceTo(v1);
-        measurementLabels[lineId].element.innerText = distance.toFixed(2) + "m";
-        measurementLabels[lineId].position.lerpVectors(v0, v1, 0.5);
+        const intersects = raycaster.intersectObjects(ifcModels, false);
+        if (intersects.length > 0) {
+          const positions = line.geometry.attributes.position.array;
+          const v0 = new Vector3(positions[0], positions[1], positions[2]);
+          const v1 = new Vector3(
+            intersects[0].point.x,
+            intersects[0].point.y,
+            intersects[0].point.z
+          );
+          positions[3] = intersects[0].point.x;
+          positions[4] = intersects[0].point.y;
+          positions[5] = intersects[0].point.z;
+          line.geometry.attributes.position.needsUpdate = true;
+          const distance = v0.distanceTo(v1);
+          measurementLabels[lineId].element.innerText = distance.toFixed(2) + "m";
+          measurementLabels[lineId].position.lerpVectors(v0, v1, 0.5);
+        }
       }
     }
   };
@@ -407,16 +407,19 @@ function highlight(found, material, model) {
 //Select an object
 let selectedElementId = null;
 let lastModel = null;
-threeCanvas.ondblclick = (event) =>
-  selectObject(
-    event,
-    cast,
-    model,
-    ifcLoader,
-    scene,
-    lastModel,
-    selectedElementId
-  );
+threeCanvas.ondblclick = (event) => {
+  if (!colorizationActive) {
+    selectObject(
+      event,
+      cast,
+      model,
+      ifcLoader,
+      scene,
+      lastModel,
+      selectedElementId
+    );
+  }
+}
 
 //Animation loop
 const animate = () => {
@@ -614,49 +617,15 @@ deleteMeasurementsButton.onclick = () => {
   deleteMeasurements(scene);
 };
 
-// Hide Objects
+// Update FootPrint Button
 const carbonFootprintButton = document.getElementById("carbon-footprint");
 let carbonEnabled = null;
 carbonFootprintButton.onclick = () => {
-  if (carbonEnabled == null) {
-    carbonEnabled = true;
-    carbonFootprintButton.style.backgroundImage =
-      "url('./asset/icon-carbonEnabled.png')";
-    carbonFootprintButton.style.backgroundColor = "#ded2c570";
-    carbonFootprintButton.style.transform = "scale(1.1)";
-    carbonFootprintButton.style.border = "1.5px solid #927ee3";
-    return;
-  }
-  if (carbonEnabled == true) {
-    carbonEnabled = false;
-    carbonFootprintButton.style.backgroundImage =
-      "url('./asset/icon-carbonDisabled.png')";
-    carbonFootprintButton.style.backgroundColor = "";
-    carbonFootprintButton.style.transform = "";
-    carbonFootprintButton.style.border = "";
-    return;
-  }
-  if (carbonEnabled == false) {
-    carbonEnabled = true;
-    carbonFootprintButton.style.backgroundImage =
-      "url('./asset/icon-carbonEnabled.png')";
-    carbonFootprintButton.style.backgroundColor = "#ded2c570";
-    carbonFootprintButton.style.transform = "scale(1.1)";
-    carbonFootprintButton.style.border = "1.5px solid #927ee3";
-    return;
-  }
+  carbonEnabled = updateFootprintButton(carbonFootprintButton, carbonEnabled)
 };
 
+// Update Objects Footprints Colors
 let colorizationActive = false;
-//Hide selected objects
 carbonFootprintButton.addEventListener("click", function (event) {
-  if (carbonEnabled == true && colorizationActive == false) {
-    //Emissions Colorization
-    colorization(ifcLoader, model, itemsAndEmissions, scene);
-    colorizationActive = true;
-  } else {
-    //Remove Colorization
-    removeColorization(ifcLoader, model);
-    colorizationActive = false;
-  }
+  colorizationActive = updateFootPrintColors(ifcLoader, model, itemsAndEmissions, scene, colorizationActive, carbonEnabled)
 });
