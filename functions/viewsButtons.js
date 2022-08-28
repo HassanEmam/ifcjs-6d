@@ -131,16 +131,31 @@ export function updateFootprintButton(carbonFootprintButton, carbonEnabled) {
 }
 
 // Update Footprint Colors
-export function updateFootPrintColors(ifcLoader, model, itemsAndEmissions, scene, colorizationActive, carbonEnabled) {
+export function updateFootPrintColors(ifcLoader, model, itemsAndEmissions, scene, colorizationActive, carbonEnabled, grid, axes, gridToggle, gridActive) {
     if (carbonEnabled == true && colorizationActive == false) {
         //Emissions Colorization
         colorization(ifcLoader, model, itemsAndEmissions, scene);
         colorizationActive = true;
+        //Disable grid and axes
+        grid.visible = false;
+        axes.visible = false;
+        gridToggle.fill = "blue";
+        gridToggle.classList.remove("grid-enabled");
+        gridActive = false;
+        
         return colorizationActive
+
       } else {
         //Remove Colorization
         removeColorization(ifcLoader, model);
         colorizationActive = false;
+        //Enable grid and axes
+        grid.visible = true;
+        axes.visible = true;
+        gridToggle.classList.add("grid-enabled");
+        gridToggle.style.color = "blue";
+        gridActive = true;
+
         return colorizationActive
       }
 }

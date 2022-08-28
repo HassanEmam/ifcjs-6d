@@ -627,5 +627,5 @@ carbonFootprintButton.onclick = () => {
 // Update Objects Footprints Colors
 let colorizationActive = false;
 carbonFootprintButton.addEventListener("click", function (event) {
-  colorizationActive = updateFootPrintColors(ifcLoader, model, itemsAndEmissions, scene, colorizationActive, carbonEnabled)
+  colorizationActive = updateFootPrintColors(ifcLoader, model, itemsAndEmissions, scene, colorizationActive, carbonEnabled, grid, axes, gridToggle, gridActive)
 });
