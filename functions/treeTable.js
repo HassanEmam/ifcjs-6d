@@ -54,7 +54,7 @@ export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
       factor.nextElementSibling.textContent = emission.toFixed(2);
       emissionsTotal += emission;
       const emissionsTotalData = document.getElementById("emissionsTotal");
-      // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
+      emissionsTotalData.textContent = emissionsTotal.toFixed(2);
     }
   });
 }
@@ -89,7 +89,7 @@ async function populateIfcTable(table, ifcProject) {
   table.appendChild(body);
 
   const footer = document.createElement("tfoot");
-  // createTotal(table);
+  createTotal(table);
   table.appendChild(footer);
 }
 
@@ -127,7 +127,7 @@ function createTotal(table) {
   element.colSpan = 6;
   row.appendChild(element);
 
-  const emissions = document.createElement("td");
+  const emissions = document.createElement("th");
   emissions.id = "emissionsTotal";
   emissions.textContent = emissionsTotal.toFixed(2);
   row.appendChild(emissions);
@@ -234,7 +234,6 @@ async function createLeafRow(parentRow, table, node, depth) {
       // Update total emissions
       emissionsTotal += emissions;
       const emissionsTotalData = document.getElementById("emissionsTotal");
-      // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
 
       const dataEmissions = document.createElement("td");
       dataEmissions.textContent = emissions.toFixed(2);

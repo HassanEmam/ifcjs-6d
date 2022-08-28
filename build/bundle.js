@@ -50285,6 +50285,8 @@ class CameraControls extends EventDispatcher {
                     .add(planeY.multiplyScalar(this._dollyControlCoord.y * worldToScreen));
                 this._targetEnd.lerp(cursor, lerpRatio);
                 this._target.copy(this._targetEnd);
+                // target position may be moved beyond boundary.
+                this._boundary.clampPoint(this._targetEnd, this._targetEnd);
             }
             else if (isOrthographicCamera(this._camera)) {
                 const camera = this._camera;
@@ -50295,6 +50297,8 @@ class CameraControls extends EventDispatcher {
                 const cursor = _v3C.copy(worldPosition).add(quaternion.multiplyScalar(distance));
                 this._targetEnd.lerp(cursor, 1 - camera.zoom / this._dollyControlAmount);
                 this._target.copy(this._targetEnd);
+                // target position may be moved beyond boundary.
+                this._boundary.clampPoint(this._targetEnd, this._targetEnd);
             }
             this._dollyControlAmount = 0;
         }
@@ -106456,6 +106460,7 @@ function getUoM(ifcLoader, model, type) {
 let model$1;
 let ifcLoader$1;
 let scene$1;
+let emissionsTotal = 0;
 
 const preselectMat$1 = new MeshLambertMaterial({
   transparent: true,
@@ -106491,12 +106496,14 @@ async function createTreeTable(ifcProject, modelObj, ifcloader) {
       tdUoM.textContent = uom;
 
       const factor = tdUoM.nextElementSibling.nextElementSibling;
-      factor.nextElementSibling.textContent;
+      const emissionOld = factor.nextElementSibling.textContent;
+      emissionsTotal -= emissionOld;
 
       const emission = factor.textContent * quants;
       factor.nextElementSibling.textContent = emission.toFixed(2);
-      document.getElementById("emissionsTotal");
-      // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
+      emissionsTotal += emission;
+      const emissionsTotalData = document.getElementById("emissionsTotal");
+      emissionsTotalData.textContent = emissionsTotal.toFixed(2);
     }
   });
 }
@@ -106531,7 +106538,7 @@ async function populateIfcTable(table, ifcProject) {
   table.appendChild(body);
 
   const footer = document.createElement("tfoot");
-  // createTotal(table);
+  createTotal(table);
   table.appendChild(footer);
 }
 
@@ -106559,6 +106566,20 @@ function createHeader(table) {
   emissions.textContent = "Emissions";
   row.appendChild(emissions);
 
+  table.appendChild(row);
+}
+
+function createTotal(table) {
+  const row = document.createElement("tr");
+  const element = document.createElement("th");
+  element.textContent = "Total emissions: ";
+  element.colSpan = 6;
+  row.appendChild(element);
+
+  const emissions = document.createElement("th");
+  emissions.id = "emissionsTotal";
+  emissions.textContent = emissionsTotal.toFixed(2);
+  row.appendChild(emissions);
   table.appendChild(row);
 }
 
@@ -106658,8 +106679,10 @@ async function createLeafRow(parentRow, table, node, depth) {
       row.appendChild(dataEmissionsPerUnit);
 
       const emissions = quantity * emmisionsPerUnit;
+
+      // Update total emissions
+      emissionsTotal += emissions;
       document.getElementById("emissionsTotal");
-      // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
 
       const dataEmissions = document.createElement("td");
       dataEmissions.textContent = emissions.toFixed(2);
@@ -106732,6 +106755,9 @@ async function createLeafRow(parentRow, table, node, depth) {
     row.appendChild(dataEmissionsPerUnit);
 
     const emissions = quantity * emmisionsPerUnit;
+
+    // Update total emissions
+    emissionsTotal += emissions;
     document.getElementById("emissionsTotal");
     // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
 
