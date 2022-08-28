@@ -1,57 +1,57 @@
 const projects = [
   {
-    name: "3D Model",
+    name: "Load 3D Model",
     id: "input-ifc",
     url: "./ifc/01.ifc",
   },
-  {
-    name: "Model 1",
-    id: "01",
-    url: "./ifc/01.ifc",
-  },
-  {
-    name: "Model 2",
-    id: "02",
-    url: "./ifc/02.ifc",
-  },
-  {
-    name: "Model 3",
-    id: "03",
-    url: "./ifc/03.ifc",
-  },
-  {
-    name: "Model 4",
-    id: "04",
-    url: "./ifc/04.ifc",
-  },
-  {
-    name: "Model 5",
-    id: "05",
-    url: "./ifc/05.ifc",
-  },
+  // {
+  //   name: "Model 1",
+  //   id: "01",
+  //   url: "./ifc/01.ifc",
+  // },
+  // {
+  //   name: "Model 2",
+  //   id: "02",
+  //   url: "./ifc/02.ifc",
+  // },
+  // {
+  //   name: "Model 3",
+  //   id: "03",
+  //   url: "./ifc/03.ifc",
+  // },
+  // {
+  //   name: "Model 4",
+  //   id: "04",
+  //   url: "./ifc/04.ifc",
+  // },
+  // {
+  //   name: "Model 5",
+  //   id: "05",
+  //   url: "./ifc/05.ifc",
+  // },
 
+  // {
+  //   name: "Model 7",
+  //   id: "07",
+  //   url: "./ifc/07.ifc",
+  // },
+  // {
+  //   name: "Small Shed",
+  //   id: "08",
+  //   url: "./ifc/08.ifc",
+  // },
   {
-    name: "Model 7",
-    id: "07",
-    url: "./ifc/07.ifc",
-  },
-  {
-    name: "Model 8",
-    id: "08",
-    url: "./ifc/08.ifc",
-  },
-  {
-    name: "Model 9",
+    name: "Nice Cottage",
     id: "09",
     url: "./ifc/09.ifc",
   },
   {
-    name: "Model 10",
+    name: "Three-floored Office",
     id: "10",
     url: "./ifc/10.ifc",
   },
   {
-    name: "Model 11",
+    name: "Meeting Point",
     id: "11",
     url: "./ifc/11.ifc",
   },
@@ -50285,6 +50285,8 @@ class CameraControls extends EventDispatcher {
                     .add(planeY.multiplyScalar(this._dollyControlCoord.y * worldToScreen));
                 this._targetEnd.lerp(cursor, lerpRatio);
                 this._target.copy(this._targetEnd);
+                // target position may be moved beyond boundary.
+                this._boundary.clampPoint(this._targetEnd, this._targetEnd);
             }
             else if (isOrthographicCamera(this._camera)) {
                 const camera = this._camera;
@@ -50295,6 +50297,8 @@ class CameraControls extends EventDispatcher {
                 const cursor = _v3C.copy(worldPosition).add(quaternion.multiplyScalar(distance));
                 this._targetEnd.lerp(cursor, 1 - camera.zoom / this._dollyControlAmount);
                 this._target.copy(this._targetEnd);
+                // target position may be moved beyond boundary.
+                this._boundary.clampPoint(this._targetEnd, this._targetEnd);
             }
             this._dollyControlAmount = 0;
         }
@@ -105940,6 +105944,15 @@ const emission = {
   "Asphalt Shingle": 3456.54,
   "Plywood, Sheathing": 2345.33,
   "Structure, Wood Joist/Rafter Layer, Batt Insulation": 2850.23,
+  "Holz - generisch 140-100-70": 120.17,
+  "Vidrio": 680.8,
+  "Cristal": 680.8,
+  "Madera - Castaño": 120.17,
+  "Laminate, Linen, Matte": 120.17,
+  "Steel, Chrome Plated": 514.32,
+  "Pine": 120.17,
+  "Textile - Bamboo Weave": 120.17,
+  "Suelos por defecto": 420.407,
   Glass: 680.8,
 };
 
@@ -106011,7 +106024,7 @@ async function EmissionsOfIfcType(
   allEmissionsOfItems,
   emissionsOfItem,
   itemsAndEmissions
-) {
+  ) {
   const elementsOfTypeIDs = await ifcLoader.ifcManager.getAllItemsOfType(
     model.modelID,
     ifcTypeId
@@ -106020,7 +106033,7 @@ async function EmissionsOfIfcType(
   for (let i = 0; i < elementsOfTypeIDs.length; i++) {
     const elementID = elementsOfTypeIDs[i];
 
-    const NetVolume = await getNetVolume(ifcLoader, model, elementID);
+    const NetVolume = await getNetVolume(ifcLoader, model, elementID, ifcTypeId);
     const materials = await getMaterial(ifcLoader, model, elementID);
     for (const mat of materials) {
       const emissionOfmaterial = NetVolume * getEmission(mat);
@@ -106044,20 +106057,47 @@ async function EmissionsOfIfcType(
   return allEmissionsOfItems;
 }
 
-async function getNetVolume(ifcLoader, model, elementID) {
-  const quants = await getQuantityByElement(ifcLoader, model, elementID);
-  const NetVolumeObject = Object.values(quants).find((obj) => {
-    return obj.type == "volume";
-  });
-  const NetVolumeValue = NetVolumeObject.value;
-  return NetVolumeValue;
+async function getNetVolume(ifcLoader, model, elementID, ifcTypeId) {
+    let NetVolumeValue = null;
+    const quants = await getQuantityByElement(ifcLoader, model, elementID);
+    const NetVolumeObject = Object.values(quants).find((obj) => {
+        if (obj.type == "volume") {
+            return obj.type == "volume";
+        }
+    });
+
+    if(NetVolumeObject != 0 && NetVolumeObject != null) {
+        NetVolumeValue = NetVolumeObject.value;
+    } else {
+        const NetAreaObject = Object.values(quants).find((obj) => {
+            if (obj.type == "area") {
+                return obj.type == "area";
+            }
+        });
+        if(NetAreaObject == 0 || NetAreaObject == undefined) {
+            NetVolumeValue = 0;
+        } else {
+            let matVolume = null;
+            if (ifcTypeId == 3304561284 || ifcTypeId == 395920057) { //3304561284 = IFCWINDOW / 395920057 = IFCDOOR
+                matVolume = NetAreaObject.value * 0.05;
+                return matVolume;
+            } else if (ifcTypeId == 1529196076) { //IFCSLAB
+                matVolume = NetAreaObject.value * 0.3;
+                return matVolume;
+            }
+            NetVolumeValue = matVolume;
+        }
+    }
+    return NetVolumeValue;
 }
 
 function colorization(ifcLoader, model, itemsAndEmissions, scene) {
   // Emissions per Object (All materials of an object)
   let emissionsAllItems = [];
   itemsAndEmissions.forEach((element) => {
-    emissionsAllItems.push(element.emission);
+    if (element.emission != 0 && element.emission != undefined) {
+        emissionsAllItems.push(element.emission);
+    }
   });
 
   // Degree according to amount of emissions
@@ -106456,6 +106496,7 @@ function getUoM(ifcLoader, model, type) {
 let model$1;
 let ifcLoader$1;
 let scene$1;
+let emissionsTotal = 0;
 
 const preselectMat$1 = new MeshLambertMaterial({
   transparent: true,
@@ -106480,7 +106521,7 @@ async function createTreeTable(ifcProject, modelObj, ifcloader) {
         event.target.parentElement.nextElementSibling.quants[event.target.value]
           .value;
       event.target.parentElement.nextElementSibling.textContent =
-        quants.toFixed(2);
+        printNumber(quants);
 
       const type =
         event.target.parentElement.nextElementSibling.quants[event.target.value]
@@ -106491,12 +106532,14 @@ async function createTreeTable(ifcProject, modelObj, ifcloader) {
       tdUoM.textContent = uom;
 
       const factor = tdUoM.nextElementSibling.nextElementSibling;
-      factor.nextElementSibling.textContent;
+      const emissionOld = factor.nextElementSibling.textContent;
+      emissionsTotal -= emissionOld;
 
       const emission = factor.textContent * quants;
-      factor.nextElementSibling.textContent = emission.toFixed(2);
-      document.getElementById("emissionsTotal");
-      // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
+      factor.nextElementSibling.textContent = printNumber(emission);
+      emissionsTotal += emission;
+      const emissionsTotalData = document.getElementById("emissionsTotal");
+      emissionsTotalData.textContent = printNumber(emissionsTotal);
     }
     if (event.target.classList.contains("group-select")) {
       const setVal = event.target.value;
@@ -106560,7 +106603,7 @@ async function populateIfcTable(table, ifcProject) {
   table.appendChild(body);
 
   const footer = document.createElement("tfoot");
-  // createTotal(table);
+  createTotal(footer);
   table.appendChild(footer);
 }
 
@@ -106588,6 +106631,21 @@ function createHeader(table) {
   emissions.textContent = "Emissions";
   row.appendChild(emissions);
 
+  table.appendChild(row);
+}
+
+function createTotal(table) {
+  const row = document.createElement("tr");
+  const element = document.createElement("th");
+  element.textContent = "Total emissions: ";
+  element.colSpan = 6;
+  row.appendChild(element);
+
+  const emissions = document.createElement("th");
+  emissions.id = "emissionsTotal";
+  emissions.textContent = printNumber(emissionsTotal);
+  emissions.classList.add('dataNumber');
+  row.appendChild(emissions);
   table.appendChild(row);
 }
 
@@ -106683,8 +106741,9 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
 
       const dataQuantity = document.createElement("td");
       dataQuantity.quants = quants;
-      const quantity = quants[fkey] ? quants[fkey].value.toFixed(2) : 0;
-      dataQuantity.textContent = quantity;
+      const quantity = quants[fkey] ? quants[fkey].value : 0;
+      dataQuantity.textContent = printNumber(quantity);
+      dataQuantity.classList.add('dataNumber');
       row.appendChild(dataQuantity);
 
       const unit = document.createElement("td");
@@ -106695,15 +106754,19 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
       row.appendChild(material);
       const emmisionsPerUnit = getEmission(mat);
       const dataEmissionsPerUnit = document.createElement("td");
-      dataEmissionsPerUnit.textContent = emmisionsPerUnit.toFixed(2);
+      dataEmissionsPerUnit.classList.add('dataNumber');
+      dataEmissionsPerUnit.textContent = printNumber(emmisionsPerUnit);
       row.appendChild(dataEmissionsPerUnit);
 
       const emissions = quantity * emmisionsPerUnit;
+
+      // Update total emissions
+      emissionsTotal += emissions;
       document.getElementById("emissionsTotal");
-      // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
 
       const dataEmissions = document.createElement("td");
-      dataEmissions.textContent = emissions.toFixed(2);
+      dataEmissions.classList.add('dataNumber');
+      dataEmissions.textContent = printNumber(emissions);
       row.appendChild(dataEmissions);
 
       row.style.fontWeight = "normal";
@@ -106757,8 +106820,9 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
 
     const dataQuantity = document.createElement("td");
     dataQuantity.quants = quants;
-    const quantity = quants[fkey] ? quants[fkey].value.toFixed(2) : 0;
-    dataQuantity.textContent = quantity;
+    const quantity = quants[fkey] ? quants[fkey].value : 0;
+    dataQuantity.textContent = printNumber(quantity);
+    dataQuantity.classList.add("dataNumber");
     row.appendChild(dataQuantity);
 
     const unit = document.createElement("td");
@@ -106767,17 +106831,21 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
     const material = document.createElement("td");
     material.textContent = "";
     row.appendChild(material);
-    const emmisionsPerUnit = 0.0;
+    const emmisionsPerUnit = 0.00;
     const dataEmissionsPerUnit = document.createElement("td");
-    dataEmissionsPerUnit.textContent = emmisionsPerUnit.toFixed(2);
+    dataEmissionsPerUnit.textContent = printNumber(emmisionsPerUnit);
+    dataEmissionsPerUnit.classList.add("dataNumber");
     row.appendChild(dataEmissionsPerUnit);
 
     const emissions = quantity * emmisionsPerUnit;
-    document.getElementById("emissionsTotal");
-    // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
+
+    // Update total emissions
+    emissionsTotal += emissions;
 
     const dataEmissions = document.createElement("td");
-    dataEmissions.textContent = emissions.toFixed(2);
+    dataEmissions.textContent = printNumber(emissions);
+
+    dataEmissions.classList.add("dataNumber");
     row.appendChild(dataEmissions);
 
     row.style.fontWeight = "normal";
@@ -106799,6 +106867,10 @@ async function createLeafRow(parentRow, table, node, depth, opts) {
     parentRow = row;
   }
 }
+
+function printNumber(number) {
+  return new Intl.NumberFormat().format(number.toFixed(2));
+  }
 
 function removeHighlights() {
   const highlighted = document.getElementsByClassName("highlight");
@@ -106953,7 +107025,6 @@ let gridActive = true;
 let gridToggle = document.getElementById("grid-toggle");
 gridToggle.classList.add("grid-enabled");
 let gridIcon = "url('./asset/icon-grid.svg')";
-console.log(gridIcon);
 gridToggle.style.backgroundImage = gridIcon;
 if (currentProjectID != "input-ifc") {
   projectURL = currentProject.url;
@@ -107494,7 +107565,6 @@ carbonFootprintButton.addEventListener("click", function (event) {
     colorizationActive = true;
   } else {
     //Remove Colorization
-    console.log("remove colorization");
     removeColorization(ifcLoader, model);
     colorizationActive = false;
   }
