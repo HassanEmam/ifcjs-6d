@@ -106485,7 +106485,7 @@ async function createTreeTable(ifcProject, modelObj, ifcloader) {
         event.target.parentElement.nextElementSibling.quants[event.target.value]
           .value;
       event.target.parentElement.nextElementSibling.textContent =
-        quants.toFixed(2);
+        printNumber(quants);
 
       const type =
         event.target.parentElement.nextElementSibling.quants[event.target.value]
@@ -106500,10 +106500,10 @@ async function createTreeTable(ifcProject, modelObj, ifcloader) {
       emissionsTotal -= emissionOld;
 
       const emission = factor.textContent * quants;
-      factor.nextElementSibling.textContent = emission.toFixed(2);
+      factor.nextElementSibling.textContent = printNumber(emission);
       emissionsTotal += emission;
       const emissionsTotalData = document.getElementById("emissionsTotal");
-      emissionsTotalData.textContent = emissionsTotal.toFixed(2);
+      emissionsTotalData.textContent = printNumber(emissionsTotal);
     }
   });
 }
@@ -106578,7 +106578,7 @@ function createTotal(table) {
 
   const emissions = document.createElement("th");
   emissions.id = "emissionsTotal";
-  emissions.textContent = emissionsTotal.toFixed(2);
+  emissions.textContent = printNumber(emissionsTotal);
   row.appendChild(emissions);
   table.appendChild(row);
 }
@@ -106663,8 +106663,8 @@ async function createLeafRow(parentRow, table, node, depth) {
 
       const dataQuantity = document.createElement("td");
       dataQuantity.quants = quants;
-      const quantity = quants[fkey] ? quants[fkey].value.toFixed(2) : 0;
-      dataQuantity.textContent = quantity;
+      const quantity = quants[fkey] ? quants[fkey].value : 0;
+      dataQuantity.textContent = printNumber(quantity);
       row.appendChild(dataQuantity);
 
       const unit = document.createElement("td");
@@ -106675,7 +106675,7 @@ async function createLeafRow(parentRow, table, node, depth) {
       row.appendChild(material);
       const emmisionsPerUnit = getEmission(mat);
       const dataEmissionsPerUnit = document.createElement("td");
-      dataEmissionsPerUnit.textContent = emmisionsPerUnit.toFixed(2);
+      dataEmissionsPerUnit.textContent = printNumber(emmisionsPerUnit);
       row.appendChild(dataEmissionsPerUnit);
 
       const emissions = quantity * emmisionsPerUnit;
@@ -106685,7 +106685,7 @@ async function createLeafRow(parentRow, table, node, depth) {
       document.getElementById("emissionsTotal");
 
       const dataEmissions = document.createElement("td");
-      dataEmissions.textContent = emissions.toFixed(2);
+      dataEmissions.textContent = printNumber(emissions);
       row.appendChild(dataEmissions);
 
       row.style.fontWeight = "normal";
@@ -106739,8 +106739,9 @@ async function createLeafRow(parentRow, table, node, depth) {
 
     const dataQuantity = document.createElement("td");
     dataQuantity.quants = quants;
-    const quantity = quants[fkey] ? quants[fkey].value.toFixed(2) : 0;
-    dataQuantity.textContent = quantity;
+    dataQuantity.classList.add("dataNumber");
+    const quantity = quants[fkey] ? quants[fkey].value : 0;
+    dataQuantity.textContent = printNumber(quantity);
     row.appendChild(dataQuantity);
 
     const unit = document.createElement("td");
@@ -106751,18 +106752,20 @@ async function createLeafRow(parentRow, table, node, depth) {
     row.appendChild(material);
     const emmisionsPerUnit = 0.0;
     const dataEmissionsPerUnit = document.createElement("td");
-    dataEmissionsPerUnit.textContent = emmisionsPerUnit.toFixed(2);
+    dataEmissionsPerUnit.classList.add("dataNumber");
+    dataEmissionsPerUnit.textContent = printNumber(emmisionsPerUnit);
     row.appendChild(dataEmissionsPerUnit);
 
     const emissions = quantity * emmisionsPerUnit;
 
     // Update total emissions
     emissionsTotal += emissions;
-    document.getElementById("emissionsTotal");
-    // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
+    // const emissionsTotalData = document.getElementById("emissionsTotal");
+    // // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
 
     const dataEmissions = document.createElement("td");
-    dataEmissions.textContent = emissions.toFixed(2);
+    dataEmissions.classList.add("dataNumber");
+    dataEmissions.textContent = printNumber(emissions);
     row.appendChild(dataEmissions);
 
     row.style.fontWeight = "normal";
@@ -106784,6 +106787,10 @@ async function createLeafRow(parentRow, table, node, depth) {
     parentRow = row;
   }
 }
+
+function printNumber(number) {
+  return new Intl.NumberFormat().format(number.toFixed(2));
+  }
 
 function removeHighlights() {
   const highlighted = document.getElementsByClassName("highlight");
