@@ -82,8 +82,11 @@ import {
   arrowsKeysControls,
 } from "./functions/keysControls.js";
 import { selectObject } from "./functions/Selection.js";
-import { colorization } from "./functions/getAllEmissions.js"
-import { IFCBUILDINGSTOREY } from "web-ifc";
+import {
+  colorization,
+  removeColorization,
+} from "./functions/getAllEmissions.js";
+import { IFCBUILDINGSTOREY, IfcConstructionMaterialResource } from "web-ifc";
 import createTreeTable from "./functions/treeTable.js";
 
 const preselectMat = new MeshLambertMaterial({
@@ -92,7 +95,6 @@ const preselectMat = new MeshLambertMaterial({
   color: 0x0396a6,
   depthTest: true,
 });
-
 
 let shiftDown = false;
 let lineId = 0;
@@ -104,7 +106,6 @@ const currentUrl = window.location.href;
 const url = new URL(currentUrl);
 const currentProjectID = url.searchParams.get("id");
 let preselectModel = { id: -1 };
-
 
 // Get the current project
 let currentProject = null;
@@ -256,7 +257,14 @@ await ifcLoader.ifcManager.useWebWorkers(true, "IFCWorker.js");
 // create spatial tree
 let spatial = null;
 async function init() {
-  model = await loadIfc(projectURL, ifcLoader, currentProjectID, allEmissionsOfItems, itemsAndEmissions);
+  model = await loadIfc(
+    projectURL,
+    ifcLoader,
+    currentProjectID,
+    allEmissionsOfItems,
+    itemsAndEmissions
+  );
+  console.log(model);
   ifcModels.push(model);
   scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
@@ -594,7 +602,8 @@ let carbonEnabled = null;
 carbonFootprintButton.onclick = () => {
   if (carbonEnabled == null) {
     carbonEnabled = true;
-    carbonFootprintButton.style.backgroundImage = "url('./asset/icon-carbonEnabled.png')";
+    carbonFootprintButton.style.backgroundImage =
+      "url('./asset/icon-carbonEnabled.png')";
     carbonFootprintButton.style.backgroundColor = "#ded2c570";
     carbonFootprintButton.style.transform = "scale(1.1)";
     carbonFootprintButton.style.border = "1.5px solid #927ee3";
@@ -602,28 +611,35 @@ carbonFootprintButton.onclick = () => {
   }
   if (carbonEnabled == true) {
     carbonEnabled = false;
-    carbonFootprintButton.style.backgroundImage = "url('./asset/icon-carbonDisabled.png')";
+    carbonFootprintButton.style.backgroundImage =
+      "url('./asset/icon-carbonDisabled.png')";
     carbonFootprintButton.style.backgroundColor = "";
     carbonFootprintButton.style.transform = "";
     carbonFootprintButton.style.border = "";
     return;
-  } 
+  }
   if (carbonEnabled == false) {
     carbonEnabled = true;
-    carbonFootprintButton.style.backgroundImage = "url('./asset/icon-carbonEnabled.png')";
+    carbonFootprintButton.style.backgroundImage =
+      "url('./asset/icon-carbonEnabled.png')";
     carbonFootprintButton.style.backgroundColor = "#ded2c570";
     carbonFootprintButton.style.transform = "scale(1.1)";
     carbonFootprintButton.style.border = "1.5px solid #927ee3";
     return;
   }
-}
+};
 
+let colorizationActive = false;
 //Hide selected objects
-carbonFootprintButton.addEventListener('click', function(event) {
-  if (carbonEnabled == true) {
+carbonFootprintButton.addEventListener("click", function (event) {
+  if (carbonEnabled == true && colorizationActive == false) {
     //Emissions Colorization
-    colorization(ifcLoader, model, itemsAndEmissions, scene)
+    colorization(ifcLoader, model, itemsAndEmissions, scene);
+    colorizationActive = true;
+  } else {
+    //Remove Colorization
+    console.log("remove colorization");
+    removeColorization(ifcLoader, model);
+    colorizationActive = false;
   }
-  else {
-  }
-})
+});
