@@ -618,6 +618,8 @@ deleteMeasurementsButton.onclick = () => {
 const carbonFootprintButton = document.getElementById("carbon-footprint");
 let carbonEnabled = null;
 carbonFootprintButton.onclick = () => {
+  const carbonFootprintLegend = document.querySelector('.legend-container');
+  console.log(carbonFootprintLegend)
   if (carbonEnabled == null) {
     carbonEnabled = true;
     carbonFootprintButton.style.backgroundImage =
@@ -625,6 +627,7 @@ carbonFootprintButton.onclick = () => {
     carbonFootprintButton.style.backgroundColor = "#ded2c570";
     carbonFootprintButton.style.transform = "scale(1.1)";
     carbonFootprintButton.style.border = "1.5px solid #927ee3";
+    carbonFootprintLegend.style.visibility = "visible";
     return;
   }
   if (carbonEnabled == true) {
@@ -634,6 +637,7 @@ carbonFootprintButton.onclick = () => {
     carbonFootprintButton.style.backgroundColor = "";
     carbonFootprintButton.style.transform = "";
     carbonFootprintButton.style.border = "";
+    carbonFootprintLegend.style.visibility = "hidden";
     return;
   }
   if (carbonEnabled == false) {
@@ -643,6 +647,7 @@ carbonFootprintButton.onclick = () => {
     carbonFootprintButton.style.backgroundColor = "#ded2c570";
     carbonFootprintButton.style.transform = "scale(1.1)";
     carbonFootprintButton.style.border = "1.5px solid #927ee3";
+    carbonFootprintLegend.style.visibility = "visible";
     return;
   }
 };

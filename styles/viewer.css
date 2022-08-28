@@ -599,3 +599,33 @@ select {
   fill: green;
   color: #034c8c;
 }
+
+.legend-container {
+  visibility: hidden;
+  opacity: 0.8;
+  margin-top: 0.75rem;
+  color: var(--translucent-white);
+  font-weight: 400;
+  font-size: 12px;
+  background-color: var(--middle-blue);
+  border-radius: var(--coverRadius);
+  display: flex;
+  flex-direction: row;
+  justify-content: space-around;
+  width: 84%;
+  position: absolute;
+  padding: 0.3rem 0rem;
+}
+
+.footprint-color-container {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.footprint-color {
+  width: 30px;
+  height: 90%;
+  margin-right: 1rem;
+  border-radius: 0.3rem;
+}
