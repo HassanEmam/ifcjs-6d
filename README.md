@@ -75,8 +75,9 @@ The heirarchical table allows users to view the IFC model in a hierarchical tabl
 
 We would hope to perform some optimisation in the future including
 
-- optimisation of the rendering of the model
-- optimisation of the data processing
-- generating a report of the results
-- maintain a database of martial properties and emissions
-- develop an optimisation tool to minimise the carbon footprint of the model by proposing alternative materials
+- [ ] optimisation of the rendering of the model
+- [ ] optimisation of the data processing
+- [ ] performe computational geometry analysis to calculate quantities from geometries to improve the user experience specialy for models with no quantities.
+- [ ] generating a report of the results
+- [ ] maintain a database of martial properties and emissions
+- [ ] develop an optimisation tool to minimise the carbon footprint of the model by proposing alternative materials
