@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This project was created as part of the Ifc.js crash course hackathon. The project is developed by three of the course alumni ([HassanEmam](https://www.linkedin.com/in/hassanemam/), [Badr Ouhabi](https://www.linkedin.com/in/ouahbi/) and [Mortiz Lill](https://www.linkedin.com/in/moritz-lill/))
+This project was created as part of the Ifc.js crash course hackathon. The project is developed by three of the course alumni ([HassanEmam](https://www.linkedin.com/in/hassanemam/), [Badr Ouhabi](https://www.linkedin.com/in/ouahbi/) and [Mortiz Lill](https://www.linkedin.com/in/moritz-lill/)).
 The main purpose of the application is to perform 5D operations as Quantity Takeoff and 6D simulation (carbon emissions and footprint calculations). The project is a proof of concept and data used for carbon calculations are not real factors
 
 ## How to access the application
@@ -11,7 +11,7 @@ Web applications are super easy to use as they do not require any setup or insta
 
 ## Project Gallery
 
-The project gallery includes some sample preloaded models to explaore and test the project if users do not have IFC files.However, we do allow loading of IFC file by clicking the first card in the gallery page titled "Load a new IFC file."
+The project gallery includes some sample preloaded models to explore and test the project if users do not have IFC files.However, we do allow loading of IFC file by clicking the first card in the gallery page titled "Load a new IFC file."
 
 ![Project Gallery](asset/readme/projectGallery.png)
 
@@ -79,5 +79,5 @@ We would hope to perform some optimisation in the future including
 - [ ] optimisation of the data processing
 - [ ] performe computational geometry analysis to calculate quantities from geometries to improve the user experience specialy for models with no quantities.
 - [ ] generating a report of the results
-- [ ] maintain a database of martial properties and emissions
+- [ ] maintain a database of material properties and emissions
 - [ ] develop an optimisation tool to minimise the carbon footprint of the model by proposing alternative materials
