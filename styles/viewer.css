@@ -568,3 +568,7 @@ select {
 .quantity-type-container {
   display: contents;
 }
+
+.grid-enabled {
+  color: #034c8c;
+}

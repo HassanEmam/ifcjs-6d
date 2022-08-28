@@ -112,7 +112,10 @@ let currentProject = null;
 let projectURL = null;
 
 currentProject = projects.find((project) => project.id === currentProjectID);
-
+let gridActive = true;
+let gridToggle = document.getElementById("grid-toggle");
+gridToggle.classList.add("grid-enabled");
+gridToggle.style.backgroundImage = "url('./asset/grid.svg')";
 if (currentProjectID != "input-ifc") {
   projectURL = currentProject.url;
 } else {
@@ -239,12 +242,25 @@ labelCanvas.appendChild(labelRenderer.domElement);
 //Creates grids and axes in the scene
 const grid = new GridHelper(50, 30);
 scene.add(grid);
-
 const axes = new AxesHelper();
 axes.material.depthTest = false;
 axes.renderOrder = 1;
 scene.add(axes);
 
+gridToggle.addEventListener("click", () => {
+  if (gridActive) {
+    grid.visible = false;
+    axes.visible = false;
+    gridToggle.classList.remove("grid-enabled");
+    gridActive = false;
+  } else {
+    grid.visible = true;
+    axes.visible = true;
+    gridToggle.classList.add("grid-enabled");
+    gridToggle.style.color = "blue";
+    gridActive = true;
+  }
+});
 const ifcModels = [];
 
 let model = null;
