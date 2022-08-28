@@ -361,6 +361,7 @@ a {
   border-radius: var(--coverRadius);
   border: 1px solid gainsboro;
   background-color: rgb(238, 238, 238);
+  position: relative;
 }
 
 #model-viewer-container {
@@ -612,9 +613,9 @@ select {
   display: flex;
   flex-direction: row;
   justify-content: space-around;
-  width: 84%;
+  width: 98%;
   position: absolute;
-  padding: 0.3rem 0rem;
+  padding: 0.3rem;
 }
 
 .footprint-color-container {
