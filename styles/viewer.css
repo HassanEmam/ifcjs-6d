@@ -353,7 +353,7 @@ a {
   margin-top: 0.5rem;
 }
 
-.left-menu {
+.right-menu {
   display: flex;
   flex-direction: column;
   flex-wrap: wrap;
