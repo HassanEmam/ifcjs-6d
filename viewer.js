@@ -225,9 +225,10 @@ scene.add(directionalLight);
 // const threeCanvas = document.getElementById("three-canvas");
 const renderer = new WebGLRenderer({ alpha: true });
 renderer.setClearColor(0xffffff, 0.2);
-threeCanvas.appendChild(renderer.domElement);
+console.log("size", size);
 renderer.setSize(size.width, size.height, false);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+threeCanvas.appendChild(renderer.domElement);
 const labelRenderer = new CSS2DRenderer({
   canvas: threeCanvas,
 });
@@ -323,7 +324,8 @@ async function init() {
           positions[5] = intersects[0].point.z;
           line.geometry.attributes.position.needsUpdate = true;
           const distance = v0.distanceTo(v1);
-          measurementLabels[lineId].element.innerText = distance.toFixed(2) + "m";
+          measurementLabels[lineId].element.innerText =
+            distance.toFixed(2) + "m";
           measurementLabels[lineId].position.lerpVectors(v0, v1, 0.5);
         }
       }
@@ -419,7 +421,7 @@ threeCanvas.ondblclick = (event) => {
       selectedElementId
     );
   }
-}
+};
 
 //Animation loop
 const animate = () => {
@@ -440,10 +442,13 @@ animate();
 
 // //Adjust the viewport to the size of the browser
 window.addEventListener("resize", () => {
+  size.width = threeCanvas.clientWidth;
+  size.height = threeCanvas.clientHeight;
+  renderer.domElement.width = size.width;
   camera.aspect = size.width / size.height;
   camera.updateProjectionMatrix();
-
-  renderer.setSize(size.width, size.height);
+  console.log(size);
+  renderer.setSize(size.width, size.height, false);
 });
 
 window.addEventListener("keydown", function (event) {
@@ -621,11 +626,22 @@ deleteMeasurementsButton.onclick = () => {
 const carbonFootprintButton = document.getElementById("carbon-footprint");
 let carbonEnabled = null;
 carbonFootprintButton.onclick = () => {
-  carbonEnabled = updateFootprintButton(carbonFootprintButton, carbonEnabled)
+  carbonEnabled = updateFootprintButton(carbonFootprintButton, carbonEnabled);
 };
 
 // Update Objects Footprints Colors
 let colorizationActive = false;
 carbonFootprintButton.addEventListener("click", function (event) {
-  colorizationActive = updateFootPrintColors(ifcLoader, model, itemsAndEmissions, scene, colorizationActive, carbonEnabled, grid, axes, gridToggle, gridActive)
+  colorizationActive = updateFootPrintColors(
+    ifcLoader,
+    model,
+    itemsAndEmissions,
+    scene,
+    colorizationActive,
+    carbonEnabled,
+    grid,
+    axes,
+    gridToggle,
+    gridActive
+  );
 });

@@ -31,11 +31,9 @@ function getParent(target) {
     target = target.previousElementSibling;
     tDepth = target.getAttribute("data-depth");
   }
-  console.log("tDepth", tDepth);
   while (!isParent) {
     parent = parent.previousElementSibling;
     let pDepth = parent.getAttribute("data-depth");
-    console.log("parent2", pDepth, tDepth);
     if (pDepth) {
       isParent = pDepth < tDepth;
     }
@@ -49,7 +47,6 @@ function getAllChilds(parent) {
   let child = parent.nextElementSibling;
   let cDepth = child.getAttribute("data-depth");
   let isChild = true;
-  console.log("cDepth", cDepth, pDepth);
   while (isChild) {
     if (cDepth) {
       if (cDepth > pDepth) {
@@ -61,7 +58,6 @@ function getAllChilds(parent) {
         } else {
           isChild = true;
         }
-        console.log("CPDepth", cDepth, pDepth);
       } else {
         isChild = false;
       }
@@ -79,16 +75,13 @@ function getAllChilds(parent) {
 function recalculateSubtotal(parent) {
   const childs = getAllChilds(parent);
   let subtotal = 0;
-  console.log("childs befor loop", childs);
 
   for (const child of childs) {
     const emission = child.getElementsByClassName("emissions")[0];
     let em = emission?.textContent;
     em = em.replace(",", "");
     subtotal += parseFloat(em);
-    console.log("Emission", em);
   }
-  console.log("childs", subtotal, childs);
   return subtotal;
 }
 
@@ -101,7 +94,6 @@ function updateSubtotal(target, isParent = false) {
   }
   const subtotal = parent.getElementsByClassName("subtotal")[0];
   let emissionSubTotal = recalculateSubtotal(parent);
-  console.log("subtotal", subtotal, parent);
   subtotal.textContent = printNumber(emissionSubTotal);
 }
 
@@ -145,16 +137,11 @@ export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
     if (event.target.classList.contains("group-select")) {
       const setVal = event.target.value;
       const parentTR = event.target.parentElement;
-      console.log(
-        setVal,
-        parentTR,
-        parseInt(parentTR.getAttribute("data-depth"))
-      );
+
       let child = parentTR.nextElementSibling;
       let isChild =
         parentTR.getAttribute("data-depth") < child.getAttribute("data-depth");
       while (isChild) {
-        console.log(child, child.quants);
         const qtySelect = child.getElementsByTagName("select")[0];
         qtySelect.value = setVal;
         qtySelect.parentElement.nextElementSibling.textContent =
@@ -168,7 +155,6 @@ export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
           uom;
         let emission = child.getElementsByClassName("emissions")[0];
         let empu = emission.previousElementSibling;
-        console.log("EmissionElement", emission.textContent, empu.textContent);
         emission.textContent = printNumber(
           parseFloat(empu.textContent.replace(",", "")) *
             qtySelect.parentElement.nextElementSibling.quants[setVal].value
@@ -183,7 +169,6 @@ export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
         }
         child = child.nextElementSibling;
       }
-      console.log("EventTarget", event.target.parentElement);
       updateSubtotal(event.target.parentElement, true);
     }
   });
@@ -322,15 +307,18 @@ async function createBranchRow(table, node, depth, children) {
       await createLeafRow(row, table, child, depth, opts, subtotalEmission);
     }
   }
-  console.log("Opts", opts);
-  console.log("Subtotal", subtotalEmission);
 
   let options;
   for (const option of opts) {
-    if (option === "NetVolume" || option === "Volume" || option === "Volumen" || option === "Netto-Volumen") {
+    if (
+      option === "NetVolume" ||
+      option === "Volume" ||
+      option === "Volumen" ||
+      option === "Netto-Volumen"
+    ) {
       options += `<option value="${option}" selected>${option}</option>`;
     } else if (option === "Area") {
-      options += `<option value="${option}" selected>${option}</option>`;      
+      options += `<option value="${option}" selected>${option}</option>`;
     } else {
       options += `<option value="${option}">${option}</option>`;
     }
