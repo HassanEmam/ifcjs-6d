@@ -2,6 +2,7 @@
 // import { createPropertySelection } from "./quantities";
 
 import { MeshLambertMaterial } from "three";
+import { IfcRelConnectsPortToElement } from "web-ifc";
 import getEmission from "./emission";
 import { getMaterial } from "./materials";
 import { getQuantityByElement } from "./quantities";
@@ -55,6 +56,35 @@ export default async function createTreeTable(ifcProject, modelObj, ifcloader) {
       emissionsTotal += emission;
       const emissionsTotalData = document.getElementById("emissionsTotal");
       // emissionsTotalData.textContent = emissionsTotal.toFixed(2);
+    }
+    if (event.target.classList.contains("group-select")) {
+      const setVal = event.target.value;
+      const parentTR = event.target.parentElement;
+      console.log(
+        setVal,
+        parentTR,
+        parseInt(parentTR.getAttribute("data-depth"))
+      );
+      let child = parentTR.nextElementSibling;
+      while (
+        parseInt(child.getAttribute("data-depth")) >
+        parseInt(parentTR.getAttribute("data-depth"))
+      ) {
+        console.log(child, child.quants);
+        const qtySelect = child.getElementsByTagName("select")[0];
+        qtySelect.value = setVal;
+        qtySelect.parentElement.nextElementSibling.textContent =
+          qtySelect.parentElement.nextElementSibling.quants[
+            setVal
+          ].value.toFixed(2);
+        const type =
+          qtySelect.parentElement.nextElementSibling.quants[setVal].type;
+        let uom = getUom(type);
+        qtySelect.parentElement.nextElementSibling.nextElementSibling.textContent =
+          uom;
+        child.element;
+        child = child.nextElementSibling;
+      }
     }
   });
 }
@@ -152,7 +182,7 @@ async function createBranchRow(table, node, depth, children) {
   row.setAttribute("data-depth", depth);
 
   const element = document.createElement("td");
-  element.colSpan = 7;
+  // element.colSpan = 7;
   element.classList.add("data-ifc-element");
   const toggle = document.createElement("span");
   toggle.classList.add("toggle");
@@ -161,20 +191,30 @@ async function createBranchRow(table, node, depth, children) {
   element.textContent = node.type;
   element.insertBefore(toggle, element.firstChild);
 
+  const selectDB = document.createElement("select");
+  selectDB.classList.add("group-select");
   row.appendChild(element);
+  row.appendChild(selectDB);
   table.appendChild(row);
 
   depth++;
+  let opts = new Set();
   for (const child of children) {
     if (child.children.length > 0) {
       await createNode(table, child, depth, child.children);
     } else {
-      await createLeafRow(row, table, child, depth);
+      await createLeafRow(row, table, child, depth, opts);
     }
   }
+  console.log("Opts", opts);
+  let options;
+  for (const option of opts) {
+    options += `<option value="${option}">${option}</option>`;
+  }
+  selectDB.innerHTML = options;
 }
 
-async function createLeafRow(parentRow, table, node, depth) {
+async function createLeafRow(parentRow, table, node, depth, opts) {
   const quants = await getQuantityByElement(ifcLoader, model, node.expressID);
   const materials = await getMaterial(ifcLoader, model, node.expressID);
   let count = 0;
@@ -188,6 +228,7 @@ async function createLeafRow(parentRow, table, node, depth) {
       let element;
       if (count === 0) {
         row.setAttribute("data-depth", depth);
+        row.id = node.expressID;
         element = document.createElement("td");
         element.classList.add("data-ifc-element");
         element.textContent = node.type;
@@ -204,6 +245,7 @@ async function createLeafRow(parentRow, table, node, depth) {
         if (!fkey) {
           fkey = key;
         }
+        opts.add(key);
         options += `<option value="${key}">${key}</option>`;
       }
       qtyTypeSelector.classList.add("quantity-type");

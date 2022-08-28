@@ -193,8 +193,6 @@ a {
 }
 
 .treeTable {
-  margin: 0.5rem 0rem;
-  padding: 0.75rem;
   overflow: auto;
   max-height: 60vh;
   width: 100%;
