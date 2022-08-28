@@ -7,6 +7,7 @@ import getEmission from "./emission";
 import { getMaterial } from "./materials";
 import { getQuantityByElement } from "./quantities";
 import { getUoM, fillUoM } from "./uom";
+import { DecodeIFCString } from "./DecodeIfcString"
 
 let model;
 let ifcLoader;
@@ -366,25 +367,22 @@ async function createLeafRow(
       let options = "";
       let fkey = null;
       for (const [key, value] of Object.entries(quants)) {
+        let formattedKey = DecodeIFCString(key)
         if (!fkey) {
-          fkey = key;
+          fkey = formattedKey;
         }
-        opts.add(key);
-        if (
-          key === "NetVolume" ||
-          key === "Volume" ||
-          key === "Volumen" ||
-          key === "Netto-Volumen"
-        ) {
-          options += `<option value="${key}" selected>${key}</option>`;
+        opts.add(formattedKey);
+        console.log(formattedKey)
+        if (formattedKey === "NetVolume" || formattedKey === "Volume" || formattedKey === "Volumen" || formattedKey === "Netto-Volumen") {
+          options += `<option value="${formattedKey}" selected>${formattedKey}</option>`;
           hasNetVolume = true;
           fkey = "NetVolume";
-        } else if (key === "Area") {
-          options += `<option value="${key}" selected>${key}</option>`;
+        } else if (formattedKey === "Area") {
+          options += `<option value="${formattedKey}" selected>${formattedKey}</option>`;
           hasArea = true;
-          fkey = "Area";
+          fkey = "Area";          
         } else {
-          options += `<option value="${key}">${key}</option>`;
+          options += `<option value="${formattedKey}">${formattedKey}</option>`;
         }
       }
       qtyTypeSelector.classList.add("quantity-type");
@@ -462,10 +460,11 @@ async function createLeafRow(
     let options = "";
     let fkey = null;
     for (const [key, value] of Object.entries(quants)) {
+      let formattedKey = DecodeIFCString(key)
       if (!fkey) {
-        fkey = key;
+        fkey = formattedKey;
       }
-      options += `<option value="${key}">${key}</option>`;
+      options += `<option value="${formattedKey}">${formattedKey}</option>`;
     }
     qtyTypeSelector.classList.add("quantity-type");
     qtyTypeSelector.style.padding = "0px";
