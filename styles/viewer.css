@@ -368,8 +368,10 @@ a {
   outline: none;
   left: 0;
   top: 0;
-  overflow: hidden;
+  overflow: auto;
   border-radius: var(--coverRadius);
+  padding-left: 1rem;
+  margin: 0px;
 }
 
 .bimViewer {
@@ -585,9 +587,10 @@ tr:hover {
   font-size: 0.7rem;
 }
 
-tfoot td, .dataNumber {
+tfoot td,
+.dataNumber {
   text-align: right;
-  padding-right: .5rem;
+  padding-right: 0.5rem;
 }
 
 select {
