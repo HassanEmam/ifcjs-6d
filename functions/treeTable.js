@@ -384,8 +384,12 @@ async function createLeafRow(
           fkey = formattedKey;
         }
         opts.add(formattedKey);
-        console.log(formattedKey)
-        if (formattedKey === "NetVolume" || formattedKey === "Volume" || formattedKey === "Volumen" || formattedKey === "Netto-Volumen") {
+        if (
+          formattedKey === "NetVolume" || 
+          formattedKey === "Volume" || 
+          formattedKey === "Volumen" || 
+          formattedKey === "Netto-Volumen"
+        ) {
           options += `<option value="${formattedKey}" selected>${formattedKey}</option>`;
           hasNetVolume = true;
           fkey = "NetVolume";
