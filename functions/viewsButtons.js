@@ -1,4 +1,8 @@
 import { MeshBasicMaterial } from "three";
+import {
+    colorization,
+    removeColorization,
+} from "./getAllEmissions.js";
 
 export function leftView(cameraControls, model) {
     cameraControls.setLookAt(-50, 2.7, 0, 0, 2.7, 0);
@@ -89,4 +93,54 @@ export function deleteMeasurements(scene) {
             }
         }
     });
+}
+
+// update FootPrintButton
+export function updateFootprintButton(carbonFootprintButton, carbonEnabled) {
+    const carbonFootprintLegend = document.querySelector('.legend-container');
+    if (carbonEnabled == null) {
+        carbonEnabled = true;
+        carbonFootprintButton.style.backgroundImage =
+        "url('./asset/icon-carbonEnabled.png')";
+        carbonFootprintButton.style.backgroundColor = "#ded2c570";
+        carbonFootprintButton.style.transform = "scale(1.1)";
+        carbonFootprintButton.style.border = "1.5px solid #927ee3";
+        carbonFootprintLegend.style.visibility = "visible";
+        return carbonEnabled;
+    }
+    if (carbonEnabled == true) {
+        carbonEnabled = false;
+        carbonFootprintButton.style.backgroundImage =
+        "url('./asset/icon-carbonDisabled.png')";
+        carbonFootprintButton.style.backgroundColor = "";
+        carbonFootprintButton.style.transform = "";
+        carbonFootprintButton.style.border = "";
+        carbonFootprintLegend.style.visibility = "hidden";
+        return carbonEnabled;
+    }
+    if (carbonEnabled == false) {
+        carbonEnabled = true;
+        carbonFootprintButton.style.backgroundImage =
+        "url('./asset/icon-carbonEnabled.png')";
+        carbonFootprintButton.style.backgroundColor = "#ded2c570";
+        carbonFootprintButton.style.transform = "scale(1.1)";
+        carbonFootprintButton.style.border = "1.5px solid #927ee3";
+        carbonFootprintLegend.style.visibility = "visible";
+        return carbonEnabled;
+    }
+}
+
+// Update Footprint Colors
+export function updateFootPrintColors(ifcLoader, model, itemsAndEmissions, scene, colorizationActive, carbonEnabled) {
+    if (carbonEnabled == true && colorizationActive == false) {
+        //Emissions Colorization
+        colorization(ifcLoader, model, itemsAndEmissions, scene);
+        colorizationActive = true;
+        return colorizationActive
+      } else {
+        //Remove Colorization
+        removeColorization(ifcLoader, model);
+        colorizationActive = false;
+        return colorizationActive
+      }
 }

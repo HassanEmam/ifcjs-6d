@@ -76,16 +76,14 @@ import {
   wireframeView,
   materializedView,
   deleteMeasurements,
+  updateFootprintButton,
+  updateFootPrintColors,
 } from "./functions/viewsButtons.js";
 import {
   wasdKeysControls,
   arrowsKeysControls,
 } from "./functions/keysControls.js";
 import { selectObject } from "./functions/Selection.js";
-import {
-  colorization,
-  removeColorization,
-} from "./functions/getAllEmissions.js";
 import { IFCBUILDINGSTOREY, IfcConstructionMaterialResource } from "web-ifc";
 import createTreeTable from "./functions/treeTable.js";
 
@@ -614,54 +612,15 @@ deleteMeasurementsButton.onclick = () => {
   deleteMeasurements(scene);
 };
 
-// Hide Objects
+// Update FootPrint Button
 const carbonFootprintButton = document.getElementById("carbon-footprint");
 let carbonEnabled = null;
 carbonFootprintButton.onclick = () => {
-  const carbonFootprintLegend = document.querySelector('.legend-container');
-  console.log(carbonFootprintLegend)
-  if (carbonEnabled == null) {
-    carbonEnabled = true;
-    carbonFootprintButton.style.backgroundImage =
-      "url('./asset/icon-carbonEnabled.png')";
-    carbonFootprintButton.style.backgroundColor = "#ded2c570";
-    carbonFootprintButton.style.transform = "scale(1.1)";
-    carbonFootprintButton.style.border = "1.5px solid #927ee3";
-    carbonFootprintLegend.style.visibility = "visible";
-    return;
-  }
-  if (carbonEnabled == true) {
-    carbonEnabled = false;
-    carbonFootprintButton.style.backgroundImage =
-      "url('./asset/icon-carbonDisabled.png')";
-    carbonFootprintButton.style.backgroundColor = "";
-    carbonFootprintButton.style.transform = "";
-    carbonFootprintButton.style.border = "";
-    carbonFootprintLegend.style.visibility = "hidden";
-    return;
-  }
-  if (carbonEnabled == false) {
-    carbonEnabled = true;
-    carbonFootprintButton.style.backgroundImage =
-      "url('./asset/icon-carbonEnabled.png')";
-    carbonFootprintButton.style.backgroundColor = "#ded2c570";
-    carbonFootprintButton.style.transform = "scale(1.1)";
-    carbonFootprintButton.style.border = "1.5px solid #927ee3";
-    carbonFootprintLegend.style.visibility = "visible";
-    return;
-  }
+  carbonEnabled = updateFootprintButton(carbonFootprintButton, carbonEnabled)
 };
 
+// Update Objects Footprints Colors
 let colorizationActive = false;
-//Hide selected objects
 carbonFootprintButton.addEventListener("click", function (event) {
-  if (carbonEnabled == true && colorizationActive == false) {
-    //Emissions Colorization
-    colorization(ifcLoader, model, itemsAndEmissions, scene);
-    colorizationActive = true;
-  } else {
-    //Remove Colorization
-    removeColorization(ifcLoader, model);
-    colorizationActive = false;
-  }
+  colorizationActive = updateFootPrintColors(ifcLoader, model, itemsAndEmissions, scene, colorizationActive, carbonEnabled)
 });
