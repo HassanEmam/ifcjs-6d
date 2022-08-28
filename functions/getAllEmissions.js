@@ -38,7 +38,6 @@ const materialVeryLow = new MeshBasicMaterial({
 export async function getAllEmissions(
   ifcLoader,
   model,
-  currentProjectID,
   allEmissionsOfItems,
   itemsAndEmissions,
   ifcTypesIds
@@ -52,7 +51,6 @@ export async function getAllEmissions(
     await EmissionsOfIfcType(
       ifcLoader,
       model,
-      currentProjectID,
       ifcTypeId,
       allEmissionsOfItems,
       emissionsOfItem,
@@ -64,7 +62,6 @@ export async function getAllEmissions(
 async function EmissionsOfIfcType(
   ifcLoader,
   model,
-  currentProjectID,
   ifcTypeId,
   allEmissionsOfItems,
   emissionsOfItem,
@@ -184,21 +181,25 @@ export function removeColorization(ifcLoader, model) {
     model.modelID,
     materialVeryHigh,
     "VeryHighEmission"
-  );
+    );
   ifcLoader.ifcManager.removeSubset(
     model.modelID,
     materialHigh,
     "HighEmission"
-  );
+    );
   ifcLoader.ifcManager.removeSubset(
     model.modelID,
     materialMedium,
     "MediumEmission"
-  );
-  ifcLoader.ifcManager.removeSubset(model.modelID, materialLow, "LowEmission");
+    );
+  ifcLoader.ifcManager.removeSubset(
+    model.modelID, 
+    materialLow, 
+    "LowEmission"
+    );
   ifcLoader.ifcManager.removeSubset(
     model.modelID,
     materialVeryLow,
     "VeryLowEmission"
-  );
+    );
 }
