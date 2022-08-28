@@ -158,6 +158,20 @@ a {
   transform: translateY(-1px);
 }
 
+.title-card {
+  margin-top: 1rem;
+  width: 100%;
+  height: 1.75rem;
+  line-height: 1.75rem;
+  border-radius: var(--coverRadius);
+  background: var(--dark-blue);
+  color: var(--translucent-white);
+  box-shadow: var(--normal-shadow);
+  font-weight: 600;
+  font-size: 14px;
+  text-align: center;
+}
+
 .simple-card-container {
   display: flex;
   justify-content: center;
@@ -166,11 +180,24 @@ a {
 
 /* From uiverse.io by @adamgiebl */
 .simple-card {
+  margin-top: 1rem;
+  width: 100%;
+  height: 1.75rem;
+  line-height: 1.75rem;
+  border-radius: 1rem;
+  background: var(--middle-gray);
+  box-shadow: var(--normal-shadow);
+  font-weight: 600;
+  font-size: 14px;
+  text-align: center;
+}
+
+.treeTable {
   margin: 0.5rem 0rem;
-  overflow-y: scroll;
+  padding: 0.75rem;
+  overflow: auto;
   max-height: 60vh;
   width: 100%;
-
   border-radius: 1rem;
   background: var(--translucent-white);
   box-shadow: var(--normal-shadow);
@@ -556,7 +583,6 @@ tr:hover {
 
 #boq {
   width: 100%;
-  margin: 0.3rem;
   font-size: 0.7rem;
 }
 
