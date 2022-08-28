@@ -66,7 +66,7 @@ async function EmissionsOfIfcType(
   allEmissionsOfItems,
   emissionsOfItem,
   itemsAndEmissions
-) {
+  ) {
   const elementsOfTypeIDs = await ifcLoader.ifcManager.getAllItemsOfType(
     model.modelID,
     ifcTypeId
@@ -75,7 +75,7 @@ async function EmissionsOfIfcType(
   for (let i = 0; i < elementsOfTypeIDs.length; i++) {
     const elementID = elementsOfTypeIDs[i];
 
-    const NetVolume = await getNetVolume(ifcLoader, model, elementID);
+    const NetVolume = await getNetVolume(ifcLoader, model, elementID, ifcTypeId);
     const materials = await getMaterial(ifcLoader, model, elementID);
     for (const mat of materials) {
       const emissionOfmaterial = NetVolume * getEmission(mat);
@@ -99,20 +99,47 @@ async function EmissionsOfIfcType(
   return allEmissionsOfItems;
 }
 
-async function getNetVolume(ifcLoader, model, elementID) {
-  const quants = await getQuantityByElement(ifcLoader, model, elementID);
-  const NetVolumeObject = Object.values(quants).find((obj) => {
-    return obj.type == "volume";
-  });
-  const NetVolumeValue = NetVolumeObject.value;
-  return NetVolumeValue;
+async function getNetVolume(ifcLoader, model, elementID, ifcTypeId) {
+    let NetVolumeValue = null;
+    const quants = await getQuantityByElement(ifcLoader, model, elementID);
+    const NetVolumeObject = Object.values(quants).find((obj) => {
+        if (obj.type == "volume") {
+            return obj.type == "volume";
+        }
+    });
+
+    if(NetVolumeObject != 0 && NetVolumeObject != null) {
+        NetVolumeValue = NetVolumeObject.value;
+    } else {
+        const NetAreaObject = Object.values(quants).find((obj) => {
+            if (obj.type == "area") {
+                return obj.type == "area";
+            }
+        });
+        if(NetAreaObject == 0 || NetAreaObject == undefined) {
+            NetVolumeValue = 0
+        } else {
+            let matVolume = null;
+            if (ifcTypeId == 3304561284 || ifcTypeId == 395920057) { //3304561284 = IFCWINDOW / 395920057 = IFCDOOR
+                matVolume = NetAreaObject.value * 0.05;
+                return matVolume;
+            } else if (ifcTypeId == 1529196076) { //IFCSLAB
+                matVolume = NetAreaObject.value * 0.3;
+                return matVolume;
+            }
+            NetVolumeValue = matVolume;
+        }
+    }
+    return NetVolumeValue;
 }
 
 export function colorization(ifcLoader, model, itemsAndEmissions, scene) {
   // Emissions per Object (All materials of an object)
   let emissionsAllItems = [];
   itemsAndEmissions.forEach((element) => {
-    emissionsAllItems.push(element.emission);
+    if (element.emission != 0 && element.emission != undefined) {
+        emissionsAllItems.push(element.emission);
+    }
   });
 
   // Degree according to amount of emissions
