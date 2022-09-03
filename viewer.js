@@ -670,10 +670,11 @@ footprintSimulationButton.addEventListener("click", function (event) {
     gridActive
   );
 });
-
+let exploded = false;
 let explodeButton = document.getElementById("explode-toggle");
 let explodeIcon = "url('./asset/explode1.svg')";
 explodeButton.style.background = explodeIcon;
 explodeButton.addEventListener("click", function (event) {
-  explode(ifcLoader, model, scene);
+  explode(ifcLoader, model, scene, exploded);
+  exploded = !exploded;
 });
