@@ -86,6 +86,7 @@ import {
 import { selectObject } from "./functions/Selection.js";
 import { IFCBUILDINGSTOREY, IfcConstructionMaterialResource } from "web-ifc";
 import createTreeTable from "./functions/treeTable.js";
+import { explode } from "./functions/explode.js";
 
 const preselectMat = new MeshLambertMaterial({
   transparent: true,
@@ -628,7 +629,9 @@ deleteMeasurementsButton.onclick = () => {
 
 // Update FootPrint Button
 const carbonFootprintButton = document.getElementById("carbon-footprint");
-const footprintSimulationButton = document.getElementById("footprint-simulation-button")
+const footprintSimulationButton = document.getElementById(
+  "footprint-simulation-button"
+);
 let carbonEnabled = null;
 carbonFootprintButton.onclick = () => {
   carbonEnabled = updateFootprintButton(carbonFootprintButton, carbonEnabled);
@@ -668,3 +671,9 @@ footprintSimulationButton.addEventListener("click", function (event) {
   );
 });
 
+let explodeButton = document.getElementById("explode-toggle");
+let explodeIcon = "url('./asset/explode1.svg')";
+explodeButton.style.background = explodeIcon;
+explodeButton.addEventListener("click", function (event) {
+  explode(ifcLoader, model, scene);
+});

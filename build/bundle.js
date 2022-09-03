@@ -107193,6 +107193,48 @@ function removeAllChildren(element) {
   }
 }
 
+async function explode(ifcLoader, model, scene) {
+  let ids = [];
+  let walls = await ifcLoader.ifcManager.byType(
+    model.modelID,
+    "IFCWALLSTANDARDCASE"
+  );
+  let slabs = await ifcLoader.ifcManager.byType(model.modelID, "IFCSLAB");
+  let elements = [...walls, ...slabs];
+  ids = elements.map((e) => e.expressID);
+  for (let id of ids) {
+    let subset = ifcLoader.ifcManager.createSubset({
+      modelID: model.modelID,
+      ids: [id],
+      scene: scene,
+      removePrevious: true,
+      customID: id.toString(),
+    });
+    let points = [];
+    let posArray = subset.geometry.attributes.position;
+    let index = subset.geometry.index.array;
+    for (let k = 0; k < index.length; k++) {
+      let x = posArray.getX(index[k]);
+      let y = posArray.getY(index[k]);
+      let z = posArray.getZ(index[k]);
+      points.push(new Vector3$1(x, y, z));
+    }
+
+    if (points.length > 0) {
+      let geo = new BufferGeometry().setFromPoints(points);
+      geo.computeBoundingBox();
+      geo.computeBoundingSphere();
+      let center = geo.boundingSphere.center;
+      subset.position.set(center.x, center.y, center.z);
+    }
+    hideModel(model);
+  }
+}
+
+function hideModel(model, scene) {
+  model.visible = false;
+}
+
 const subsetOfTHREE = {
   MOUSE,
   Vector2: Vector2$1,
@@ -107751,7 +107793,9 @@ deleteMeasurementsButton.onclick = () => {
 
 // Update FootPrint Button
 const carbonFootprintButton = document.getElementById("carbon-footprint");
-const footprintSimulationButton = document.getElementById("footprint-simulation-button");
+const footprintSimulationButton = document.getElementById(
+  "footprint-simulation-button"
+);
 let carbonEnabled = null;
 carbonFootprintButton.onclick = () => {
   carbonEnabled = updateFootprintButton(carbonFootprintButton, carbonEnabled);
@@ -107785,4 +107829,11 @@ footprintSimulationButton.addEventListener("click", function (event) {
     grid,
     axes,
     gridToggle);
+});
+
+let explodeButton = document.getElementById("explode-toggle");
+let explodeIcon = "url('./asset/explode1.svg')";
+explodeButton.style.background = explodeIcon;
+explodeButton.addEventListener("click", function (event) {
+  explode(ifcLoader, model, scene);
 });
