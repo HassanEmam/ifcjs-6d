@@ -29,18 +29,6 @@
   --blur-filter: blur(8px);
 }
 
-header {
-  color: var(--light-gray);
-  padding: 1rem;
-  display: flex;
-  align-items: center;
-  border-bottom: 1px solid gray;
-}
-
-header *:last-child {
-  margin-left: auto;
-  color: var(--light-blue);
-}
 
 h2 {
   font-size: 1rem;
