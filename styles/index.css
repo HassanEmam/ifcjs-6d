@@ -15,6 +15,8 @@
   --dark-gray: #212529;
   --light-gray: #f2f2f2;
   --middle-gray: #b3b3b3;
+  --header-hight: 40px;
+  --footer-hight: 60px;
 }
 
 img {
@@ -35,11 +37,22 @@ header, footer {
 
 header {
   top: 0;
+  height: var(--header-hight);
 }
 
 footer {
   bottom: 0;
+  height: var(--footer-hight);
 }
+
+section {
+  top: var(--header-hight);
+  height: calc(100vh - (var(--header-hight) + var(--footer-hight)));
+  width: 100vw;
+  position: fixed;
+  overflow: scroll;
+}
+
 
 .navbar-dark:hover .navbar-nav:hover .nav-link:hover {
   color: rgba(var(--light-blue),1);
