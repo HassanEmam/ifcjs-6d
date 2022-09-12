@@ -1,35 +1,3 @@
-:root {
-  --coverHeight: 14rem;
-  --coverMargin: 1rem;
-  --listMargin: 0.4rem;
-  --coverRadius: 0.7rem;
-  --coverPadding: 1rem;
-  --titleSize: 1.4rem;
-  --text-light-color: rgba(255, 255, 255, 0.55);
-  --live-orange: #e7a377;
-  --dark-blue: #034c8c;
-  --middle-blue: #0396a6;
-  --light-blue: #05daf27f;
-  --very-light-transparent-blue: #add8e64f;
-  --dark-gray: #212529;
-  --light-gray: #f2f2f2;
-  --middle-gray: #b3b3b3;
-}
-
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-
-  --light-gray: rgb(123, 123, 123);
-  --light-blue: #8dbafff0;
-  --translucent-white: rgba(255, 255, 255, 0.7);
-
-  --normal-shadow: 0px 8px 15px rgba(0, 0, 0, 0.1);
-  --blur-filter: blur(8px);
-}
-
-
 h2 {
   font-size: 1rem;
 }
@@ -55,12 +23,6 @@ a {
   bottom: 1rem;
 }
 
-.project-list {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
 .toolbar {
   display: flex;
   flex-direction: row;
@@ -68,49 +30,6 @@ a {
 
 .toolbar a {
   margin: 0.5rem;
-}
-
-/* From uiverse.io by @fanishah */
-.card {
-  margin: 1rem;
-  min-width: 10rem;
-  max-width: 20rem;
-  height: 15rem;
-  background-color: #ffffff;
-  border-radius: 1rem;
-  transition: all 0.15s ease-in;
-  box-shadow: var(--normal-shadow);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-}
-
-.card * {
-  margin: 0.5rem 0;
-}
-
-.card svg {
-  fill: var(--light-gray);
-  width: 2.5rem;
-  height: 2.5rem;
-}
-
-.card .button {
-  padding: 1rem;
-}
-
-.card:hover {
-  transform: translateY(-1.5rem);
-  border: var(--light-blue) 0.1em solid;
-  border-radius: 2.5rem 0 2.5rem 0;
-  cursor: pointer;
-}
-
-.card:hover svg,
-.card:hover h2 {
-  fill: var(--light-blue);
-  color: var(--light-blue);
 }
 
 /* From uiverse.io */
@@ -144,20 +63,6 @@ a {
 
 .button:active {
   transform: translateY(-1px);
-}
-
-.title-card {
-  margin-top: 1rem;
-  width: 80vh;
-  height: 1.75rem;
-  line-height: 1.75rem;
-  border-radius: var(--coverRadius);
-  background: var(--dark-blue);
-  color: var(--translucent-white);
-  box-shadow: var(--normal-shadow);
-  font-weight: 600;
-  font-size: 14px;
-  text-align: center;
 }
 
 @media (max-width: 500px) {
@@ -203,30 +108,18 @@ a {
   }
 }
 
-.simple-card-container {
-  display: flex;
-  justify-content: center;
-  width: 100%;
-}
-
-/* From uiverse.io by @adamgiebl */
-.simple-card {
-  margin-top: 1rem;
-  width: 100%;
-  height: 1.75rem;
-  line-height: 1.75rem;
-  border-radius: 1rem;
-  background: var(--middle-gray);
-  box-shadow: var(--normal-shadow);
-  font-weight: 600;
-  font-size: 14px;
-  text-align: center;
+.card {
+  position: relative;
+  overflow: hidden;
+  max-width:fit-content ;
+  border-radius: var(--coverRadius);
+  box-shadow: 0.4rem 0.4rem 0.6rem #00000040;
+  background: rgba(var(--dark-blue), .1);
 }
 
 .treeTable {
   overflow: auto;
-  max-height: 60vh;
-  width: 100%;
+  max-height: 100%;
   border-radius: 1rem;
   background: var(--translucent-white);
   box-shadow: var(--normal-shadow);
@@ -394,15 +287,16 @@ a {
 }
 
 #model-viewer-container {
+  position: fixed;
   width: 100%;
   height: 100%;
   outline: none;
   left: 0;
   top: 0;
   overflow: auto;
-  border-radius: var(--coverRadius);
   padding-left: 1rem;
   margin: 0px;
+  background-color: white;
 }
 
 .bimViewer {
@@ -425,11 +319,12 @@ a {
 }
 
 .tools-container {
-  position: relative;
-  border: 1px solid gainsboro;
-  border-radius: 10px;
-  margin-top: 10px;
-  background: white;
+  display: flex;
+  flex-direction: column;
+  width: var(--footer-hight);
+  height: fit-content;
+  position: fixed;
+  right: 0;
 }
 
 .buttons-container {
@@ -449,12 +344,16 @@ a {
   height: 35px;
   margin-left: 0.5rem;
   border-radius: 30px;
-  border: 1px solid #8f9092;
+  margin: 5px auto;
+  border-style: none;
+  /* border: 1px solid #8f9092; */
   transition: all 0.2s ease;
-  color: #606060;
+  color: var(--light-blue);
+  fill: var(--light-blue);
   background-size: 80%;
   background-position: center;
   background-repeat: no-repeat;
+  box-shadow: 0.4rem 0.4rem 0.6rem #00000040;
 }
 
 .tool-button:hover {
