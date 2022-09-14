@@ -431,7 +431,7 @@ a {
 table {
   border-collapse: collapse;
   width: 100%;
-  position: relative;
+  /* position: relative; */
 }
 
 table th {
@@ -512,9 +512,15 @@ tr:hover {
   height: 1.3rem;
 }
 
+#boqCard {
+  position: absolute;
+  resize: auto;
+}
+
 #boq {
   width: 100%;
   font-size: 0.7rem;
+  
 }
 
 tfoot td,
