@@ -34,209 +34,222 @@
 
   <body class="hide-overflow viewerPage">
     <!-- Navigation Bar -->
-    <nav class="navbar-expand-md navbar-dark">
-      <div class="container-fluid">
-        <div class="collapse navbar-collapse" id="navbarNav">
-          <ul class="navbar-nav">
-            <li class="nav-item">
-              <a class="nav-link active" aria-current="page" href="./index.html"
-                >Home</a
-              >
-            </li>
-            <li class="nav-item">
-              <a
-                class="nav-link"
-                href="https://www.buildingsmart.org/about/openbim/openbim-definition/"
-                >What is OpenBIM?</a
-              >
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="https://ifcjs.github.io/info/"
-                >IFC.js</a
-              >
-            </li>
-            <li class="nav-item">
-              <a
-                class="nav-link"
-                href="https://www.buildingsmart.org/standards/bsi-standards/industry-foundation-classes/"
-                >What is IFC?</a
-              >
-            </li>
-            <li class="nav-item">
-              <a
-                class="nav-link"
-                href="https://ifcjs.github.io/info/docs/Courses/Getting-started#learn-bim-development-with-us"
-                >BIM Development Course</a
-              >
-            </li>
-          </ul>
-        </div>
-      </div>
-    </nav>
-
-    <!-- Viewer Section-->
-    <section class="container">
-      <div class="row viewerSection">
-        <!-- Loader  -->
-        <!-- <div id="loader-container">
-          <div class="loader"></div>
-          <p id="progress-text">loading...</p>
-        </div>  -->
-
-        <!-- Viewer Container -->
-        <div class="viewer-container col-12 col-md-12 col-lg-12 col-xxl-12">
-          <div class="sub-header-container">
-            <!-- Model's name -->
+    <header>
+      <nav class="navbar-expand-md navbar-dark">
+        <div class="container-fluid">
+          <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav">
+              <li class="nav-item">
+                <a
+                  class="nav-link active"
+                  aria-current="page"
+                  href="./index.html"
+                  >Home</a
+                >
+              </li>
+              <li class="nav-item">
+                <a
+                  class="nav-link"
+                  href="https://www.buildingsmart.org/about/openbim/openbim-definition/"
+                  >What is OpenBIM?</a
+                >
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="https://ifcjs.github.io/info/"
+                  >IFC.js</a
+                >
+              </li>
+              <li class="nav-item">
+                <a
+                  class="nav-link"
+                  href="https://www.buildingsmart.org/standards/bsi-standards/industry-foundation-classes/"
+                  >What is IFC?</a
+                >
+              </li>
+              <li class="nav-item">
+                <a
+                  class="nav-link"
+                  href="https://ifcjs.github.io/info/docs/Courses/Getting-started#learn-bim-development-with-us"
+                  >BIM Development Course</a
+                >
+              </li>
+            </ul>
             <div class="title-card-container">
               <div class="title-card" id="title">Example model</div>
             </div>
+          </div>
+        </div>
+      </nav>
+    </header>
+    <!-- Viewer Section-->
+    <section>
+      <!-- class="container" -->
 
-            <!-- Carbon FootPrint Simulation -->
-            <div class="footprint-simulation">
-              <div class="button-item">
-                <button class="simulation-button" title="Objects Carbon Footprint"></button>
-              </div>
-              <div id="footprint-simulation-button">Simulate the Carbon Footprint</div>
+      <!-- Model Viewer -->
+      <!-- labelCanvas container -->
+      <div id="canvas-label"></div>
+
+      <!-- threeJS container -->
+      <div id="model-viewer-container"></div>
+
+      <!-- Viewer Container -->
+      <div class="viewer-container col-12 col-md-12 col-lg-12 col-xxl-12">
+        <div class="sub-header-container">
+          <!-- Model's name -->
+
+
+          <!-- Carbon FootPrint Simulation -->
+          <div class="footprint-simulation">
+            <div class="button-item">
+              <button
+                class="simulation-button"
+                title="Objects Carbon Footprint"
+              ></button>
+            </div>
+            <div id="footprint-simulation-button">
+              Simulate the Carbon Footprint
             </div>
           </div>
+        </div>
 
-          <!-- Model Viewer -->
-          <div id="viewer-container" class="bimViewer">
-
-            <!-- Legend for Carbon Footprint Colors -->
-            <div class="legend-container">
-              <div>
-                <div>Level of Carbon Footprint:</div>
-              </div>
-              <div class="footprint-color-container">
-                <div class="footprint-color" style="background-color: #ff0000"></div>
-                <div>Very High</div>
-              </div>
-              <div class="footprint-color-container">
-                <div class="footprint-color" style="background-color: #ffa700"></div>
-                <div>High</div>
-              </div>
-              <div class="footprint-color-container">
-                <div class="footprint-color" style="background-color: #fff400"></div>
-                <div>Medium</div>
-              </div>
-              <div class="footprint-color-container">
-                <div class="footprint-color" style="background-color: #a3ff00"></div>
-                <div>Low</div>
-              </div>
-              <div class="footprint-color-container">
-                <div class="footprint-color" style="background-color: #2cba00"></div>
-                <div>Very Low</div>
-              </div>
-            </div>
-
-            <!-- labelCanvas container -->
-            <div id="canvas-label"></div>
-
-            <!-- threeJS container -->
-            <div id="model-viewer-container" frameborder="0"></div>
+        <!-- Legend for Carbon Footprint Colors -->
+        <div class="legend-container">
+          <div>
+            <div>Level of Carbon Footprint:</div>
           </div>
+          <div class="footprint-color-container">
+            <div
+              class="footprint-color"
+              style="background-color: #ff0000"
+            ></div>
+            <div>Very High</div>
+          </div>
+          <div class="footprint-color-container">
+            <div
+              class="footprint-color"
+              style="background-color: #ffa700"
+            ></div>
+            <div>High</div>
+          </div>
+          <div class="footprint-color-container">
+            <div
+              class="footprint-color"
+              style="background-color: #fff400"
+            ></div>
+            <div>Medium</div>
+          </div>
+          <div class="footprint-color-container">
+            <div
+              class="footprint-color"
+              style="background-color: #a3ff00"
+            ></div>
+            <div>Low</div>
+          </div>
+          <div class="footprint-color-container">
+            <div
+              class="footprint-color"
+              style="background-color: #2cba00"
+            ></div>
+            <div>Very Low</div>
+          </div>
+        </div>
 
-          <!-- Tools Viewer -->
-          <div class="viewer-tools-container">
-            <div>
-              <div class="tools-container col-12">
-                <div class="buttons-container">
-                  <div class="button-item">
-                    <button
-                      id="fit-view"
-                      class="tool-button"
-                      title="Fit All Model in Screen"
-                    ></button>
-                  </div>
-                  <div class="button-item">
-                    <button
-                      id="left-view"
-                      class="tool-button"
-                      title="Left-side View"
-                    ></button>
-                  </div>
-                  <div class="button-item">
-                    <button
-                      id="front-view"
-                      class="tool-button"
-                      title="Front-side View"
-                    ></button>
-                  </div>
-                  <div class="button-item">
-                    <button
-                      id="right-view"
-                      class="tool-button"
-                      title="Right-side View"
-                    ></button>
-                  </div>
-                  <div class="button-item">
-                    <button
-                      id="back-view"
-                      class="tool-button"
-                      title="Back-side View"
-                    ></button>
-                  </div>
-                  <div class="button-item">
-                    <button
-                      id="wireframe-view"
-                      class="tool-button"
-                      title="Wireframe View"
-                    ></button>
-                  </div>
-                  <div class="button-item">
-                    <button
-                      id="colored-view"
-                      class="tool-button"
-                      title="Textured View"
-                    ></button>
-                  </div>
-                  <div class="button-item">
-                    <button
-                      id="deleteMeasurements"
-                      class="tool-button"
-                      title="Remove Measurements"
-                    ></button>
-                  </div>
-                  <div class="button-item">
-                    <button
-                      id="carbon-footprint"
-                      class="tool-button"
-                      title="Objects Carbon Footprint"
-                    ></button>
-                  </div>
-                  <div class="button-item">
-                    <button
-                      id="grid-toggle"
-                      class="tool-button"
-                      title="Toggle Grid View"
-                    ></button></div>
-                    <div class="button-item">
-                    <button
-                      id="explode-toggle"
-                      class="tool-button"
-                      title="Toggle Explode Mode"
-                    ></button>
-                  
-                </div>
-              </div>
+        <!-- Right Menu -->
+        <div class="right-menu col-12 col-md-12 col-lg-12 col-xxl-12">
+          <!-- Model's name -->
+          <div class="simple-card-container">
+            <div class="simple-card" id="Footprint-title">
+              Model's Carbon Footprint in kg CO2 equivalent
             </div>
           </div>
+        </div>
+      </div>
 
-          <!-- Right Menu -->
-          <div class="right-menu col-12 col-md-12 col-lg-12 col-xxl-12">
-            <!-- Model's name -->
-            <div class="simple-card-container">
-              <div class="simple-card" id="Footprint-title">
-                Model's Carbon Footprint  in kg CO2 equivalent
-              </div>
-            </div>
-            
-            <!-- Tree Structure -->
-            <div class="treeTable">
-              <table id="boq"></table>
-            </div>
-          </div>
+      <!-- Tools Viewer -->
+      <div class="tools-container">
+        <div class="button-item">
+          <button
+            id="fit-view"
+            class="tool-button"
+            title="Fit All Model in Screen"
+          ></button>
+        </div>
+        <div class="button-item">
+          <button
+            id="left-view"
+            class="tool-button"
+            title="Left-side View"
+          ></button>
+        </div>
+        <div class="button-item">
+          <button
+            id="front-view"
+            class="tool-button"
+            title="Front-side View"
+          ></button>
+        </div>
+        <div class="button-item">
+          <button
+            id="right-view"
+            class="tool-button"
+            title="Right-side View"
+          ></button>
+        </div>
+        <div class="button-item">
+          <button
+            id="back-view"
+            class="tool-button"
+            title="Back-side View"
+          ></button>
+        </div>
+        <div class="button-item">
+          <button
+            id="wireframe-view"
+            class="tool-button"
+            title="Wireframe View"
+          ></button>
+        </div>
+        <div class="button-item">
+          <button
+            id="colored-view"
+            class="tool-button"
+            title="Textured View"
+          ></button>
+        </div>
+        <div class="button-item">
+          <button
+            id="deleteMeasurements"
+            class="tool-button"
+            title="Remove Measurements"
+          ></button>
+        </div>
+        <div class="button-item">
+          <button
+            id="carbon-footprint"
+            class="tool-button"
+            title="Objects Carbon Footprint"
+          ></button>
+        </div>
+        <div class="button-item">
+          <button
+            id="grid-toggle"
+            class="tool-button"
+            title="Toggle Grid View"
+          ></button>
+        </div>
+        <div class="button-item">
+          <button
+            id="explode-toggle"
+            class="tool-button"
+            title="Toggle Explode Mode"
+          ></button>
+        </div>
+      </div>
+
+      <!-- Tree Structure -->
+      <div class="card" id="boqCard" >
+        <div class="treeTable">
+          <table id="boq"></table>
         </div>
       </div>
     </section>

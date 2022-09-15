@@ -8,14 +8,21 @@
   --coverPadding: 1rem;
   --titleSize: 1.4rem;
   --text-light-color: rgba(255, 255, 255, 0.55);
-  --live-orange: #e7a377;
-  --dark-blue: #034c8c;
-  --middle-blue: #0396a6;
-  --light-blue: #05daf27f;
+  --dark-blue: 3, 76, 140;
+  --middle-blue: 3, 150, 166;
+  --light-blue: 5, 218, 242;
   --very-light-transparent-blue: #add8e64f;
   --dark-gray: #212529;
   --light-gray: #f2f2f2;
   --middle-gray: #b3b3b3;
+  --header-hight: 40px;
+  --footer-hight: 60px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 img {
@@ -27,16 +34,37 @@ body {
   font-family: "Jost", "Helvetica", "Arial", sans-serif;
 }
 
-.navbar-expand-md {
-  background-color: var(--dark-blue);
+header, footer {
+  background-image: linear-gradient(to right, rgba(var(--dark-blue),1) , rgba(var(--middle-blue),1));
+  position: fixed;  
+  width: 100%;
+  z-index: 1000;
 }
 
+header {
+  top: 0;
+  height: var(--header-hight);
+}
+
+footer {
+  bottom: 0;
+  height: var(--footer-hight);
+}
+
+section {
+  top: var(--header-hight);
+  height: calc(100vh - (var(--header-hight) + var(--footer-hight)));
+  width: 100vw;
+  position: fixed;
+  overflow: scroll;
+}
+
+
 .navbar-dark:hover .navbar-nav:hover .nav-link:hover {
-  color: var(--live-orange);
+  color: rgba(var(--light-blue),1);
 }
 
 .cardsGrid {
-  background-color: var(--very-light-transparent-blue);
   margin: var(--coverMargin), var(--coverMargin);
   padding-top: var(--coverMargin);
   padding-bottom: var(--coverMargin);
@@ -46,6 +74,8 @@ body {
   position: relative;
   overflow: hidden;
   border-radius: var(--coverRadius);
+  box-shadow: 0.4rem 0.4rem 0.6rem #00000040;
+  background: rgba(var(--dark-blue), 1);
 }
 
 .projectCard a {
@@ -58,17 +88,25 @@ body {
   width: 100%;
   border-radius: var(--coverRadius);
   object-fit: cover;
+  -webkit-filter: grayscale(100%); /* Safari 6.0 - 9.0 */
+  filter:  opacity(50%) grayscale(100%);
+  /* //grayscale(100%), */
+
 }
 
-.projectCard .imageCard {
+.projectCard {
   transition: all 0.5s ease-out;
 }
 
-.projectCard:hover .imageCard {
-  transform: scale(1.1);
-  -webkit-transform: scale(1.1);
+.projectCard:hover {
+  transform: scale(1.05);
+  -webkit-transform: scale(1.05);
   cursor: pointer;
   border-radius: var(--coverRadius);
+}
+
+.projectCard:hover .imageCard {
+
 }
 
 .cardTitle:hover {
@@ -123,22 +161,11 @@ body {
   height: 60%;
   border-radius: var(--coverRadius);
   bottom: 0;
-  background: -moz-linear-gradient(
-    top,
-    rgba(0, 0, 0, 0) 0%,
-    rgba(0, 0, 0, 0.75) 100%
-  );
-  background: -webkit-linear-gradient(
-    top,
-    rgba(0, 0, 0, 0) 0%,
-    rgba(0, 0, 0, 0.75) 100%
-  );
   background: linear-gradient(
     to bottom,
-    rgba(0, 0, 0, 0) 0%,
-    rgba(0, 0, 0, 0.75) 100%
+    rgba(var(--dark-blue), 0),
+    rgba(var(--middle-blue), .5)
   );
-  filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#00000000', endColorstr='#a6000000',GradientType=0 );
 }
 
 .shadow {
@@ -163,10 +190,6 @@ body {
   overflow-y: auto;
 }
 
-.footerSection {
-  background-color: var(--dark-blue);
-}
-
 .footerButtons {
   display: flex;
   justify-content: space-evenly;
@@ -176,7 +199,7 @@ body {
 .footerBtn {
   border-radius: var(--coverRadius);
   border: none;
-  background-color: var(--light-blue);
+  background-color: rgba(var(--light-blue), 0.5);
   padding: 10px 10px;
   cursor: pointer;
   color: var(--text-light-color);
@@ -189,7 +212,7 @@ body {
 }
 
 .footerBtn:hover {
-  background-color: var(--live-orange);
+  background-color: rgba(var(--light-blue),0.5);
   color: var(--text-light-color);
   transform: scale(1.05);
   transition: all 0.5s ease-out;
@@ -283,7 +306,7 @@ button.learn-more .circle {
   margin: 0;
   width: 3rem;
   height: 3rem;
-  background: var(--live-orange);
+  background: var(--light-blue);
   border-radius: 1.625rem;
 }
 
