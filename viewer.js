@@ -106,6 +106,41 @@ const url = new URL(currentUrl);
 const currentProjectID = url.searchParams.get("id");
 let preselectModel = { id: -1 };
 
+//User Interface
+const closeButton = document.getElementById("boqCardCloseButton");
+closeButton.onclick = () => {
+  toggleCard(closeButton)
+};
+
+function toggleCard(closeButton) {
+  const card = closeButton.closest(".card");
+if(card.classList.contains("maximized"))
+ {minimizeCard(closeButton)
+}
+else {
+  maximizeCard(closeButton);
+}
+
+function minimizeCard(closeButton) {
+  card.classList.remove("maximized");
+  card.classList.add("minimized");
+  const cardContent = card.lastElementChild;
+  cardContent.style.display = "none";
+  const miniContainer = document.getElementById("miniContainer");
+  miniContainer.appendChild(card);
+}
+
+function maximizeCard(closeButton) {
+  card.classList.remove("minimized");
+  card.classList.add("maximized");
+  const cardContent = card.lastElementChild;
+  cardContent.style.display = "";
+   const miniContainer = document.getElementById("miniContainer");
+  miniContainer.parentElement.appendChild(card);
+}
+
+}
+
 // Get the current project
 let currentProject = null;
 let projectURL = null;
@@ -172,7 +207,7 @@ title.innerText = currentProject.name;
 const threeCanvas = document.getElementById("model-viewer-container");
 
 //temporarily hide model (for development only)
-//  threeCanvas.style.display = 'none';
+  // threeCanvas.style.display = 'none';
 
 //Creates the Three.js scene
 const scene = new Scene();
@@ -544,9 +579,9 @@ dragElement(document.getElementById("boqCard"));
 
 function dragElement(elmnt) {
   var pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-  if (document.getElementById(elmnt.id + "header")) {
+  if (document.getElementById(elmnt.id + "Header")) {
     // if present, the header is where you move the DIV from:
-    document.getElementById(elmnt.id + "header").onmousedown = dragMouseDown;
+    document.getElementById(elmnt.id + "Header").onmousedown = dragMouseDown;
   } else {
     // otherwise, move the DIV from anywhere inside the DIV: 
     elmnt.onmousedown = dragMouseDown;
