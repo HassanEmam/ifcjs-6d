@@ -14,10 +14,10 @@
   ],
   "description": "",
   "dependencies": {
-    "camera-controls": "^1.36.2",
+    "camera-controls": "^1.37.2",
     "hold-event": "^0.2.0",
     "three": "^0.135.0",
-    "three-mesh-bvh": "^0.5.15",
+    "three-mesh-bvh": "^0.5.16",
     "web-ifc": "^0.0.35",
     "web-ifc-three": "^0.0.119"
   },
