@@ -43724,10 +43724,13 @@ function getAverage( triangleBounds, offset, count, axis ) {
 function computeTriangleBounds( geo, fullBounds ) {
 
 	const posAttr = geo.attributes.position;
-	const posArr = posAttr.array;
 	const index = geo.index.array;
 	const triCount = index.length / 3;
 	const triangleBounds = new Float32Array( triCount * 6 );
+	const normalized = posAttr.normalized;
+
+	// used for non-normalized positions
+	const posArr = posAttr.array;
 
 	// support for an interleaved position buffer
 	const bufferOffset = posAttr.offset || 0;
@@ -43738,19 +43741,47 @@ function computeTriangleBounds( geo, fullBounds ) {
 
 	}
 
+	// used for normalized positions
+	const getters = [ 'getX', 'getY', 'getZ' ];
+
 	for ( let tri = 0; tri < triCount; tri ++ ) {
 
 		const tri3 = tri * 3;
 		const tri6 = tri * 6;
-		const ai = index[ tri3 + 0 ] * stride + bufferOffset;
-		const bi = index[ tri3 + 1 ] * stride + bufferOffset;
-		const ci = index[ tri3 + 2 ] * stride + bufferOffset;
+
+		let ai, bi, ci;
+
+		if ( normalized ) {
+
+			ai = index[ tri3 + 0 ];
+			bi = index[ tri3 + 1 ];
+			ci = index[ tri3 + 2 ];
+
+		} else {
+
+			ai = index[ tri3 + 0 ] * stride + bufferOffset;
+			bi = index[ tri3 + 1 ] * stride + bufferOffset;
+			ci = index[ tri3 + 2 ] * stride + bufferOffset;
+
+		}
 
 		for ( let el = 0; el < 3; el ++ ) {
 
-			const a = posArr[ ai + el ];
-			const b = posArr[ bi + el ];
-			const c = posArr[ ci + el ];
+			let a, b, c;
+
+			if ( normalized ) {
+
+				a = posAttr[ getters[ el ] ]( ai );
+				b = posAttr[ getters[ el ] ]( bi );
+				c = posAttr[ getters[ el ] ]( ci );
+
+			} else {
+
+				a = posArr[ ai + el ];
+				b = posArr[ bi + el ];
+				c = posArr[ ci + el ];
+
+			}
 
 			let min = a;
 			if ( b < min ) min = b;
@@ -46213,16 +46244,6 @@ class MeshBVH {
 		const geometry = this.geometry;
 		const indexArr = geometry.index.array;
 		const posAttr = geometry.attributes.position;
-		const posArr = posAttr.array;
-
-		// support for an interleaved position buffer
-		const bufferOffset = posAttr.offset || 0;
-		let stride = 3;
-		if ( posAttr.isInterleavedBufferAttribute ) {
-
-			stride = posAttr.data.stride;
-
-		}
 
 		let buffer, uint32Array, uint16Array, float32Array;
 		let byteOffset = 0;
@@ -46254,12 +46275,13 @@ class MeshBVH {
 				let maxx = - Infinity;
 				let maxy = - Infinity;
 				let maxz = - Infinity;
+
 				for ( let i = 3 * offset, l = 3 * ( offset + count ); i < l; i ++ ) {
 
-					const index = indexArr[ i ] * stride + bufferOffset;
-					const x = posArr[ index + 0 ];
-					const y = posArr[ index + 1 ];
-					const z = posArr[ index + 2 ];
+					const index = indexArr[ i ];
+					const x = posAttr.getX( index );
+					const y = posAttr.getY( index );
+					const z = posAttr.getZ( index );
 
 					if ( x < minx ) minx = x;
 					if ( x > maxx ) maxx = x;
@@ -47037,180 +47059,6 @@ class MeshBVH {
 	}
 
 }
-
-// Deprecation
-const originalRaycast = MeshBVH.prototype.raycast;
-MeshBVH.prototype.raycast = function ( ...args ) {
-
-	if ( args[ 0 ].isMesh ) {
-
-		console.warn( 'MeshBVH: The function signature and results frame for "raycast" has changed. See docs for new signature.' );
-		const [
-			mesh, raycaster, ray, intersects,
-		] = args;
-
-		const results = originalRaycast.call( this, ray, mesh.material );
-		results.forEach( hit => {
-
-			hit = convertRaycastIntersect( hit, mesh, raycaster );
-			if ( hit ) {
-
-				intersects.push( hit );
-
-			}
-
-		} );
-
-		return intersects;
-
-	} else {
-
-		return originalRaycast.apply( this, args );
-
-	}
-
-};
-
-const originalRaycastFirst = MeshBVH.prototype.raycastFirst;
-MeshBVH.prototype.raycastFirst = function ( ...args ) {
-
-	if ( args[ 0 ].isMesh ) {
-
-		console.warn( 'MeshBVH: The function signature and results frame for "raycastFirst" has changed. See docs for new signature.' );
-		const [
-			mesh, raycaster, ray,
-		] = args;
-
-		return convertRaycastIntersect( originalRaycastFirst.call( this, ray, mesh.material ), mesh, raycaster );
-
-	} else {
-
-		return originalRaycastFirst.apply( this, args );
-
-	}
-
-};
-
-const originalClosestPointToPoint = MeshBVH.prototype.closestPointToPoint;
-MeshBVH.prototype.closestPointToPoint = function ( ...args ) {
-
-
-	if ( args[ 0 ].isMesh ) {
-
-		console.warn( 'MeshBVH: The function signature and results frame for "closestPointToPoint" has changed. See docs for new signature.' );
-
-		args.unshift();
-
-		const target = args[ 1 ];
-		const result = {};
-		args[ 1 ] = result;
-
-		originalClosestPointToPoint.apply( this, args );
-
-		if ( target ) {
-
-			target.copy( result.point );
-
-		}
-
-		return result.distance;
-
-	} else {
-
-		return originalClosestPointToPoint.apply( this, args );
-
-	}
-
-};
-
-const originalClosestPointToGeometry = MeshBVH.prototype.closestPointToGeometry;
-MeshBVH.prototype.closestPointToGeometry = function ( ...args ) {
-
-	const target1 = args[ 2 ];
-	const target2 = args[ 3 ];
-	if ( target1 && target1.isVector3 || target2 && target2.isVector3 ) {
-
-		console.warn( 'MeshBVH: The function signature and results frame for "closestPointToGeometry" has changed. See docs for new signature.' );
-
-		const result1 = {};
-		const result2 = {};
-		const geometryToBvh = args[ 1 ];
-		args[ 2 ] = result1;
-		args[ 3 ] = result2;
-
-		originalClosestPointToGeometry.apply( this, args );
-
-		if ( target1 ) {
-
-			target1.copy( result1.point );
-
-		}
-
-		if ( target2 ) {
-
-			target2.copy( result2.point ).applyMatrix4( geometryToBvh );
-
-		}
-
-		return result1.distance;
-
-	} else {
-
-		return originalClosestPointToGeometry.apply( this, args );
-
-	}
-
-};
-
-const originalRefit = MeshBVH.prototype.refit;
-MeshBVH.prototype.refit = function ( ...args ) {
-
-	const nodeIndices = args[ 0 ];
-	const terminationIndices = args[ 1 ];
-	if ( terminationIndices && ( terminationIndices instanceof Set || Array.isArray( terminationIndices ) ) ) {
-
-		console.warn( 'MeshBVH: The function signature for "refit" has changed. See docs for new signature.' );
-
-		const newNodeIndices = new Set();
-		terminationIndices.forEach( v => newNodeIndices.add( v ) );
-		if ( nodeIndices ) {
-
-			nodeIndices.forEach( v => newNodeIndices.add( v ) );
-
-		}
-
-		originalRefit.call( this, newNodeIndices );
-
-	} else {
-
-		originalRefit.apply( this, args );
-
-	}
-
-};
-
-[
-	'intersectsGeometry',
-	'shapecast',
-	'intersectsBox',
-	'intersectsSphere',
-].forEach( name => {
-
-	const originalFunc = MeshBVH.prototype[ name ];
-	MeshBVH.prototype[ name ] = function ( ...args ) {
-
-		if ( args[ 0 ] === null || args[ 0 ].isMesh ) {
-
-			args.shift();
-			console.warn( `MeshBVH: The function signature for "${ name }" has changed and no longer takes Mesh. See docs for new signature.` );
-
-		}
-
-		return originalFunc.apply( this, args );
-
-	};
-
-} );
 
 const ray = /* @__PURE__ */ new Ray();
 const tmpInverseMatrix = /* @__PURE__ */ new Matrix4();
@@ -48556,8 +48404,10 @@ const ACTION = Object.freeze({
     TOUCH_ZOOM: 512,
     TOUCH_DOLLY_TRUCK: 1024,
     TOUCH_DOLLY_OFFSET: 2048,
-    TOUCH_ZOOM_TRUCK: 4096,
-    TOUCH_ZOOM_OFFSET: 8192,
+    TOUCH_DOLLY_ROTATE: 4096,
+    TOUCH_ZOOM_TRUCK: 8192,
+    TOUCH_ZOOM_OFFSET: 16384,
+    TOUCH_ZOOM_ROTATE: 32768,
 });
 function isPerspectiveCamera(camera) {
     return camera.isPerspectiveCamera;
@@ -49312,7 +49162,9 @@ class CameraControls extends EventDispatcher {
                 const deltaY = isPointerLockActive ? -this._activePointers[0].deltaY : lastDragPosition.y - _v2.y;
                 lastDragPosition.copy(_v2);
                 if ((this._state & ACTION.ROTATE) === ACTION.ROTATE ||
-                    (this._state & ACTION.TOUCH_ROTATE) === ACTION.TOUCH_ROTATE) {
+                    (this._state & ACTION.TOUCH_ROTATE) === ACTION.TOUCH_ROTATE ||
+                    (this._state & ACTION.TOUCH_DOLLY_ROTATE) === ACTION.TOUCH_DOLLY_ROTATE ||
+                    (this._state & ACTION.TOUCH_ZOOM_ROTATE) === ACTION.TOUCH_ZOOM_ROTATE) {
                     this._rotateInternal(deltaX, deltaY);
                 }
                 if ((this._state & ACTION.DOLLY) === ACTION.DOLLY ||
@@ -49328,7 +49180,9 @@ class CameraControls extends EventDispatcher {
                     (this._state & ACTION.TOUCH_DOLLY_TRUCK) === ACTION.TOUCH_DOLLY_TRUCK ||
                     (this._state & ACTION.TOUCH_ZOOM_TRUCK) === ACTION.TOUCH_ZOOM_TRUCK ||
                     (this._state & ACTION.TOUCH_DOLLY_OFFSET) === ACTION.TOUCH_DOLLY_OFFSET ||
-                    (this._state & ACTION.TOUCH_ZOOM_OFFSET) === ACTION.TOUCH_ZOOM_OFFSET) {
+                    (this._state & ACTION.TOUCH_ZOOM_OFFSET) === ACTION.TOUCH_ZOOM_OFFSET ||
+                    (this._state & ACTION.TOUCH_DOLLY_ROTATE) === ACTION.TOUCH_DOLLY_ROTATE ||
+                    (this._state & ACTION.TOUCH_ZOOM_ROTATE) === ACTION.TOUCH_ZOOM_ROTATE) {
                     const dx = _v2.x - this._activePointers[1].clientX;
                     const dy = _v2.y - this._activePointers[1].clientY;
                     const distance = Math.sqrt(dx * dx + dy * dy);
@@ -49337,6 +49191,7 @@ class CameraControls extends EventDispatcher {
                     const dollyX = this.dollyToCursor ? (lastDragPosition.x - this._elementRect.x) / this._elementRect.width * 2 - 1 : 0;
                     const dollyY = this.dollyToCursor ? (lastDragPosition.y - this._elementRect.y) / this._elementRect.height * -2 + 1 : 0;
                     this._state === ACTION.TOUCH_DOLLY ||
+                        this._state === ACTION.TOUCH_DOLLY_ROTATE ||
                         this._state === ACTION.TOUCH_DOLLY_TRUCK ||
                         this._state === ACTION.TOUCH_DOLLY_OFFSET ?
                         this._dollyInternal(dollyDelta * TOUCH_DOLLY_FACTOR, dollyX, dollyY) :
@@ -50296,6 +50151,8 @@ class CameraControls extends EventDispatcher {
                     .add(planeY.multiplyScalar(this._dollyControlCoord.y * worldToScreen));
                 this._targetEnd.lerp(cursor, lerpRatio);
                 this._target.copy(this._targetEnd);
+                // target position may be moved beyond boundary.
+                this._boundary.clampPoint(this._targetEnd, this._targetEnd);
             }
             else if (isOrthographicCamera(this._camera)) {
                 const camera = this._camera;
@@ -50306,6 +50163,8 @@ class CameraControls extends EventDispatcher {
                 const cursor = _v3C.copy(worldPosition).add(quaternion.multiplyScalar(distance));
                 this._targetEnd.lerp(cursor, 1 - camera.zoom / this._dollyControlAmount);
                 this._target.copy(this._targetEnd);
+                // target position may be moved beyond boundary.
+                this._boundary.clampPoint(this._targetEnd, this._targetEnd);
             }
             this._dollyControlAmount = 0;
         }
@@ -107847,20 +107706,14 @@ deleteMeasurementsButton.onclick = () => {
 };
 
 // Update FootPrint Button
+let colorizationActive = false;
 const carbonFootprintButton = document.getElementById("carbon-footprint");
-const footprintSimulationButton = document.getElementById(
-  "footprint-simulation-button"
-);
+
 let carbonEnabled = null;
 carbonFootprintButton.onclick = () => {
   carbonEnabled = updateFootprintButton(carbonFootprintButton, carbonEnabled);
 };
-footprintSimulationButton.onclick = () => {
-  carbonEnabled = updateFootprintButton(carbonFootprintButton, carbonEnabled);
-};
 
-// Update Objects Footprints Colors
-let colorizationActive = false;
 carbonFootprintButton.addEventListener("click", function (event) {
   colorizationActive = updateFootPrintColors(
     ifcLoader,
@@ -107873,18 +107726,9 @@ carbonFootprintButton.addEventListener("click", function (event) {
     axes,
     gridToggle);
 });
-footprintSimulationButton.addEventListener("click", function (event) {
-  colorizationActive = updateFootPrintColors(
-    ifcLoader,
-    model,
-    itemsAndEmissions,
-    scene,
-    colorizationActive,
-    carbonEnabled,
-    grid,
-    axes,
-    gridToggle);
-});
+
+// Explode button
+
 let exploded = false;
 let explodeButton = document.getElementById("explode-toggle");
 let explodeIcon = "url('./asset/explode1.svg')";
