@@ -485,14 +485,15 @@ table td {
   height: 0;
   border-left: 0.25rem solid transparent;
   border-right: 0.25rem solid transparent;
-  border-top: 0.5rem solid var(--dark-blue);
+  border-top: 0.5rem solid rgb(var(--dark-blue));
+
 }
 
 .table-expand .toggle {
   width: 0;
   height: 0;
   border-top: 0.25rem solid transparent;
-  border-left: 0.5rem solid var(--dark-blue);
+  border-left: 0.5rem solid rgb(var(--dark-blue));
   border-bottom: 0.25rem solid transparent;
 }
 
