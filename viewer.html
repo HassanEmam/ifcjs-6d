@@ -75,7 +75,7 @@
               </li>
             </ul>
             <div class="title-card-container">
-              <div class="title-card" id="title">Example model</div>
+              <h2 class="title-card" id="title">Example model</h2>
             </div>
           </div>
         </div>
@@ -96,20 +96,6 @@
       <div class="viewer-container col-12 col-md-12 col-lg-12 col-xxl-12">
         <div class="sub-header-container">
           <!-- Model's name -->
-
-
-          <!-- Carbon FootPrint Simulation -->
-          <div class="footprint-simulation">
-            <div class="button-item">
-              <button
-                class="simulation-button"
-                title="Objects Carbon Footprint"
-              ></button>
-            </div>
-            <div id="footprint-simulation-button">
-              Simulate the Carbon Footprint
-            </div>
-          </div>
         </div>
 
         <!-- Legend for Carbon Footprint Colors -->
@@ -151,16 +137,6 @@
               style="background-color: #2cba00"
             ></div>
             <div>Very Low</div>
-          </div>
-        </div>
-
-        <!-- Right Menu -->
-        <div class="right-menu col-12 col-md-12 col-lg-12 col-xxl-12">
-          <!-- Model's name -->
-          <div class="simple-card-container">
-            <div class="simple-card" id="Footprint-title">
-              Model's Carbon Footprint in kg CO2 equivalent
-            </div>
           </div>
         </div>
       </div>
@@ -247,7 +223,23 @@
       </div>
 
       <!-- Tree Structure -->
-      <div class="card" id="boqCard" >
+      <div class="card" id="boqCard">
+        <h2 id="boqCardheader">
+          Carbon Footprint in kg CO2 Equivalent
+          <button id="boqCardClose">
+            <span class="icon"
+              ><svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  d="M24 20.188l-8.315-8.209 8.2-8.282-3.697-3.697-8.212 8.318-8.31-8.203-3.666 3.666 8.321 8.24-8.206 8.313 3.666 3.666 8.237-8.318 8.285 8.203z"
+                ></path></svg
+            ></span>
+          </button>
+        </h2>
         <div class="treeTable">
           <table id="boq"></table>
         </div>

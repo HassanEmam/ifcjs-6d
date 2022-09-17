@@ -1,5 +1,7 @@
 h2 {
   font-size: 1rem;
+  padding: 0.25rem;
+  color: white;
 }
 
 h3 {
@@ -118,8 +120,7 @@ a {
 }
 
 .treeTable {
-  overflow: auto;
-  max-height: 100%;
+  max-height: calc(100vh - 2*(var(--header-hight) + var(--footer-hight)));
   border-radius: 1rem;
   background: var(--translucent-white);
   box-shadow: var(--normal-shadow);
@@ -127,6 +128,8 @@ a {
   font-weight: 600;
   font-size: 14px;
   text-align: center;
+  margin: 0.5rem;
+  overflow: auto;
 }
 
 .properties {
@@ -444,6 +447,10 @@ table td {
   border: 1px solid #eee;
 }
 
+.tbody{
+  overflow: auto;
+}
+
 .tfoot tr:last-child {
   text-align: left;
 }
@@ -516,6 +523,11 @@ tr:hover {
 #boqCard {
   position: absolute;
   resize: auto;
+}
+
+#boqCardheader {
+  width: 100%;
+  background-image: linear-gradient(to right, rgba(var(--dark-blue),1) , rgba(var(--middle-blue),1));
 }
 
 #boq {
