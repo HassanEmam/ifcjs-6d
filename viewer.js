@@ -237,7 +237,7 @@ title.innerText = currentProject.name;
 const threeCanvas = document.getElementById("model-viewer-container");
 
 //temporarily hide model (for development only)
-  // threeCanvas.style.display = 'none';
+// threeCanvas.style.display = 'none';
 
 //Creates the Three.js scene
 const scene = new Scene();
