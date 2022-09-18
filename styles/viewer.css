@@ -357,7 +357,6 @@ a {
   border-radius: 30px;
   margin: 5px auto;
   border-style: none;
-  /* border: 1px solid #8f9092; */
   transition: all 0.2s ease;
   color: var(--light-blue);
   fill: var(--light-blue);

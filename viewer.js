@@ -87,6 +87,7 @@ import { selectObject } from "./functions/Selection.js";
 import { IFCBUILDINGSTOREY, IfcConstructionMaterialResource } from "web-ifc";
 import createTreeTable from "./functions/treeTable.js";
 import { explode } from "./functions/explode.js";
+import viewerTools from "./functions/toolButtons.js";
 
 const preselectMat = new MeshLambertMaterial({
   transparent: true,
@@ -114,42 +115,60 @@ closeButton.onclick = () => {
 
 function toggleCard(closeButton) {
   const card = closeButton.closest(".card");
-if(card.classList.contains("maximized"))
- {minimizeCard(closeButton)
+  if (card.classList.contains("maximized")) {
+    minimizeCard(closeButton)
+  }
+  else {
+    maximizeCard(closeButton);
+  }
+
+  function minimizeCard(closeButton) {
+    card.classList.remove("maximized");
+    card.classList.add("minimized");
+
+    closeButton.classList.remove("minimize-button");
+    closeButton.classList.add("maximize-button");
+    closeButton.title = "Maximize table";
+    card.style.top = 0;
+    card.style.left = 0;
+    const cardContent = card.lastElementChild;
+    cardContent.style.display = "none";
+    const miniContainer = document.getElementById("miniContainer");
+    miniContainer.appendChild(card);
+  }
+
+  function maximizeCard(closeButton) {
+    card.classList.remove("minimized");
+    card.classList.add("maximized");
+
+    closeButton.classList.remove("maximize-button");
+    closeButton.classList.add("minimize-button");
+    closeButton.title = "Minimize table";
+
+    const cardContent = card.lastElementChild;
+    cardContent.style.display = "";
+    const miniContainer = document.getElementById("miniContainer");
+    miniContainer.parentElement.appendChild(card);
+  }
+
 }
-else {
-  maximizeCard(closeButton);
-}
 
-function minimizeCard(closeButton) {
-  card.classList.remove("maximized");
-  card.classList.add("minimized");
+createToolBar(viewerTools);
 
-  closeButton.classList.remove("minimize-button");
-  closeButton.classList.add("maximize-button");
-  closeButton.title = "Maximize table";
-  card.style.top = 0;
-  card.style.left = 0;
-  const cardContent = card.lastElementChild;
-  cardContent.style.display = "none";
-  const miniContainer = document.getElementById("miniContainer");
-  miniContainer.appendChild(card);
-}
+function createToolBar(tools) {
+  const toolContainer = document.getElementById("viewer-tool-container")
+  for (const tool in tools) {
+    toolContainer.appendChild(createToolButton(tool));
+  }
 
-function maximizeCard(closeButton) {
-  card.classList.remove("minimized");
-  card.classList.add("maximized");
+  function createToolButton(t) {
+    const button = document.createElement('button');
+    button.id = tools[t].id;
+    button.classList.add('tool-button');
+    button.title = tools[t].title;
 
-  closeButton.classList.remove("maximize-button");
-  closeButton.classList.add("minimize-button");
-  closeButton.title = "Minimize table";
-
-  const cardContent = card.lastElementChild;
-  cardContent.style.display = "";
-  const miniContainer = document.getElementById("miniContainer");
-  miniContainer.parentElement.appendChild(card);
-}
-
+    return button;
+  }
 }
 
 // Get the current project
@@ -272,7 +291,7 @@ scene.add(directionalLight);
 // const threeCanvas = document.getElementById("three-canvas");
 const renderer = new WebGLRenderer({ alpha: true });
 renderer.setClearColor(0xffffff, 0.2);
-console.log("size", size);
+// console.log("size", size);
 renderer.setSize(size.width, size.height, false);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 threeCanvas.appendChild(renderer.domElement);
@@ -328,7 +347,7 @@ async function init() {
     allEmissionsOfItems,
     itemsAndEmissions
   );
-  console.log(model);
+  // console.log(model);
   ifcModels.push(model);
   scene.add(model);
   spatial = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
@@ -349,14 +368,14 @@ async function init() {
             x:
               ((event.clientX - canvasBounds.left) /
                 renderer.domElement.clientWidth) *
-                2 -
+              2 -
               1,
             y:
               -(
                 (event.clientY - canvasBounds.top) /
                 renderer.domElement.clientHeight
               ) *
-                2 +
+              2 +
               1,
           },
           camera
@@ -498,7 +517,7 @@ window.addEventListener("resize", () => {
   renderer.domElement.width = size.width;
   camera.aspect = size.width / size.height;
   camera.updateProjectionMatrix();
-  console.log(size);
+  // console.log(size);
   renderer.setSize(size.width, size.height, false);
 });
 
@@ -533,14 +552,14 @@ function onClick(event) {
         x:
           ((event.clientX - canvasBounds.left) /
             renderer.domElement.clientWidth) *
-            2 -
+          2 -
           1,
         y:
           -(
             (event.clientY - canvasBounds.top) /
             renderer.domElement.clientHeight
           ) *
-            2 +
+          2 +
           1,
       },
       camera
@@ -599,17 +618,17 @@ function dragElement(elmnt) {
   }
 
   function dragMouseDown(e) {
-    if(elmnt.classList.contains("maximized")) {
+    if (elmnt.classList.contains("maximized")) {
 
-    e = e || window.event;
-    e.preventDefault();
-    // get the mouse cursor position at startup:
-    pos3 = e.clientX;
-    pos4 = e.clientY;
-    document.onmouseup = closeDragElement;
-    // call a function whenever the cursor moves:
-    document.onmousemove = elementDrag;
-  }
+      e = e || window.event;
+      e.preventDefault();
+      // get the mouse cursor position at startup:
+      pos3 = e.clientX;
+      pos4 = e.clientY;
+      document.onmouseup = closeDragElement;
+      // call a function whenever the cursor moves:
+      document.onmousemove = elementDrag;
+    }
 
   }
 
@@ -647,14 +666,14 @@ function onDocumentMouseMove(event) {
         x:
           ((event.clientX - canvasBounds.left) /
             renderer.domElement.clientWidth) *
-            2 -
+          2 -
           1,
         y:
           -(
             (event.clientY - canvasBounds.top) /
             renderer.domElement.clientHeight
           ) *
-            2 +
+          2 +
           1,
       },
       camera
