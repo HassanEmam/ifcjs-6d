@@ -124,6 +124,12 @@ else {
 function minimizeCard(closeButton) {
   card.classList.remove("maximized");
   card.classList.add("minimized");
+
+  closeButton.classList.remove("minimize-button");
+  closeButton.classList.add("maximize-button");
+
+  card.style.top = 0;
+  card.style.left = 0;
   const cardContent = card.lastElementChild;
   cardContent.style.display = "none";
   const miniContainer = document.getElementById("miniContainer");
@@ -133,9 +139,13 @@ function minimizeCard(closeButton) {
 function maximizeCard(closeButton) {
   card.classList.remove("minimized");
   card.classList.add("maximized");
+
+  closeButton.classList.remove("maximize-button");
+  closeButton.classList.add("minimize-button");
+
   const cardContent = card.lastElementChild;
   cardContent.style.display = "";
-   const miniContainer = document.getElementById("miniContainer");
+  const miniContainer = document.getElementById("miniContainer");
   miniContainer.parentElement.appendChild(card);
 }
 

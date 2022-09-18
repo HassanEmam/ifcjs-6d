@@ -369,16 +369,25 @@ a {
   box-shadow: 0.4rem 0.4rem 0.6rem #00000040;
 }
 
-.close-button {
+.minimize-button, .maximize-button {
   cursor: pointer;
   background: none;
-  border: none;
   margin: 0.25rem;
-  fill: white;
-  font-size: 0.3rem;
-  width: 4em;
-  height: 4em;
+  font-size: 1rem;
+  width: 1em;
+  height: 1em;
 }
+
+.minimize-button {
+  border: none;
+  border-bottom: 4px solid white;
+}
+
+.maximize-button {
+  border: 2px solid white;
+}
+
+
 
 .tool-button:hover .close-button:hover {
   box-shadow: 0 4px 3px 1px var(--very-light-transparent-blue),
