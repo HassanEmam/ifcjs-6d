@@ -124,6 +124,12 @@ else {
 function minimizeCard(closeButton) {
   card.classList.remove("maximized");
   card.classList.add("minimized");
+
+  closeButton.classList.remove("minimize-button");
+  closeButton.classList.add("maximize-button");
+  closeButton.title = "Maximize table";
+  card.style.top = 0;
+  card.style.left = 0;
   const cardContent = card.lastElementChild;
   cardContent.style.display = "none";
   const miniContainer = document.getElementById("miniContainer");
@@ -133,9 +139,14 @@ function minimizeCard(closeButton) {
 function maximizeCard(closeButton) {
   card.classList.remove("minimized");
   card.classList.add("maximized");
+
+  closeButton.classList.remove("maximize-button");
+  closeButton.classList.add("minimize-button");
+  closeButton.title = "Minimize table";
+
   const cardContent = card.lastElementChild;
   cardContent.style.display = "";
-   const miniContainer = document.getElementById("miniContainer");
+  const miniContainer = document.getElementById("miniContainer");
   miniContainer.parentElement.appendChild(card);
 }
 
@@ -588,6 +599,8 @@ function dragElement(elmnt) {
   }
 
   function dragMouseDown(e) {
+    if(elmnt.classList.contains("maximized")) {
+
     e = e || window.event;
     e.preventDefault();
     // get the mouse cursor position at startup:
@@ -596,6 +609,8 @@ function dragElement(elmnt) {
     document.onmouseup = closeDragElement;
     // call a function whenever the cursor moves:
     document.onmousemove = elementDrag;
+  }
+
   }
 
   function elementDrag(e) {
