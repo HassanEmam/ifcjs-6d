@@ -107414,7 +107414,7 @@ let model = null;
 let allEmissionsOfItems = [];
 const itemsAndEmissions = [];
 const ifcLoader = new IFCLoader();
-await ifcLoader.ifcManager.useWebWorkers(true, "IFCWorker.js");
+// await ifcLoader.ifcManager.useWebWorkers(true, "IFCWorker.js");
 // await ifcLoader.ifcManager.setWasmPath("./");
 
 // create spatial tree
